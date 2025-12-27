@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import QuizRunner from "@/components/QuizRunner";
 
 export default async function QuizPage({ params }: { params: { id: string } }) {
-  const supabase = createClient();
+  const supabase = await createClient();
 
   const { data: userData } = await supabase.auth.getUser();
   if (!userData.user) redirect("/login");

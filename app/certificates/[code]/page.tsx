@@ -3,7 +3,7 @@ import Link from "next/link";
 import { formatDuration } from "@/lib/utils";
 
 export default async function CertificateVerifyPage({ params }: { params: { code: string } }) {
-  const supabase = createClient();
+  const supabase = await createClient();
 
   const { data, error } = await supabase.rpc("get_certificate_public", { p_code: params.code });
 

@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { formatDuration } from "@/lib/utils";
 
 export default async function VideoPage({ params }: { params: { id: string } }) {
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data: course } = await supabase
     .from("courses")
     .select("id,title,description,youtube_video_id,youtube_url,cover_image_url,duration_seconds,published")

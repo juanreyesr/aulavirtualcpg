@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 type Category = { id: string; name: string; slug: string | null };
 
 export default async function HomePage() {
-  const supabase = createClient();
+  const supabase = await createClient();
 
   const { data: categories } = await supabase
     .from("categories")
