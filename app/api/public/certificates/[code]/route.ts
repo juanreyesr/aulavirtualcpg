@@ -1,5 +1,5 @@
 import React from "react";
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import {
   Document,
@@ -9,6 +9,7 @@ import {
   StyleSheet,
   Image,
   renderToStream,
+  type DocumentProps,
 } from "@react-pdf/renderer";
 import { formatDuration } from "@/lib/utils";
 
@@ -72,7 +73,7 @@ function CertificateDoc(props: {
   authorities?: Authority[] | null;
   logoUrl?: string | null;
   watermarkUrl?: string | null;
-}): React.ReactElement {
+}): React.ReactElement<DocumentProps> {
   const e = React.createElement;
 
   const authorityBlocks =
@@ -142,12 +143,12 @@ function CertificateDoc(props: {
   );
 }
 
-export async function GET(_req: Request, ctx: { params: { code: string } }) {
-  const supabase = createClient();
+export async function GET(_req: NextRequest, ctx: { params: Promise<{ code: string }> }) {
+  const supabase = await createClient();
 
   // RPC recomendado (seguridad definer) para no abrir tablas al público
   const { data, error } = await supabase.rpc("get_certificate_public", {
-    p_verify_code: ctx.params.code,
+    p_verify_code: (await ctx.params).code,
   });
 
   if (error || !data) {
@@ -178,7 +179,9 @@ export async function GET(_req: Request, ctx: { params: { code: string } }) {
 
   const headers = new Headers();
   headers.set("Content-Type", "application/pdf");
-  headers.set("Content-Disposition", `inline; filename="certificado-cpg-${ctx.params.code}.pdf"`);
+  const { code } = await ctx.params;
+
+  headers.set("Content-Disposition", `inline; filename="certificado-cpg-${code}.pdf"`);
 
   // @ts-ignore
   return new NextResponse(stream as any, { headers });

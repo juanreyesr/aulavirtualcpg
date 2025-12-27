@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { iso8601DurationToSeconds } from "@/lib/utils";
 
@@ -8,7 +8,7 @@ export const runtime = "nodejs";
  * Uses YouTube Data API v3: videos.list?part=contentDetails&id=VIDEO_ID
  * Reads contentDetails.duration (ISO 8601) and stores it in courses.duration_seconds
  */
-export async function GET(req: Request) {
+export async function GET(req: NextRequest) {
   const url = new URL(req.url);
   const videoId = url.searchParams.get("videoId");
 
@@ -16,7 +16,7 @@ export async function GET(req: Request) {
   const apiKey = process.env.YOUTUBE_API_KEY;
   if (!apiKey) return NextResponse.json({ error: "Falta YOUTUBE_API_KEY en variables de entorno." }, { status: 500 });
 
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data: userData } = await supabase.auth.getUser();
   const user = userData.user;
   if (!user) return NextResponse.json({ error: "No autenticado." }, { status: 401 });

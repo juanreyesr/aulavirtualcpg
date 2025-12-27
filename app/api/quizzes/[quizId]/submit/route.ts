@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import crypto from "crypto";
 import { createClient } from "@/lib/supabase/server";
@@ -13,8 +13,8 @@ const BodySchema = z.object({
   }),
 });
 
-export async function POST(req: Request, ctx: { params: { quizId: string } }) {
-  const supabase = createClient();
+export async function POST(req: NextRequest, ctx: { params: Promise<{ quizId: string }> }) {
+  const supabase = await createClient();
 
   const { data: userData } = await supabase.auth.getUser();
   const user = userData.user;
@@ -27,7 +27,7 @@ export async function POST(req: Request, ctx: { params: { quizId: string } }) {
     return NextResponse.json({ error: e?.message ?? "Datos inválidos." }, { status: 400 });
   }
 
-  const quizId = ctx.params.quizId;
+  const { quizId } = await ctx.params;
 
   const { data: quiz } = await supabase.from("quizzes").select("id,course_id,is_enabled,pass_percent").eq("id", quizId).maybeSingle();
   if (!quiz || !quiz.is_enabled) return NextResponse.json({ error: "Evaluación no disponible." }, { status: 400 });

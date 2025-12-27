@@ -1,5 +1,5 @@
 import React from "react";
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import {
   Document,
@@ -9,6 +9,7 @@ import {
   StyleSheet,
   Image,
   renderToStream,
+  type DocumentProps,
 } from "@react-pdf/renderer";
 import { formatDuration } from "@/lib/utils";
 
@@ -72,7 +73,7 @@ function CertificateDoc(props: {
   authorities?: Authority[] | null;
   logoUrl?: string | null;
   watermarkUrl?: string | null;
-}): React.ReactElement {
+}): React.ReactElement<DocumentProps> {
   const e = React.createElement;
 
   const authorityBlocks =
@@ -142,14 +143,17 @@ function CertificateDoc(props: {
   );
 }
 
-export async function GET(_req: Request, ctx: { params: { attemptId: string } }) {
-  const supabase = createClient();
+export async function GET(
+  _req: NextRequest,
+  ctx: { params: Promise<{ attemptId: string }> }
+) {
+  const supabase = await createClient();
 
   const { data: userData } = await supabase.auth.getUser();
   const user = userData.user;
   if (!user) return NextResponse.json({ error: "No autenticado." }, { status: 401 });
 
-  const attemptId = ctx.params.attemptId;
+  const { attemptId } = await ctx.params;
 
   const { data: attempt } = await supabase
     .from("quiz_attempts")
