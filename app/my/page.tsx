@@ -12,7 +12,7 @@ export default async function MyPage() {
         <div className="rounded-2xl border border-white/10 bg-black/35 p-6">
           <h1 className="text-2xl font-semibold">Mi progreso</h1>
           <p className="mt-2 text-white/70">Debes iniciar sesión para ver tus evaluaciones y certificados.</p>
-          <Link className="mt-4 inline-block rounded-full bg-cpgRed px-5 py-2 text-sm" href="/login">
+          <Link className="mt-4 inline-block rounded-full bg-cpgBlue px-5 py-2 text-sm" href="/login">
             Iniciar sesión
           </Link>
         </div>
@@ -68,7 +68,7 @@ export default async function MyPage() {
                 Ver video
               </Link>
               {a.passed && (
-                <a href={`/api/certificates/${a.id}`} className="rounded-full bg-cpgRed hover:opacity-90 px-4 py-2 text-sm">
+                <a href={`/api/certificates/${a.id}`} className="rounded-full bg-cpgBlue hover:opacity-90 px-4 py-2 text-sm">
                   Descargar certificado
                 </a>
               )}

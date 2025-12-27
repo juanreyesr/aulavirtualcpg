@@ -323,7 +323,7 @@ setCertificates((certs ?? []) as any[]);
                 Orden
                 <input type="number" value={catForm.sort_order} onChange={(e) => setCatForm((p) => ({ ...p, sort_order: Number(e.target.value) }))} className="mt-1 w-full rounded-lg bg-black/50 border border-white/10 px-3 py-2 outline-none focus:border-white/30" />
               </label>
-              <button disabled={busy} onClick={addCategory} className="rounded-full bg-cpgRed px-5 py-2 text-sm hover:opacity-90 disabled:opacity-60">
+              <button disabled={busy} onClick={addCategory} className="rounded-full bg-cpgBlue px-5 py-2 text-sm hover:opacity-90 disabled:opacity-60">
                 Crear categoría
               </button>
             </div>
@@ -379,7 +379,7 @@ setCertificates((certs ?? []) as any[]);
                 <input type="checkbox" checked={courseForm.published} onChange={(e) => setCourseForm((p) => ({ ...p, published: e.target.checked }))} />
                 Publicado (visible al agremiado)
               </label>
-              <button disabled={busy} onClick={addCourse} className="rounded-full bg-cpgRed px-5 py-2 text-sm hover:opacity-90 disabled:opacity-60">
+              <button disabled={busy} onClick={addCourse} className="rounded-full bg-cpgBlue px-5 py-2 text-sm hover:opacity-90 disabled:opacity-60">
                 Crear video/curso
               </button>
               <p className="text-xs text-white/50">
@@ -464,7 +464,7 @@ setCertificates((certs ?? []) as any[]);
 
           {selectedCourseId && !selectedQuiz && (
             <div className="mt-4">
-              <button disabled={busy} onClick={() => ensureQuiz(selectedCourseId)} className="rounded-full bg-cpgRed px-5 py-2 text-sm hover:opacity-90 disabled:opacity-60">
+              <button disabled={busy} onClick={() => ensureQuiz(selectedCourseId)} className="rounded-full bg-cpgBlue px-5 py-2 text-sm hover:opacity-90 disabled:opacity-60">
                 Crear evaluación para este curso
               </button>
             </div>
@@ -494,7 +494,7 @@ setCertificates((certs ?? []) as any[]);
                   <button
                     disabled={busy || questions.length !== 10}
                     onClick={saveQuestions}
-                    className="rounded-full bg-cpgRed hover:opacity-90 px-4 py-2 text-sm disabled:opacity-60"
+                    className="rounded-full bg-cpgBlue hover:opacity-90 px-4 py-2 text-sm disabled:opacity-60"
                   >
                     Guardar preguntas
                   </button>
@@ -703,7 +703,7 @@ setCertificates((certs ?? []) as any[]);
                 setBusy(false);
               }
             }}
-            className="rounded-full bg-cpgRed px-5 py-2 text-sm hover:opacity-90 disabled:opacity-60"
+            className="rounded-full bg-cpgBlue px-5 py-2 text-sm hover:opacity-90 disabled:opacity-60"
           >
             Guardar configuración
           </button>

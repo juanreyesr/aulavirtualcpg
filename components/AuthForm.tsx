@@ -71,7 +71,7 @@ export default function AuthForm() {
 
         <button
           disabled={loading}
-          className="w-full rounded-full bg-cpgRed px-4 py-2 text-sm hover:opacity-90 disabled:opacity-60"
+          className="w-full rounded-full bg-cpgBlue px-4 py-2 text-sm hover:opacity-90 disabled:opacity-60"
         >
           {loading ? "Procesando..." : mode === "signin" ? "Entrar" : "Crear cuenta"}
         </button>

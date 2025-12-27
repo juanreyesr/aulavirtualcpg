@@ -5,7 +5,9 @@ export default {
   theme: {
     extend: {
       colors: {
-        cpgRed: "#e50914",
+        cpgBlue: "#0b3b73",
+        cpgTeal: "#00a0c6",
+        cpgGold: "#f2b538",
         netflixBlack: "#0b0b0f"
       },
       boxShadow: {
