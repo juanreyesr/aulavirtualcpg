@@ -49,7 +49,7 @@ export default function Navbar() {
     <header className="sticky top-0 z-50 backdrop-blur bg-black/40 border-b border-white/10">
       <div className="mx-auto max-w-6xl px-4 py-3 flex items-center gap-4">
         <Link href="/" className="font-semibold tracking-wide text-lg">
-          <span className="text-cpgRed">Aula</span> Virtual CPG
+          <span className="text-cpgGold">Aula</span> Virtual CPG
         </Link>
 
         <nav className="ml-2 hidden sm:flex items-center gap-3 text-sm text-white/80">
@@ -67,7 +67,7 @@ export default function Navbar() {
               </button>
             </>
           ) : (
-            <Link href="/login" className="text-xs px-3 py-2 rounded-full bg-cpgRed hover:opacity-90">
+            <Link href="/login" className="text-xs px-3 py-2 rounded-full bg-cpgBlue hover:opacity-90">
               Iniciar sesión
             </Link>
           )}

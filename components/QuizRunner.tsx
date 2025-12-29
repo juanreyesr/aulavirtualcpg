@@ -115,7 +115,7 @@ export default function QuizRunner({
         <button
           disabled={loading || !allAnswered || !fullName.trim() || !colegiado.trim() || !!result}
           onClick={submit}
-          className="rounded-full bg-cpgRed px-5 py-2 text-sm hover:opacity-90 disabled:opacity-50"
+          className="rounded-full bg-cpgBlue px-5 py-2 text-sm hover:opacity-90 disabled:opacity-50"
         >
           {loading ? "Enviando..." : "Enviar evaluación"}
         </button>

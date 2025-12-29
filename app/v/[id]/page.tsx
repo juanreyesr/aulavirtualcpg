@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { formatDuration } from "@/lib/utils";
 
 export default async function VideoPage({ params }: { params: { id: string } }) {
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data: course } = await supabase
     .from("courses")
     .select("id,title,description,youtube_video_id,youtube_url,cover_image_url,duration_seconds,published")
@@ -83,7 +83,7 @@ export default async function VideoPage({ params }: { params: { id: string } }) 
 
             <div className="mt-4 space-y-2">
               {quiz?.is_enabled ? (
-                <Link href={`/v/${course.id}/quiz`} className="block text-center rounded-full bg-cpgRed px-5 py-2 text-sm hover:opacity-90">
+                <Link href={`/v/${course.id}/quiz`} className="block text-center rounded-full bg-cpgBlue px-5 py-2 text-sm hover:opacity-90">
                   Hacer evaluación
                 </Link>
               ) : (

@@ -3,7 +3,7 @@ import Link from "next/link";
 import { formatDuration } from "@/lib/utils";
 
 export default async function CertificateVerifyPage({ params }: { params: { code: string } }) {
-  const supabase = createClient();
+  const supabase = await createClient();
 
   const { data, error } = await supabase.rpc("get_certificate_public", { p_code: params.code });
 
@@ -54,7 +54,7 @@ export default async function CertificateVerifyPage({ params }: { params: { code
         </div>
 
         <div className="mt-6 flex flex-wrap gap-2">
-          <a href={`/api/public/certificates/${row.verify_code}`} className="rounded-full bg-cpgRed px-5 py-2 text-sm hover:opacity-90">
+          <a href={`/api/public/certificates/${row.verify_code}`} className="rounded-full bg-cpgBlue px-5 py-2 text-sm hover:opacity-90">
             Descargar PDF
           </a>
           <Link href="/" className="rounded-full bg-white/10 hover:bg-white/15 border border-white/10 px-5 py-2 text-sm">
