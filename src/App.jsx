@@ -662,7 +662,7 @@ function CertificateView({ video, userProfile, onBack }) {
             {/* TÍTULO DEL CURSO — centrado debajo de "por su completar el curso virtual..." */}
             <div className="absolute text-center" style={{ top: '478px', left: '53%', transform: 'translateX(-50%)', width: '640px' }}>
               <p style={{
-                fontSize: video.title.length > 60 ? '15px' : video.title.length > 40 ? '17px' : '20px',
+                fontSize: video.title.length > 60 ? '18px' : video.title.length > 40 ? '21px' : '25px',
                 fontWeight: 'bold',
                 color: '#1a1a2e',
                 textTransform: 'uppercase',
@@ -673,22 +673,22 @@ function CertificateView({ video, userProfile, onBack }) {
               </p>
             </div>
 
-            {/* HORAS — entre "Desarrollado en" y "horas de formación" */}
-            <div className="absolute" style={{ top: '557px', left: '358px' }}>
+            {/* HORAS — en la misma línea que "Desarrollado en ... horas" */}
+            <div className="absolute" style={{ top: '540px', left: '390px' }}>
               <p style={{ fontSize: '18px', fontWeight: 'bold', color: '#1a1a2e' }}>
                 {video.duration}
               </p>
             </div>
 
-            {/* FECHA — centrada, encima del área de firmas */}
-            <div className="absolute text-center" style={{ top: '622px', left: '50%', transform: 'translateX(-50%)', width: '400px' }}>
+            {/* FECHA — centrada, subida */}
+            <div className="absolute text-center" style={{ top: '606px', left: '53%', transform: 'translateX(-50%)', width: '400px' }}>
               <p style={{ fontSize: '13px', color: '#333333' }}>
                 {dateFormatted}
               </p>
             </div>
 
-            {/* CÓDIGO — centrado debajo de la fecha */}
-            <div className="absolute text-center" style={{ top: '640px', left: '50%', transform: 'translateX(-50%)', width: '400px' }}>
+            {/* CÓDIGO — centrado debajo de la fecha, subido */}
+            <div className="absolute text-center" style={{ top: '622px', left: '53%', transform: 'translateX(-50%)', width: '400px' }}>
               <p style={{ fontSize: '11px', color: '#555555', fontFamily: "'Courier New', monospace", letterSpacing: '0.5px' }}>
                 {certificateCode}
               </p>
