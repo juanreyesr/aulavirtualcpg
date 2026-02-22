@@ -170,7 +170,7 @@ export default function App() {
   useEffect(() => {
     if (sessionUser) {
       setCompletedVideos(loadCompleted(sessionUser.collegiateNumber));
-      setUserProfile({ name: sessionUser.name, collegiateNumber: sessionUser.collegiateNumber });
+      setUserProfile({ name: sessionUser.name, collegiateNumber: sessionUser.collegiateNumber, status: sessionUser.status });
     }
   }, [sessionUser]);
 
@@ -525,7 +525,7 @@ function QuizModal({ video, onCancel, onPass, sessionUser, userProfile, setUserP
     video.questions.forEach((q, idx) => { if (answers[idx] === q.correctAnswer) correct++; });
     const percentage = Math.round((correct / video.questions.length) * 100);
     setScore(percentage);
-    setUserProfile({ name: editableName, collegiateNumber: sessionUser.collegiateNumber });
+    setUserProfile(prev => ({ ...prev, name: editableName }));
     setStep('result');
   };
 
@@ -595,6 +595,8 @@ function CertificateView({ video, userProfile, onBack }) {
   const currentDate = new Date();
   const fmt = (d) => d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
   const certificateCode = 'CPG-' + fmt(currentDate) + '-' + userProfile.collegiateNumber;
+  const dateFormatted = currentDate.toLocaleDateString('es-GT', { year: 'numeric', month: 'long', day: 'numeric' });
+  const statusText = userProfile.status ? String(userProfile.status).toUpperCase() : '';
 
   const handleDownloadPDF = async () => {
     if (!certRef.current || !imageLoaded) { alert('Espera a que la plantilla del certificado cargue completamente.'); return; }
@@ -620,19 +622,78 @@ function CertificateView({ video, userProfile, onBack }) {
       {!imageLoaded && <div className="text-yellow-400 text-sm flex items-center gap-2"><Loader2 size={16} className="animate-spin" /> Cargando plantilla...</div>}
       <div className="overflow-auto w-full flex justify-center p-4">
         <div ref={certRef} className="relative shadow-2xl" style={{ width: '1056px', height: '816px', fontFamily: "'Georgia', 'Times New Roman', serif" }}>
-          <img src="/certificado-plantilla.png" alt="Plantilla Certificado" className="absolute inset-0 w-full h-full object-cover" crossOrigin="anonymous" onLoad={() => setImageLoaded(true)} onError={(e) => { e.target.style.display = 'none'; setImageLoaded(true); }} />
-          <div className="absolute inset-0">
-            <div className="absolute text-center" style={{ top: '222px', left: '50%', transform: 'translateX(-50%)', width: '650px' }}><p className="font-bold text-[#1a1a2e]" style={{ fontSize: '38px', fontFamily: "'Georgia', serif", letterSpacing: '0.5px' }}>{userProfile.name}</p></div>
-            <div className="absolute" style={{ top: '302px', left: '595px' }}><p className="text-[#1a1a2e] font-semibold" style={{ fontSize: '16px', fontFamily: "'Georgia', serif" }}>{userProfile.collegiateNumber}</p></div>
-            <div className="absolute text-center" style={{ top: '388px', left: '50%', transform: 'translateX(-50%)', width: '750px' }}><p className="font-bold text-[#1a1a2e] uppercase" style={{ fontSize: '24px', fontFamily: "'Georgia', serif", lineHeight: '1.3' }}>{video.title}</p></div>
-            <div className="absolute" style={{ top: '448px', left: '445px' }}><p className="text-[#1a1a2e] font-bold" style={{ fontSize: '18px', fontFamily: "'Georgia', serif" }}>{video.duration}</p></div>
-            <div className="absolute" style={{ top: '565px', left: '50%', transform: 'translateX(-50%)' }}><p className="text-[#333]" style={{ fontSize: '14px', fontFamily: "'Georgia', serif" }}>{currentDate.toLocaleDateString('es-GT', { year: 'numeric', month: 'long', day: 'numeric' })}</p></div>
-            <div className="absolute" style={{ bottom: '95px', right: '50px' }}><p className="text-[#333] font-medium" style={{ fontSize: '11px', fontFamily: "'Courier New', monospace", letterSpacing: '0.5px' }}>{certificateCode}</p></div>
-          </div>
-          <div className="absolute inset-0 flex flex-col items-center justify-between text-black bg-white border-8 border-double border-[#003366] p-8" style={{ display: imageLoaded ? 'none' : 'flex', fontFamily: "'Georgia', 'Times New Roman', serif" }}>
-            <div className="text-center mt-8"><h1 className="text-3xl font-bold text-[#003366] uppercase tracking-wider">Colegio de Psicólogos de Guatemala</h1><p className="text-lg italic text-gray-600 mt-6">Por medio del presente hace constar que:</p></div>
-            <div className="text-center flex-1 flex flex-col justify-center gap-4"><h2 className="text-4xl font-bold text-[#003366] border-b-2 border-[#d4af37] pb-2 px-8">{userProfile.name}</h2><p className="text-lg">Número de Colegiado: <strong>{userProfile.collegiateNumber}</strong></p><p className="text-lg mt-4">Ha completado y aprobado satisfactoriamente el curso virtual:</p><h3 className="text-2xl font-bold uppercase">"{video.title}"</h3><p className="text-lg">Acreditando <strong className="text-[#003366]">{video.duration} horas</strong> de formación continua.</p></div>
-            <div className="text-center mb-8"><div className="w-64 border-b border-black mb-2 mx-auto" /><p className="text-sm">Comisión de Acreditación y Educación Continua</p><p className="text-sm text-gray-600">Evaluación Aprobada: {currentDate.toLocaleDateString('es-GT')}</p><p className="text-xs text-gray-500 mt-2">{certificateCode}</p></div>
+
+          {/* Plantilla de fondo */}
+          <img
+            src="/certificado-plantilla1.png"
+            alt="Plantilla Certificado"
+            className="absolute inset-0 w-full h-full object-fill"
+            crossOrigin="anonymous"
+            onLoad={() => setImageLoaded(true)}
+            onError={(e) => { e.target.style.display = 'none'; setImageLoaded(true); }}
+          />
+
+          {/* ── CAMPOS DINÁMICOS ── */}
+          <div className="absolute inset-0" style={{ fontFamily: "'Georgia', 'Times New Roman', serif" }}>
+
+            {/* NOMBRE — espacio después de "Otorgan el presente diploma a:" */}
+            <div className="absolute text-center" style={{ top: '315px', left: '50%', transform: 'translateX(-50%)', width: '680px' }}>
+              <p style={{ fontSize: '22px', fontWeight: 'bold', color: '#1a1a2e', letterSpacing: '0.3px', lineHeight: '1.2' }}>
+                {userProfile.name}
+              </p>
+            </div>
+
+            {/* ESTADO (Activo/Inactivo) — entre "Con colegiado" y "número:" */}
+            {statusText && (
+              <div className="absolute" style={{ top: '402px', left: '288px' }}>
+                <p style={{ fontSize: '15px', fontWeight: 'bold', color: statusText === 'ACTIVO' ? '#166534' : '#991b1b', letterSpacing: '0.5px' }}>
+                  {statusText}
+                </p>
+              </div>
+            )}
+
+            {/* NÚMERO DE COLEGIADO — después de "número:" */}
+            <div className="absolute" style={{ top: '399px', left: '690px' }}>
+              <p style={{ fontSize: '17px', fontWeight: 'bold', color: '#1a1a2e' }}>
+                {userProfile.collegiateNumber}
+              </p>
+            </div>
+
+            {/* TÍTULO DEL CURSO — espacio debajo de "por su completar el curso virtual..." */}
+            <div className="absolute text-center" style={{ top: '478px', left: '50%', transform: 'translateX(-50%)', width: '740px' }}>
+              <p style={{
+                fontSize: video.title.length > 60 ? '15px' : video.title.length > 40 ? '17px' : '20px',
+                fontWeight: 'bold',
+                color: '#1a1a2e',
+                textTransform: 'uppercase',
+                lineHeight: '1.35',
+                wordBreak: 'break-word',
+              }}>
+                {video.title}
+              </p>
+            </div>
+
+            {/* HORAS — entre "Desarrollado en" y "horas de formación" */}
+            <div className="absolute" style={{ top: '572px', left: '280px' }}>
+              <p style={{ fontSize: '18px', fontWeight: 'bold', color: '#1a1a2e' }}>
+                {video.duration}
+              </p>
+            </div>
+
+            {/* FECHA — centrada debajo de "Etica-Crecimiento-Desarrollo" */}
+            <div className="absolute text-center" style={{ top: '648px', left: '50%', transform: 'translateX(-50%)', width: '400px' }}>
+              <p style={{ fontSize: '13px', color: '#333333' }}>
+                {dateFormatted}
+              </p>
+            </div>
+
+            {/* CÓDIGO — centrado debajo de la fecha */}
+            <div className="absolute text-center" style={{ top: '668px', left: '50%', transform: 'translateX(-50%)', width: '400px' }}>
+              <p style={{ fontSize: '11px', color: '#555555', fontFamily: "'Courier New', monospace", letterSpacing: '0.5px' }}>
+                {certificateCode}
+              </p>
+            </div>
+
           </div>
         </div>
       </div>
