@@ -636,9 +636,9 @@ function CertificateView({ video, userProfile, onBack }) {
           {/* ── CAMPOS DINÁMICOS ── */}
           <div className="absolute inset-0" style={{ fontFamily: "'Georgia', 'Times New Roman', serif" }}>
 
-            {/* NOMBRE — espacio después de "Otorgan el presente diploma a:" */}
-            <div className="absolute text-center" style={{ top: '315px', left: '50%', transform: 'translateX(-50%)', width: '680px' }}>
-              <p style={{ fontSize: '22px', fontWeight: 'bold', color: '#1a1a2e', letterSpacing: '0.3px', lineHeight: '1.2' }}>
+            {/* NOMBRE — centrado, más grande que el curso */}
+            <div className="absolute text-center" style={{ top: '315px', left: '53%', transform: 'translateX(-50%)', width: '580px' }}>
+              <p style={{ fontSize: '34px', fontWeight: 'bold', color: '#1a1a2e', letterSpacing: '0.3px', lineHeight: '1.2' }}>
                 {userProfile.name}
               </p>
             </div>
@@ -659,8 +659,8 @@ function CertificateView({ video, userProfile, onBack }) {
               </p>
             </div>
 
-            {/* TÍTULO DEL CURSO — espacio debajo de "por su completar el curso virtual..." */}
-            <div className="absolute text-center" style={{ top: '478px', left: '50%', transform: 'translateX(-50%)', width: '740px' }}>
+            {/* TÍTULO DEL CURSO — centrado debajo de "por su completar el curso virtual..." */}
+            <div className="absolute text-center" style={{ top: '478px', left: '53%', transform: 'translateX(-50%)', width: '640px' }}>
               <p style={{
                 fontSize: video.title.length > 60 ? '15px' : video.title.length > 40 ? '17px' : '20px',
                 fontWeight: 'bold',
