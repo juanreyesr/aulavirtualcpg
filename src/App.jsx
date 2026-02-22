@@ -207,14 +207,30 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#141414] text-white font-sans selection:bg-blue-600 selection:text-white overflow-x-hidden">
+      {/* ── NAVBAR ── */}
       <nav className="fixed top-0 w-full z-50 bg-[#0e0e0e] border-b border-gray-800 px-4 py-3 flex justify-between items-center shadow-lg">
+
+        {/* Lado izquierdo: logo CPG + texto + logo CAEDUC */}
         <div className="flex items-center gap-3 cursor-pointer" onClick={() => setView('home')}>
-          <img src="/logo-cpg-grande.png" alt="Logo CPG" className="w-11 h-11 object-contain filter drop-shadow-lg" onError={(e) => { e.target.style.display = 'none'; }} />
+          <img
+            src="/logo-cpg-grande.png"
+            alt="Logo CPG"
+            className="w-11 h-11 object-contain filter drop-shadow-lg"
+            onError={(e) => { e.target.style.display = 'none'; }}
+          />
           <div className="hidden md:block">
             <h1 className="text-base font-bold leading-tight text-gray-100">Colegio de Psicólogos de Guatemala</h1>
             <p className="text-xs text-blue-400 tracking-widest uppercase">Aula Virtual</p>
           </div>
+          <img
+            src="/logo-caeduc.png"
+            alt="Logo CAEDUC"
+            className="w-11 h-11 object-contain filter drop-shadow-lg"
+            onError={(e) => { e.target.style.display = 'none'; }}
+          />
         </div>
+
+        {/* Lado derecho: links + usuario + admin */}
         <div className="flex items-center gap-2 md:gap-3">
           {view !== 'home' && <button onClick={() => setView('home')} className="text-sm hover:text-blue-400 transition-colors">Inicio</button>}
           <a href="https://gestionescaeduc.vercel.app/" target="_blank" rel="noreferrer" className="hidden md:flex items-center gap-1 text-xs text-gray-300 hover:text-white border border-gray-600 px-3 py-1.5 rounded-full hover:bg-gray-800 transition"><ExternalLink size={12} /> Avales CAEDUC</a>
@@ -241,10 +257,25 @@ export default function App() {
         {view === 'certificate' && manualCertificate && <div className="min-h-screen bg-[#141414] pt-20 px-4 md:px-16 pb-12"><CertificateView video={manualCertificate.video} userProfile={manualCertificate.profile} onBack={handleCloseManualCertificate} /></div>}
       </div>
 
+      {/* ── FOOTER ── */}
       <footer className="py-12 px-10 bg-black/80 text-gray-500 text-sm border-t border-gray-800 mt-10">
         <div className="max-w-6xl mx-auto flex flex-col md:flex-row justify-between items-center gap-6">
           <div className="text-center md:text-left">
-            <img src="/logo-cpg-grande.png" alt="Logo CPG" className="w-14 h-14 object-contain filter drop-shadow-lg" onError={(e) => { e.target.style.display = 'none'; }} />
+            {/* Logos en el pie de página */}
+            <div className="flex items-center justify-center md:justify-start gap-4 mb-4">
+              <img
+                src="/logo-cpg-grande.png"
+                alt="Logo CPG"
+                className="w-14 h-14 object-contain filter drop-shadow-lg"
+                onError={(e) => { e.target.style.display = 'none'; }}
+              />
+              <img
+                src="/logo-caeduc.png"
+                alt="Logo CAEDUC"
+                className="w-14 h-14 object-contain filter drop-shadow-lg"
+                onError={(e) => { e.target.style.display = 'none'; }}
+              />
+            </div>
             <h3 className="text-white font-serif font-bold mb-2">Colegio de Psicólogos de Guatemala</h3>
             <p>Formación continua y excelencia profesional.</p>
           </div>
