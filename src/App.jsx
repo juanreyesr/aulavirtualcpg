@@ -122,12 +122,29 @@ export default function App() {
   const [completedVideos, setCompletedVideos] = useState(new Set());
   const [view, setView] = useState('home');
   const [videos, setVideos] = useState([]);
+  const [viewCounts, setViewCounts] = useState({}); // { [videoId]: count }
+  const [totalViews, setTotalViews] = useState(0);
   const [selectedVideo, setSelectedVideo] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [manualCertificate, setManualCertificate] = useState(null);
   const [authError, setAuthError] = useState('');
   const [activities, setActivities] = useState([]);
   const [userProfile, setUserProfile] = useState({ name: '', collegiateNumber: '' });
+
+  // Carga conteos de vistas desde tabla dedicada
+  const loadViewCounts = async () => {
+    if (!supabase) return;
+    try {
+      const { data } = await supabase.from('cpg_video_views').select('video_id, view_count');
+      if (data) {
+        const counts = {};
+        let total = 0;
+        data.forEach(row => { counts[row.video_id] = row.view_count; total += row.view_count; });
+        setViewCounts(counts);
+        setTotalViews(total);
+      }
+    } catch {}
+  };
 
   useEffect(() => {
     const loadContent = async () => {
@@ -137,7 +154,7 @@ export default function App() {
           if (!error) {
             if (data?.videos?.length) { setVideos(data.videos); localStorage.setItem('cpg_videos', JSON.stringify(data.videos)); }
             if (data?.activities?.length) { setActivities(data.activities); localStorage.setItem('cpg_activities', JSON.stringify(data.activities)); }
-            if (data?.videos?.length || data?.activities?.length) return;
+            if (data?.videos?.length || data?.activities?.length) { await loadViewCounts(); return; }
           }
         } catch {}
       }
@@ -145,6 +162,7 @@ export default function App() {
       const sa = localStorage.getItem('cpg_activities');
       setVideos(sv ? JSON.parse(sv) : INITIAL_VIDEOS);
       if (sa) setActivities(JSON.parse(sa));
+      await loadViewCounts();
     };
     loadContent();
   }, []);
@@ -170,8 +188,13 @@ export default function App() {
   const persistActivities = (na) => persistContent({ nextActivities: na });
 
   const incrementViewCount = async (videoId) => {
-    const updated = videos.map(v => v.id === videoId ? { ...v, viewCount: (v.viewCount || 0) + 1 } : v);
-    await persistVideos(updated);
+    if (!supabase) return;
+    try {
+      const { data } = await supabase.rpc('increment_video_view', { p_video_id: videoId });
+      const newCount = data || 0;
+      setViewCounts(prev => ({ ...prev, [videoId]: newCount }));
+      setTotalViews(prev => prev + 1);
+    } catch {}
   };
 
   const markVideoCompleted = (videoId) => {
@@ -250,10 +273,10 @@ export default function App() {
       </nav>
 
       <div className="pt-0">
-        {view === 'home' && <HomeView videos={videos} recentVideos={recentVideos} categories={categories} upcomingVideos={upcomingVideos} activities={activities} completedVideos={completedVideos} onVideoSelect={(v) => { if (!isVideoPublished(v)) return; setSelectedVideo(v); incrementViewCount(v.id); setView('player'); }} />}
-        {view === 'player' && selectedVideo && <PlayerView video={selectedVideo} onBack={() => setView('home')} sessionUser={sessionUser} userProfile={userProfile} setUserProfile={setUserProfile} isCompleted={completedVideos.has(selectedVideo.id)} onMarkCompleted={() => markVideoCompleted(selectedVideo.id)} />}
+        {view === 'home' && <HomeView videos={videos} viewCounts={viewCounts} totalViews={totalViews} recentVideos={recentVideos} categories={categories} upcomingVideos={upcomingVideos} activities={activities} completedVideos={completedVideos} onVideoSelect={(v) => { if (!isVideoPublished(v)) return; setSelectedVideo(v); incrementViewCount(v.id); setView('player'); }} />}
+        {view === 'player' && selectedVideo && <PlayerView video={selectedVideo} viewCounts={viewCounts} onBack={() => setView('home')} sessionUser={sessionUser} userProfile={userProfile} setUserProfile={setUserProfile} isCompleted={completedVideos.has(selectedVideo.id)} onMarkCompleted={() => markVideoCompleted(selectedVideo.id)} />}
         {view === 'login' && <LoginView onLogin={handleLogin} onBack={() => setView('home')} authError={authError} />}
-        {view === 'admin' && isAdmin && <AdminDashboard videos={videos} activities={activities} onVideosChange={persistVideos} onActivitiesChange={persistActivities} onGenerateCertificate={handleManualCertificate} />}
+        {view === 'admin' && isAdmin && <AdminDashboard videos={videos} viewCounts={viewCounts} totalViews={totalViews} activities={activities} onVideosChange={persistVideos} onActivitiesChange={persistActivities} onGenerateCertificate={handleManualCertificate} />}
         {view === 'certificate' && manualCertificate && <div className="min-h-screen bg-[#141414] pt-20 px-4 md:px-16 pb-12"><CertificateView video={manualCertificate.video} userProfile={manualCertificate.profile} onBack={handleCloseManualCertificate} /></div>}
       </div>
 
@@ -291,7 +314,7 @@ export default function App() {
   );
 }
 
-function HomeView({ videos, recentVideos, categories, upcomingVideos, activities, completedVideos, onVideoSelect }) {
+function HomeView({ videos, viewCounts, totalViews, recentVideos, categories, upcomingVideos, activities, completedVideos, onVideoSelect }) {
   const heroVideo = recentVideos[0];
   const [activeCategory, setActiveCategory] = useState(null);
   const [showCalendar, setShowCalendar] = useState(false);
@@ -373,9 +396,16 @@ function HomeView({ videos, recentVideos, categories, upcomingVideos, activities
 
       {!activeCategory && (
         <div className="pl-8 md:pl-16 mt-8 md:mt-10">
-          <h2 className="text-xl md:text-2xl font-bold mb-4 text-white">Recién Añadidos</h2>
+          <div className="flex items-center gap-3 mb-4">
+            <h2 className="text-xl md:text-2xl font-bold text-white">Recién Añadidos</h2>
+            {totalViews > 0 && (
+              <span className="flex items-center gap-1.5 bg-blue-900/30 border border-blue-800 text-blue-300 text-xs font-semibold px-3 py-1 rounded-full">
+                <Eye size={12} /> {totalViews.toLocaleString()} {totalViews === 1 ? 'reproducción total' : 'reproducciones totales'}
+              </span>
+            )}
+          </div>
           <div className="flex gap-4 overflow-x-auto pb-8 pr-8 scrollbar-hide snap-x">
-            {recentVideos.map(v => <VideoCard key={v.id} video={v} onClick={() => onVideoSelect(v)} isPublished={isVideoPublished(v)} isCompleted={completedVideos.has(v.id)} />)}
+            {recentVideos.map(v => <VideoCard key={v.id} video={v} viewCount={viewCounts[v.id] || 0} onClick={() => onVideoSelect(v)} isPublished={isVideoPublished(v)} isCompleted={completedVideos.has(v.id)} />)}
           </div>
         </div>
       )}
@@ -383,7 +413,7 @@ function HomeView({ videos, recentVideos, categories, upcomingVideos, activities
         <div className="pl-8 md:pl-16 mt-8">
           <h2 className="text-xl md:text-2xl font-bold mb-4 text-white">Próximamente</h2>
           <div className="flex gap-4 overflow-x-auto pb-8 pr-8 scrollbar-hide snap-x">
-            {upcomingVideos.map(v => <VideoCard key={v.id} video={v} onClick={() => onVideoSelect(v)} isPublished={false} isCompleted={false} />)}
+            {upcomingVideos.map(v => <VideoCard key={v.id} video={v} viewCount={viewCounts[v.id] || 0} onClick={() => onVideoSelect(v)} isPublished={false} isCompleted={false} />)}
           </div>
         </div>
       )}
@@ -399,7 +429,7 @@ function HomeView({ videos, recentVideos, categories, upcomingVideos, activities
         <div key={category} className="pl-8 md:pl-16 mt-4">
           {!activeCategory && <h2 className="text-lg md:text-xl font-bold mb-4 text-gray-200 hover:text-blue-400 cursor-pointer transition" onClick={() => setActiveCategory(category)}>{category}</h2>}
           <div className="flex gap-4 overflow-x-auto pb-4 pr-8 scrollbar-hide snap-x">
-            {videos.filter(v => v.category === category).map(v => <VideoCard key={v.id} video={v} onClick={() => onVideoSelect(v)} isSmall={!activeCategory} isPublished={isVideoPublished(v)} isCompleted={completedVideos.has(v.id)} />)}
+            {videos.filter(v => v.category === category).map(v => <VideoCard key={v.id} video={v} viewCount={viewCounts[v.id] || 0} onClick={() => onVideoSelect(v)} isSmall={!activeCategory} isPublished={isVideoPublished(v)} isCompleted={completedVideos.has(v.id)} />)}
           </div>
         </div>
       ))}
@@ -407,7 +437,7 @@ function HomeView({ videos, recentVideos, categories, upcomingVideos, activities
   );
 }
 
-function VideoCard({ video, onClick, isSmall, isPublished, isCompleted }) {
+function VideoCard({ video, viewCount = 0, onClick, isSmall, isPublished, isCompleted }) {
   const scheduledLabel = !isPublished ? formatScheduleDate(video.scheduledAt) : null;
   return (
     <div onClick={isPublished ? onClick : undefined} className={'relative flex-shrink-0 bg-gray-900 rounded-md overflow-hidden transition-all duration-300 transform hover:scale-105 hover:z-50 hover:shadow-2xl hover:shadow-blue-900/40 group flex flex-col ' + (isSmall ? 'w-56' : 'w-72') + ' ' + (isPublished ? 'cursor-pointer' : 'cursor-not-allowed opacity-80')}>
@@ -415,7 +445,7 @@ function VideoCard({ video, onClick, isSmall, isPublished, isCompleted }) {
         <img src={getVideoThumbnail(video)} alt={video.title} className="w-full h-full object-cover" onError={(e) => { const t = e.currentTarget; const s = t.dataset.fallbackStage || 'hqdefault'; if (s === 'hqdefault') { t.dataset.fallbackStage = 'mqdefault'; t.src = getYouTubeThumbnail(video.youtubeId, 'mqdefault'); return; } t.src = getYouTubeThumbnail(''); }} />
         <div className="absolute inset-0 bg-black/30 group-hover:bg-transparent transition-all" />
         {isCompleted && <div className="absolute top-2 right-2 bg-green-500 rounded-full p-1 shadow-lg"><CheckCircle size={14} className="text-white" fill="white" /></div>}
-        {isPublished && <div className="absolute top-2 left-2 bg-black/70 px-2 py-0.5 text-xs rounded text-white flex items-center gap-1"><Eye size={11} /> {video.viewCount || 0}</div>}
+        {isPublished && <div className="absolute top-2 left-2 bg-black/70 px-2 py-0.5 text-xs rounded text-white flex items-center gap-1"><Eye size={11} /> {viewCount}</div>}
         {isPublished && <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"><div className="bg-white/20 backdrop-blur-sm rounded-full p-3"><Play fill="white" size={20} className="text-white" /></div></div>}
         {!isPublished && <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/70 text-center px-4"><span className="text-yellow-400 font-bold text-xs uppercase tracking-widest">Próximamente</span>{scheduledLabel && <span className="text-xs text-gray-200 mt-1">Disponible el {scheduledLabel}</span>}</div>}
       </div>
@@ -432,9 +462,10 @@ function VideoCard({ video, onClick, isSmall, isPublished, isCompleted }) {
   );
 }
 
-function PlayerView({ video, onBack, sessionUser, userProfile, setUserProfile, isCompleted, onMarkCompleted }) {
+function PlayerView({ video, viewCounts, onBack, sessionUser, userProfile, setUserProfile, isCompleted, onMarkCompleted }) {
   const [showQuiz, setShowQuiz] = useState(false);
   const [showCert, setShowCert] = useState(false);
+  const viewCount = viewCounts[video.id] || 0;
   return (
     <div className="min-h-screen bg-[#141414] pt-20 px-4 md:px-16 pb-12">
       <button onClick={onBack} className="flex items-center gap-2 text-gray-400 hover:text-white mb-6 transition"><ChevronLeft /> Regresar</button>
@@ -463,7 +494,7 @@ function PlayerView({ video, onBack, sessionUser, userProfile, setUserProfile, i
               <div className="flex flex-wrap gap-3 text-sm text-gray-400 mb-4">
                 <span className="bg-blue-900/40 text-blue-300 px-2 py-1 rounded border border-blue-900">{video.category}</span>
                 <span className="bg-gray-800 px-2 py-1 rounded border border-gray-700">{video.duration} Horas Acreditadas</span>
-                <span className="bg-gray-800 px-2 py-1 rounded border border-gray-700 flex items-center gap-1"><Eye size={14} /> {video.viewCount || 0} visitas</span>
+                <span className="bg-gray-800 px-2 py-1 rounded border border-gray-700 flex items-center gap-1"><Eye size={14} /> {viewCount} visitas</span>
               </div>
               <p className="text-gray-300 leading-relaxed text-sm md:text-base">{video.description}</p>
             </div>
@@ -644,7 +675,7 @@ function QuestionEditor({ question, idx, onQuestionChange }) {
   );
 }
 
-function AdminDashboard({ videos, activities, onVideosChange, onActivitiesChange, onGenerateCertificate }) {
+function AdminDashboard({ videos, viewCounts, totalViews, activities, onVideosChange, onActivitiesChange, onGenerateCertificate }) {
   const [editingVideo, setEditingVideo] = useState(null);
   const [manualCertVideo, setManualCertVideo] = useState(null);
   const [manualProfile, setManualProfile] = useState({ name: '', collegiateNumber: '' });
@@ -657,7 +688,6 @@ function AdminDashboard({ videos, activities, onVideosChange, onActivitiesChange
   const [formData, setFormData] = useState({ title: '', category: '', youtubeId: '', duration: '', description: '', thumbnail: '', scheduledAt: '', quizEnabled: false });
   const [questions, setQuestions] = useState([]);
   const [activityForm, setActivityForm] = useState({ title: '', organizer: '', date: '', time: '', location: '', registrationLink: '', meetingLink: '', isFull: false });
-  const totalViews = videos.reduce((s, v) => s + (v.viewCount || 0), 0);
 
   const handleEdit = (video) => { setSaveError(''); setEditingVideo(video); setFormData({ ...video, scheduledAt: video.scheduledAt || '', thumbnail: video.thumbnail || '' }); setQuestions((video.questions || []).map(q => ({ ...q, options: [...(q.options || [])] }))); };
   const handleCreate = () => { setSaveError(''); const e = { id: Date.now(), title: '', category: '', youtubeId: '', duration: '', description: '', thumbnail: '', scheduledAt: '', quizEnabled: false, viewCount: 0 }; setEditingVideo(e); setFormData(e); setQuestions(Array(10).fill(null).map((_, i) => ({ question: 'Pregunta ' + (i+1), options: ['Opción 1', 'Opción 2', 'Opción 3'], correctAnswer: 0 }))); };
@@ -768,7 +798,7 @@ function AdminDashboard({ videos, activities, onVideosChange, onActivitiesChange
             <div className="h-40 relative">
               <img src={getVideoThumbnail(video)} className="w-full h-full object-cover" alt="" onError={(e) => { const t = e.currentTarget; const s = t.dataset.fallbackStage || 'hqdefault'; if (s === 'hqdefault') { t.dataset.fallbackStage = 'mqdefault'; t.src = getYouTubeThumbnail(video.youtubeId, 'mqdefault'); return; } t.src = getYouTubeThumbnail(''); }} />
               <div className="absolute top-2 right-2 bg-black/70 px-2 py-1 text-xs rounded text-white">ID: {video.id}</div>
-              <div className="absolute top-2 left-2 bg-green-600/90 px-2 py-1 text-xs rounded text-white flex items-center gap-1"><Eye size={12} /> {video.viewCount || 0} visitas</div>
+              <div className="absolute top-2 left-2 bg-green-600/90 px-2 py-1 text-xs rounded text-white flex items-center gap-1"><Eye size={12} /> {viewCounts[video.id] || 0} visitas</div>
             </div>
             <div className="p-4 flex-1"><h3 className="font-bold text-lg mb-1">{video.title}</h3><p className="text-sm text-gray-400 mb-2">{video.category}</p><div className="flex items-center gap-2 text-xs mb-4 flex-wrap">{video.quizEnabled ? <span className="text-green-400 border border-green-400/30 px-2 py-0.5 rounded">Evaluación Activa</span> : <span className="text-gray-500">Sin Evaluación</span>}{!isVideoPublished(video) && <span className="text-yellow-400 border border-yellow-400/30 px-2 py-0.5 rounded">Programado {formatScheduleDate(video.scheduledAt)}</span>}</div></div>
             <div className="p-4 border-t border-gray-800 flex gap-2">
