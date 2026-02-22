@@ -645,15 +645,15 @@ function CertificateView({ video, userProfile, onBack }) {
 
             {/* ESTADO (Activo/Inactivo) — entre "Con colegiado" y "número:" */}
             {statusText && (
-              <div className="absolute" style={{ top: '402px', left: '288px' }}>
+              <div className="absolute" style={{ top: '403px', left: '370px' }}>
                 <p style={{ fontSize: '15px', fontWeight: 'bold', color: statusText === 'ACTIVO' ? '#166534' : '#991b1b', letterSpacing: '0.5px' }}>
                   {statusText}
                 </p>
               </div>
             )}
 
-            {/* NÚMERO DE COLEGIADO — después de "número:" */}
-            <div className="absolute" style={{ top: '399px', left: '690px' }}>
+            {/* NÚMERO DE COLEGIADO — inmediatamente después de "número:" */}
+            <div className="absolute" style={{ top: '403px', left: '790px' }}>
               <p style={{ fontSize: '17px', fontWeight: 'bold', color: '#1a1a2e' }}>
                 {userProfile.collegiateNumber}
               </p>
@@ -674,21 +674,21 @@ function CertificateView({ video, userProfile, onBack }) {
             </div>
 
             {/* HORAS — entre "Desarrollado en" y "horas de formación" */}
-            <div className="absolute" style={{ top: '572px', left: '280px' }}>
+            <div className="absolute" style={{ top: '568px', left: '430px' }}>
               <p style={{ fontSize: '18px', fontWeight: 'bold', color: '#1a1a2e' }}>
                 {video.duration}
               </p>
             </div>
 
             {/* FECHA — centrada debajo de "Etica-Crecimiento-Desarrollo" */}
-            <div className="absolute text-center" style={{ top: '648px', left: '50%', transform: 'translateX(-50%)', width: '400px' }}>
+            <div className="absolute text-center" style={{ top: '628px', left: '50%', transform: 'translateX(-50%)', width: '400px' }}>
               <p style={{ fontSize: '13px', color: '#333333' }}>
                 {dateFormatted}
               </p>
             </div>
 
             {/* CÓDIGO — centrado debajo de la fecha */}
-            <div className="absolute text-center" style={{ top: '668px', left: '50%', transform: 'translateX(-50%)', width: '400px' }}>
+            <div className="absolute text-center" style={{ top: '646px', left: '50%', transform: 'translateX(-50%)', width: '400px' }}>
               <p style={{ fontSize: '11px', color: '#555555', fontFamily: "'Courier New', monospace", letterSpacing: '0.5px' }}>
                 {certificateCode}
               </p>
