@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Play, CheckCircle, XCircle, LogOut, Plus, Trash2, Award,
   ChevronLeft, ChevronDown, Lock, ExternalLink, X, CalendarDays, Eye,
-  Download, Loader2, UserCheck, UserX, Edit2, Users
+  Download, Loader2, UserCheck, UserX, Edit2, Users, Radio, Wifi, Video
 } from 'lucide-react';
 import { supabase } from './supabaseClient';
 import html2canvas from 'html2canvas';
@@ -146,15 +146,46 @@ export default function App() {
     } catch {}
   };
 
+  const [liveSession, setLiveSession] = useState(null);
+
+  const loadLiveSession = async () => {
+    if (!supabase) return;
+    try {
+      const { data } = await supabase.from('cpg_live_session').select('*').eq('id', 1).single();
+      if (data) setLiveSession(data);
+    } catch {}
+  };
+
+  const saveLiveSession = async (updates) => {
+    const next = { ...liveSession, ...updates, updated_at: new Date().toISOString() };
+    setLiveSession(next);
+    if (!supabase) return;
+    await supabase.from('cpg_live_session').upsert({ id: 1, ...next }, { onConflict: 'id' });
+  };
+
+  const registerAttendance = async () => {
+    if (!supabase || !sessionUser || sessionUser.isGuest || !liveSession?.active) return;
+    try {
+      await supabase.from('cpg_live_attendance').insert({
+        collegiate_number: sessionUser.collegiateNumber,
+        name: sessionUser.name,
+        platform: liveSession.platform,
+        session_title: liveSession.title,
+      });
+    } catch {}
+  };
+
   useEffect(() => {
-    const loadContent = async () => {
+    const interval = setInterval(loadLiveSession, 30000);
+    return () => clearInterval(interval);
+  }, []);
       if (supabase) {
         try {
           const { data, error } = await supabase.from('cpg_content').select('videos, activities').eq('id', 1).single();
           if (!error) {
             if (data?.videos?.length) { setVideos(data.videos); localStorage.setItem('cpg_videos', JSON.stringify(data.videos)); }
             if (data?.activities?.length) { setActivities(data.activities); localStorage.setItem('cpg_activities', JSON.stringify(data.activities)); }
-            if (data?.videos?.length || data?.activities?.length) { await loadViewCounts(); return; }
+            if (data?.videos?.length || data?.activities?.length) { await loadViewCounts(); await loadLiveSession(); return; }
           }
         } catch {}
       }
@@ -163,6 +194,7 @@ export default function App() {
       setVideos(sv ? JSON.parse(sv) : INITIAL_VIDEOS);
       if (sa) setActivities(JSON.parse(sa));
       await loadViewCounts();
+      await loadLiveSession();
     };
     loadContent();
   }, []);
@@ -259,9 +291,18 @@ export default function App() {
           )}
         </div>
 
-        {/* Lado derecho: links + usuario + admin */}
+        {/* Lado derecho: links + EN VIVO + usuario + admin */}
         <div className="flex items-center gap-2 md:gap-3">
           {view !== 'home' && <button onClick={() => setView('home')} className="text-sm hover:text-blue-400 transition-colors">Inicio</button>}
+          {liveSession?.active && (
+            <button
+              onClick={() => setView('live')}
+              className="flex items-center gap-1.5 bg-red-600 hover:bg-red-500 text-white text-xs font-bold px-3 py-1.5 rounded-full shadow-lg shadow-red-900/40 transition animate-pulse"
+            >
+              <Radio size={12} />
+              EN VIVO
+            </button>
+          )}
           <a href="https://gestionescaeduc.vercel.app/" target="_blank" rel="noreferrer" className="hidden md:flex items-center gap-1 text-xs text-gray-300 hover:text-white border border-gray-600 px-3 py-1.5 rounded-full hover:bg-gray-800 transition"><ExternalLink size={12} /> Avales CAEDUC</a>
           <a href="https://caeducgt.org/" target="_blank" rel="noreferrer" className="hidden md:flex items-center gap-1 text-xs text-gray-300 hover:text-white border border-gray-600 px-3 py-1.5 rounded-full hover:bg-gray-800 transition"><ExternalLink size={12} /> Créditos Académicos</a>
           <a href="https://colegiodepsicologos.org.gt" target="_blank" rel="noreferrer" className="hidden md:flex items-center gap-1 text-xs text-gray-300 hover:text-white border border-gray-600 px-3 py-1.5 rounded-full hover:bg-gray-800 transition"><ExternalLink size={12} /> Sitio Oficial</a>
@@ -279,10 +320,27 @@ export default function App() {
       </nav>
 
       <div className="pt-0">
+        {/* Banner EN VIVO en home */}
+        {view === 'home' && liveSession?.active && (
+          <div className="fixed bottom-6 right-6 z-40">
+            <button
+              onClick={() => setView('live')}
+              className="flex items-center gap-3 bg-red-600 hover:bg-red-500 text-white font-bold px-5 py-3 rounded-2xl shadow-2xl shadow-red-900/50 transition"
+            >
+              <span className="relative flex h-3 w-3">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-3 w-3 bg-white"></span>
+              </span>
+              <span>¡Sesión en vivo activa!</span>
+              <span className="text-sm font-normal opacity-80">{liveSession.title}</span>
+            </button>
+          </div>
+        )}
         {view === 'home' && <HomeView videos={videos} viewCounts={viewCounts} recentVideos={recentVideos} categories={categories} upcomingVideos={upcomingVideos} activities={activities} completedVideos={completedVideos} onVideoSelect={(v) => { if (!isVideoPublished(v)) return; setSelectedVideo(v); incrementViewCount(v.id); setView('player'); }} />}
+        {view === 'live' && <LiveSessionView session={liveSession} onBack={() => setView('home')} sessionUser={sessionUser} onRegisterAttendance={registerAttendance} />}
         {view === 'player' && selectedVideo && <PlayerView video={selectedVideo} viewCounts={viewCounts} onBack={() => setView('home')} sessionUser={sessionUser} userProfile={userProfile} setUserProfile={setUserProfile} isCompleted={completedVideos.has(selectedVideo.id)} onMarkCompleted={() => markVideoCompleted(selectedVideo.id)} />}
         {view === 'login' && <LoginView onLogin={handleLogin} onBack={() => setView('home')} authError={authError} />}
-        {view === 'admin' && isAdmin && <AdminDashboard videos={videos} viewCounts={viewCounts} totalViews={totalViews} activities={activities} onVideosChange={persistVideos} onActivitiesChange={persistActivities} onGenerateCertificate={handleManualCertificate} />}
+        {view === 'admin' && isAdmin && <AdminDashboard videos={videos} viewCounts={viewCounts} totalViews={totalViews} activities={activities} liveSession={liveSession} onSaveLiveSession={saveLiveSession} onVideosChange={persistVideos} onActivitiesChange={persistActivities} onGenerateCertificate={handleManualCertificate} />}
         {view === 'certificate' && manualCertificate && <div className="min-h-screen bg-[#141414] pt-20 px-4 md:px-16 pb-12"><CertificateView video={manualCertificate.video} userProfile={manualCertificate.profile} onBack={handleCloseManualCertificate} /></div>}
       </div>
 
@@ -801,7 +859,316 @@ function QuestionEditor({ question, idx, onQuestionChange }) {
   );
 }
 
-function AdminDashboard({ videos, viewCounts, totalViews, activities, onVideosChange, onActivitiesChange, onGenerateCertificate }) {
+// ─────────────────────────────────────────────
+// LIVE ADMIN PANEL
+// ─────────────────────────────────────────────
+function LiveAdminPanel({ liveSession, onSave }) {
+  const PLATFORMS = [
+    { id: 'youtube', label: 'YouTube Live', hint: 'Pega la URL del video en vivo (ej. https://youtube.com/watch?v=XYZ)', color: 'border-red-600 bg-red-900/20 text-red-300' },
+    { id: 'zoom',    label: 'Zoom',         hint: 'Pega el enlace de invitación de Zoom',                               color: 'border-blue-600 bg-blue-900/20 text-blue-300' },
+    { id: 'meet',    label: 'Google Meet',  hint: 'Pega el enlace de Google Meet (https://meet.google.com/...)',        color: 'border-green-600 bg-green-900/20 text-green-300' },
+  ];
+
+  const [form, setForm] = useState({
+    title: liveSession?.title || '',
+    platform: liveSession?.platform || 'youtube',
+    url: liveSession?.url || '',
+  });
+  const [attendees, setAttendees] = useState([]);
+  const [loadingAtt, setLoadingAtt] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [showAttendees, setShowAttendees] = useState(false);
+
+  const isActive = liveSession?.active;
+  const currentPlatform = PLATFORMS.find(p => p.id === form.platform);
+
+  const handleToggle = async () => {
+    setSaving(true);
+    if (!isActive) {
+      await onSave({ active: true, title: form.title, platform: form.platform, url: form.url, started_at: new Date().toISOString() });
+    } else {
+      await onSave({ active: false });
+    }
+    setSaving(false);
+  };
+
+  const handleUpdate = async () => {
+    setSaving(true);
+    await onSave({ title: form.title, platform: form.platform, url: form.url });
+    setSaving(false);
+  };
+
+  const loadAttendees = async () => {
+    if (!supabase) return;
+    setLoadingAtt(true);
+    try {
+      const { data } = await supabase.from('cpg_live_attendance').select('*').order('joined_at', { ascending: false });
+      setAttendees(data || []);
+    } catch {}
+    setLoadingAtt(false);
+  };
+
+  const handleShowAttendees = async () => {
+    if (!showAttendees) await loadAttendees();
+    setShowAttendees(p => !p);
+  };
+
+  const exportAttendance = () => {
+    if (!attendees.length) return;
+    const esc = v => { const s = String(v || ''); return s.includes(',') || s.includes('"') ? '"' + s.replace(/"/g, '""') + '"' : s; };
+    const rows = [['Nombre', 'Colegiado', 'Plataforma', 'Título de sesión', 'Fecha/Hora'],
+      ...attendees.map(a => [a.name, a.collegiate_number, a.platform, a.session_title, new Date(a.joined_at).toLocaleString('es-GT')])];
+    const csv = rows.map(r => r.map(esc).join(',')).join('\n');
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a'); link.href = url;
+    link.download = 'asistencia-sesiones-en-vivo.csv';
+    document.body.appendChild(link); link.click(); document.body.removeChild(link); URL.revokeObjectURL(url);
+  };
+
+  return (
+    <div className={`rounded-2xl border p-6 mb-8 transition-colors ${isActive ? 'border-red-700/60 bg-red-950/20' : 'border-gray-800 bg-[#1b1b1b]'}`}>
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
+        <div className="flex items-center gap-3">
+          <div className={`p-2.5 rounded-xl ${isActive ? 'bg-red-600' : 'bg-gray-700'}`}>
+            <Radio size={20} />
+          </div>
+          <div>
+            <h2 className="text-xl font-bold text-white">Transmisión en vivo</h2>
+            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${isActive ? 'bg-red-600/30 text-red-300' : 'bg-gray-700 text-gray-400'}`}>
+              {isActive ? '● ACTIVA' : '○ INACTIVA'}
+            </span>
+          </div>
+        </div>
+        <div className="flex gap-2 flex-wrap">
+          <button
+            onClick={handleShowAttendees}
+            className="flex items-center gap-2 bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded-lg text-sm font-semibold transition"
+          >
+            <Users size={16} /> Asistentes
+          </button>
+          <button
+            onClick={handleToggle}
+            disabled={saving}
+            className={`flex items-center gap-2 px-5 py-2 rounded-lg font-bold text-sm transition ${isActive ? 'bg-gray-600 hover:bg-gray-500 text-white' : 'bg-red-600 hover:bg-red-500 text-white'}`}
+          >
+            {saving ? <Loader2 size={16} className="animate-spin" /> : <Radio size={16} />}
+            {isActive ? 'Finalizar transmisión' : 'Iniciar transmisión'}
+          </button>
+        </div>
+      </div>
+
+      {/* Formulario de configuración */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm text-gray-400 mb-1">Título de la sesión</label>
+          <input
+            type="text"
+            value={form.title}
+            onChange={e => setForm({ ...form, title: e.target.value })}
+            placeholder="Ej. Webinar: Neuropsicología del aprendizaje"
+            className="w-full bg-black border border-gray-700 rounded-lg p-2.5 text-white focus:border-blue-500 outline-none"
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm text-gray-400 mb-1">Plataforma</label>
+          <div className="flex gap-2 flex-wrap">
+            {PLATFORMS.map(p => (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => setForm({ ...form, platform: p.id, url: '' })}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold transition ${form.platform === p.id ? p.color : 'border-gray-700 text-gray-500 hover:border-gray-500'}`}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="md:col-span-2">
+          <label className="block text-sm text-gray-400 mb-1">Enlace de la transmisión</label>
+          <input
+            type="url"
+            value={form.url}
+            onChange={e => setForm({ ...form, url: e.target.value })}
+            placeholder={currentPlatform?.hint}
+            className="w-full bg-black border border-gray-700 rounded-lg p-2.5 text-white focus:border-blue-500 outline-none"
+          />
+          {currentPlatform && <p className="text-xs text-gray-600 mt-1">{currentPlatform.hint}</p>}
+        </div>
+      </div>
+
+      {isActive && (
+        <button onClick={handleUpdate} disabled={saving} className="mt-4 flex items-center gap-2 bg-blue-700 hover:bg-blue-600 px-4 py-2 rounded-lg text-sm font-semibold transition">
+          {saving ? <Loader2 size={14} className="animate-spin" /> : null}
+          Actualizar configuración en vivo
+        </button>
+      )}
+
+      {/* Panel de asistentes */}
+      {showAttendees && (
+        <div className="mt-6 border-t border-gray-800 pt-5">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-bold text-white">Registro de asistencia ({attendees.length})</h3>
+            {attendees.length > 0 && (
+              <button onClick={exportAttendance} className="flex items-center gap-2 bg-emerald-700 hover:bg-emerald-600 px-3 py-1.5 rounded text-xs font-semibold">
+                <Download size={14} /> Exportar CSV
+              </button>
+            )}
+          </div>
+          {loadingAtt && <div className="text-center py-6"><Loader2 className="animate-spin mx-auto text-gray-500" size={24} /></div>}
+          {!loadingAtt && attendees.length === 0 && <p className="text-gray-500 text-sm text-center py-4">No hay registros de asistencia aún.</p>}
+          {!loadingAtt && attendees.length > 0 && (
+            <div className="overflow-x-auto rounded-xl border border-gray-800">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-900 text-gray-400 uppercase text-xs">
+                  <tr>
+                    <th className="text-left px-4 py-3">Nombre</th>
+                    <th className="text-left px-4 py-3">Colegiado</th>
+                    <th className="text-left px-4 py-3">Plataforma</th>
+                    <th className="text-left px-4 py-3">Sesión</th>
+                    <th className="text-left px-4 py-3">Hora</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {attendees.map(a => (
+                    <tr key={a.id} className="border-t border-gray-800 hover:bg-gray-900/40">
+                      <td className="px-4 py-2 text-white">{a.name || '—'}</td>
+                      <td className="px-4 py-2 text-gray-300">{a.collegiate_number}</td>
+                      <td className="px-4 py-2 text-gray-400 capitalize">{a.platform}</td>
+                      <td className="px-4 py-2 text-gray-400 max-w-xs truncate">{a.session_title}</td>
+                      <td className="px-4 py-2 text-gray-500 whitespace-nowrap">{new Date(a.joined_at).toLocaleString('es-GT')}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
+// LIVE SESSION VIEW
+// ─────────────────────────────────────────────
+function LiveSessionView({ session, onBack, sessionUser, onRegisterAttendance }) {
+  const [attended, setAttended] = useState(false);
+
+  const handleAttend = async () => {
+    if (attended || sessionUser?.isGuest) return;
+    await onRegisterAttendance();
+    setAttended(true);
+  };
+
+  const extractYTId = (url) => {
+    if (!url) return '';
+    try {
+      const u = new URL(url);
+      if (u.hostname.includes('youtu.be')) return u.pathname.replace('/', '');
+      if (u.searchParams.has('v')) return u.searchParams.get('v');
+    } catch {}
+    return url.trim().replace(/^https?:\/\/.*?v=/, '').split('&')[0];
+  };
+
+  const platformMeta = {
+    youtube: { label: 'YouTube Live', color: 'bg-red-700', icon: '▶', embedable: true },
+    zoom:    { label: 'Zoom',         color: 'bg-blue-700', icon: '🎥', embedable: false },
+    meet:    { label: 'Google Meet',  color: 'bg-green-700', icon: '📹', embedable: false },
+  };
+  const meta = platformMeta[session?.platform] || platformMeta.zoom;
+
+  return (
+    <div className="min-h-screen bg-[#0e0e0e] pt-20 px-4 md:px-10 pb-16">
+      {/* Encabezado */}
+      <div className="max-w-5xl mx-auto">
+        <div className="flex items-center gap-3 mb-6">
+          <button onClick={onBack} className="text-gray-400 hover:text-white transition flex items-center gap-1 text-sm">
+            <ChevronLeft size={18} /> Inicio
+          </button>
+          <span className="flex items-center gap-2 bg-red-600/20 border border-red-500/40 text-red-300 text-xs font-bold px-3 py-1 rounded-full">
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+            </span>
+            EN VIVO
+          </span>
+          <span className={`text-xs px-3 py-1 rounded-full text-white font-semibold ${meta.color}`}>{meta.label}</span>
+        </div>
+
+        <h1 className="text-2xl md:text-3xl font-bold text-white mb-2">{session?.title || 'Transmisión en vivo'}</h1>
+        {session?.started_at && (
+          <p className="text-sm text-gray-400 mb-6">Inició: {new Date(session.started_at).toLocaleTimeString('es-GT', { hour: '2-digit', minute: '2-digit' })}</p>
+        )}
+
+        {/* Registro de asistencia (solo usuarios autenticados) */}
+        {!sessionUser?.isGuest && (
+          <div className={`inline-flex items-center gap-3 mb-6 px-4 py-3 rounded-xl border ${attended ? 'border-green-600 bg-green-900/20 text-green-300' : 'border-blue-700 bg-blue-900/20 text-blue-300'}`}>
+            {attended ? <CheckCircle size={18} /> : <Users size={18} />}
+            {attended
+              ? <span className="text-sm font-semibold">Tu asistencia fue registrada correctamente</span>
+              : <button onClick={handleAttend} className="text-sm font-semibold hover:text-white transition">Registrar mi asistencia a esta sesión</button>
+            }
+          </div>
+        )}
+        {sessionUser?.isGuest && (
+          <div className="inline-flex items-center gap-2 mb-6 px-4 py-2 rounded-xl border border-yellow-700 bg-yellow-900/20 text-yellow-300 text-sm">
+            <Lock size={15} /> Ingresa con tu número de colegiado para registrar asistencia
+          </div>
+        )}
+
+        {/* ── YOUTUBE LIVE: iframe embebido ── */}
+        {session?.platform === 'youtube' && session?.url && (
+          <div className="rounded-2xl overflow-hidden border border-gray-800 shadow-2xl bg-black aspect-video w-full">
+            <iframe
+              src={`https://www.youtube.com/embed/${extractYTId(session.url)}?autoplay=1&rel=0&modestbranding=1`}
+              title="Transmisión en vivo"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+              allowFullScreen
+              className="w-full h-full"
+            />
+          </div>
+        )}
+
+        {/* ── ZOOM / MEET: redirect con instrucciones ── */}
+        {(session?.platform === 'zoom' || session?.platform === 'meet') && session?.url && (
+          <div className="rounded-2xl border border-gray-700 bg-[#141414] p-8 md:p-12 text-center">
+            <div className="text-5xl mb-4">{meta.icon}</div>
+            <h2 className="text-xl font-bold text-white mb-2">La sesión se transmite por {meta.label}</h2>
+            <p className="text-gray-400 text-sm mb-8 max-w-md mx-auto">
+              Haz clic en el botón para unirte directamente. La sesión se abrirá en una nueva pestaña.
+              {session.platform === 'zoom' && ' Es posible que necesites tener instalada la aplicación de Zoom.'}
+            </p>
+            <a
+              href={session.url}
+              target="_blank"
+              rel="noreferrer"
+              onClick={handleAttend}
+              className={`inline-flex items-center gap-3 text-white font-bold px-8 py-4 rounded-xl text-lg shadow-lg transition ${meta.color} hover:opacity-90`}
+            >
+              <Video size={22} /> Unirme a {meta.label}
+            </a>
+            <p className="text-gray-600 text-xs mt-6">Al unirte, tu asistencia se registrará automáticamente</p>
+          </div>
+        )}
+
+        {/* Sin URL configurada */}
+        {!session?.url && (
+          <div className="rounded-2xl border border-yellow-800 bg-yellow-900/10 p-10 text-center text-yellow-400">
+            <Wifi size={40} className="mx-auto mb-4 opacity-50" />
+            <p className="font-semibold">La transmisión estará disponible en breve</p>
+            <p className="text-sm opacity-70 mt-1">El administrador aún no ha configurado el enlace</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSession, onSaveLiveSession, onVideosChange, onActivitiesChange, onGenerateCertificate }) {
   const [editingVideo, setEditingVideo] = useState(null);
   const [manualCertVideo, setManualCertVideo] = useState(null);
   const [manualProfile, setManualProfile] = useState({ name: '', collegiateNumber: '' });
@@ -901,6 +1268,9 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, onVideosCh
       </div>
       {saveError && <div className="mb-6 rounded border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-200">{saveError}</div>}
       {activityError && <div className="mb-6 rounded border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-200">{activityError}</div>}
+
+      {/* ── PANEL TRANSMISIÓN EN VIVO ── */}
+      <LiveAdminPanel liveSession={liveSession} onSave={onSaveLiveSession} />
 
       <div className="bg-[#1b1b1b] border border-gray-800 rounded-2xl p-6 mb-10">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
