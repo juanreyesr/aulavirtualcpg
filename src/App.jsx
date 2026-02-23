@@ -770,10 +770,10 @@ function CertificateView({ video, userProfile, onBack }) {
             </div>
 
             {/* ESTADO (Activo/Inactivo) — entre "colegiado" y "número:" */}
-            {statusText && statusText !== 'DESCONOCIDO' && statusText !== 'INVITADO' && (
+            {statusText && statusText !== 'DESCONOCIDO' && statusText !== 'INVITADO' && statusText.length > 0 && (
               <div className="absolute" style={{ top: '387px', left: '490px' }}>
-                <p style={{ fontSize: '15px', fontWeight: 'bold', color: statusText === 'ACTIVO' ? '#166534' : '#991b1b', letterSpacing: '0.5px' }}>
-                  {statusText}
+                <p style={{ fontSize: '15px', fontWeight: 'bold', color: statusText.includes('ACTIVO') ? '#166534' : '#991b1b', letterSpacing: '0.5px' }}>
+                  {statusText.includes('ACTIVO') ? 'ACTIVO' : statusText.includes('INACTIVO') ? 'INACTIVO' : statusText}
                 </p>
               </div>
             )}
