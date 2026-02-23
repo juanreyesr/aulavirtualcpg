@@ -766,9 +766,9 @@ function CertificateView({ video, userProfile, onBack }) {
               </p>
             </div>
 
-            {/* ESTADO (Activo/Inactivo) — misma línea que "Con colegiado" */}
-            {statusText && (
-              <div className="absolute" style={{ top: '387px', left: '370px' }}>
+            {/* ESTADO (Activo/Inactivo) — entre "colegiado" y "número:" */}
+            {statusText && statusText !== 'DESCONOCIDO' && statusText !== 'INVITADO' && (
+              <div className="absolute" style={{ top: '387px', left: '490px' }}>
                 <p style={{ fontSize: '15px', fontWeight: 'bold', color: statusText === 'ACTIVO' ? '#166534' : '#991b1b', letterSpacing: '0.5px' }}>
                   {statusText}
                 </p>
@@ -1171,7 +1171,22 @@ function LiveSessionView({ session, onBack, sessionUser, onRegisterAttendance })
 function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSession, onSaveLiveSession, onVideosChange, onActivitiesChange, onGenerateCertificate }) {
   const [editingVideo, setEditingVideo] = useState(null);
   const [manualCertVideo, setManualCertVideo] = useState(null);
-  const [manualProfile, setManualProfile] = useState({ name: '', collegiateNumber: '' });
+  const [manualProfile, setManualProfile] = useState({ name: '', collegiateNumber: '', status: '' });
+  const [lookingUpStatus, setLookingUpStatus] = useState(false);
+
+  const handleCollegiateBlur = async () => {
+    const num = manualProfile.collegiateNumber.trim();
+    if (!num || num.length < 3) return;
+    setLookingUpStatus(true);
+    try {
+      const res = await fetch(EDGE_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: num }) });
+      const data = await res.json();
+      if (data?.status && data.status !== 'DESCONOCIDO') {
+        setManualProfile(prev => ({ ...prev, status: data.status, name: prev.name || data.name || '' }));
+      }
+    } catch {}
+    setLookingUpStatus(false);
+  };
   const [saveError, setSaveError] = useState('');
   const [editingActivity, setEditingActivity] = useState(null);
   const [activityError, setActivityError] = useState('');
@@ -1404,7 +1419,7 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
             <div className="p-4 flex-1"><h3 className="font-bold text-lg mb-1">{video.title}</h3><p className="text-sm text-gray-400 mb-2">{video.category}</p><div className="flex items-center gap-2 text-xs mb-4 flex-wrap">{video.quizEnabled ? <span className="text-green-400 border border-green-400/30 px-2 py-0.5 rounded">Evaluación Activa</span> : <span className="text-gray-500">Sin Evaluación</span>}{!isVideoPublished(video) && <span className="text-yellow-400 border border-yellow-400/30 px-2 py-0.5 rounded">Programado {formatScheduleDate(video.scheduledAt)}</span>}</div></div>
             <div className="p-4 border-t border-gray-800 flex gap-2">
               <button onClick={() => handleEdit(video)} className="flex-1 bg-blue-900/40 hover:bg-blue-900/60 text-blue-200 py-2 rounded text-sm transition">Editar</button>
-              {video.quizEnabled && <button onClick={() => { setManualCertVideo(video); setManualProfile({ name: '', collegiateNumber: '' }); }} className="flex-1 bg-yellow-700/40 hover:bg-yellow-700/60 text-yellow-200 py-2 rounded text-sm transition">Generar Certificado</button>}
+              {video.quizEnabled && <button onClick={() => { setManualCertVideo(video); setManualProfile({ name: '', collegiateNumber: '', status: '' }); }} className="flex-1 bg-yellow-700/40 hover:bg-yellow-700/60 text-yellow-200 py-2 rounded text-sm transition">Generar Certificado</button>}
               <button onClick={() => handleDelete(video.id)} className="px-3 bg-red-900/40 hover:bg-red-900/60 text-red-300 rounded transition"><Trash2 size={16} /></button>
             </div>
           </div>
@@ -1417,8 +1432,44 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
             <h2 className="text-xl font-bold mb-4">Generar Certificado Manual</h2>
             <p className="text-sm text-gray-400 mb-4">Curso: {manualCertVideo.title}</p>
             <div className="space-y-4">
-              <div><label className="block text-sm text-gray-400 mb-1">Nombre del profesional</label><input type="text" value={manualProfile.name} onChange={e => setManualProfile({ ...manualProfile, name: e.target.value })} className="w-full bg-black border border-gray-700 rounded p-3 text-white focus:border-blue-500 outline-none" /></div>
-              <div><label className="block text-sm text-gray-400 mb-1">Número de colegiado</label><input type="text" value={manualProfile.collegiateNumber} onChange={e => setManualProfile({ ...manualProfile, collegiateNumber: e.target.value })} className="w-full bg-black border border-gray-700 rounded p-3 text-white focus:border-blue-500 outline-none" /></div>
+              <div>
+                <label className="block text-sm text-gray-400 mb-1">Número de colegiado</label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={manualProfile.collegiateNumber}
+                    onChange={e => setManualProfile({ ...manualProfile, collegiateNumber: e.target.value, status: '' })}
+                    onBlur={handleCollegiateBlur}
+                    className="w-full bg-black border border-gray-700 rounded p-3 text-white focus:border-blue-500 outline-none pr-10"
+                    placeholder="Ej. 4661"
+                  />
+                  {lookingUpStatus && <Loader2 size={16} className="absolute right-3 top-3.5 animate-spin text-blue-400" />}
+                </div>
+                {manualProfile.status && (
+                  <p className={`text-xs font-bold mt-1 ${manualProfile.status === 'ACTIVO' ? 'text-green-400' : 'text-red-400'}`}>
+                    Estado consultado: {manualProfile.status}
+                  </p>
+                )}
+              </div>
+              <div>
+                <label className="block text-sm text-gray-400 mb-1">Nombre del profesional</label>
+                <input type="text" value={manualProfile.name} onChange={e => setManualProfile({ ...manualProfile, name: e.target.value })} className="w-full bg-black border border-gray-700 rounded p-3 text-white focus:border-blue-500 outline-none" placeholder="Se auto-completa al consultar el colegiado" />
+              </div>
+              <div>
+                <label className="block text-sm text-gray-400 mb-1">Estado en certificado</label>
+                <div className="flex gap-3">
+                  {['ACTIVO', 'INACTIVO'].map(s => (
+                    <label key={s} className={`flex items-center gap-2 px-4 py-2 rounded-lg border cursor-pointer text-sm font-semibold transition ${manualProfile.status === s ? (s === 'ACTIVO' ? 'border-green-600 bg-green-900/30 text-green-300' : 'border-red-600 bg-red-900/30 text-red-300') : 'border-gray-700 text-gray-500 hover:border-gray-500'}`}>
+                      <input type="radio" name="manualStatus" value={s} checked={manualProfile.status === s} onChange={() => setManualProfile({ ...manualProfile, status: s })} className="accent-blue-500" />
+                      {s}
+                    </label>
+                  ))}
+                  <label className="flex items-center gap-2 px-4 py-2 rounded-lg border cursor-pointer text-sm font-semibold transition border-gray-700 text-gray-500 hover:border-gray-500">
+                    <input type="radio" name="manualStatus" value="" checked={!manualProfile.status} onChange={() => setManualProfile({ ...manualProfile, status: '' })} className="accent-blue-500" />
+                    Sin estado
+                  </label>
+                </div>
+              </div>
             </div>
             <div className="flex justify-end gap-3 mt-6">
               <button onClick={() => setManualCertVideo(null)} className="px-4 py-2 bg-gray-700 rounded hover:bg-gray-600">Cancelar</button>
