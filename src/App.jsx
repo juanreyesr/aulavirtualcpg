@@ -591,7 +591,24 @@ function VideoCard({ video, viewCount = 0, onClick, isSmall, isPublished, isComp
 function PlayerView({ video, viewCounts, onBack, sessionUser, userProfile, setUserProfile, isCompleted, onMarkCompleted }) {
   const [showQuiz, setShowQuiz] = useState(false);
   const [showCert, setShowCert] = useState(false);
+  const [lookingUpStatus, setLookingUpStatus] = useState(false);
   const viewCount = viewCounts[video.id] || 0;
+
+  const handleStartQuiz = async () => {
+    // Para invitados: abrir directamente
+    if (sessionUser.isGuest) { setShowQuiz(true); return; }
+    // Siempre re-consultar el estado antes de la evaluación
+    setLookingUpStatus(true);
+    try {
+      const res = await fetch(EDGE_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: sessionUser.collegiateNumber }) });
+      const data = await res.json();
+      if (data?.status && data.status !== 'DESCONOCIDO') {
+        setUserProfile(prev => ({ ...prev, status: data.status }));
+      }
+    } catch {}
+    setLookingUpStatus(false);
+    setShowQuiz(true);
+  };
   return (
     <div className="min-h-screen bg-[#141414] pt-20 px-4 md:px-16 pb-12">
       <button onClick={onBack} className="flex items-center gap-2 text-gray-400 hover:text-white mb-6 transition"><ChevronLeft /> Regresar</button>
@@ -628,7 +645,15 @@ function PlayerView({ video, viewCounts, onBack, sessionUser, userProfile, setUs
               <div className="bg-gray-800/50 p-6 rounded-lg border border-gray-700">
                 <h3 className="text-lg font-bold text-white flex items-center gap-2 mb-3"><Award className="text-yellow-500" /> Certificación Disponible</h3>
                 <p className="text-gray-400 text-sm mb-4">Completa la evaluación con más del 80% de aciertos para obtener tu certificado oficial.</p>
-                <button onClick={() => setShowQuiz(true)} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-md transition shadow-lg shadow-blue-900/50 flex justify-center items-center gap-2">Hacer Evaluación</button>
+                <button
+                  onClick={handleStartQuiz}
+                  disabled={lookingUpStatus}
+                  className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 text-white font-bold py-3 rounded-md transition shadow-lg shadow-blue-900/50 flex justify-center items-center gap-2"
+                >
+                  {lookingUpStatus
+                    ? <><Loader2 size={18} className="animate-spin" /> Verificando colegiado...</>
+                    : <><Award size={18} /> Iniciar Evaluación</>}
+                </button>
               </div>
             ) : (
               <div className="bg-gray-800/30 p-4 rounded-lg border border-gray-800 text-center text-gray-500 text-sm">Esta clase no requiere evaluación para certificación.</div>
