@@ -718,11 +718,27 @@ function CertificateView({ video, userProfile, onBack }) {
   const certRef = useRef(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [imageLoaded, setImageLoaded] = useState(false);
+  const [resolvedStatus, setResolvedStatus] = useState(userProfile.status || '');
+
+  // Si el status está vacío o es DESCONOCIDO, re-consultar la API automáticamente
+  useEffect(() => {
+    const current = String(userProfile.status || '').toUpperCase();
+    if (current && current !== 'DESCONOCIDO' && current !== 'INVITADO') {
+      setResolvedStatus(userProfile.status);
+      return;
+    }
+    if (!userProfile.collegiateNumber || userProfile.collegiateNumber === '0000') return;
+    fetch(EDGE_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: userProfile.collegiateNumber }) })
+      .then(r => r.json())
+      .then(data => { if (data?.status && data.status !== 'DESCONOCIDO') setResolvedStatus(data.status); })
+      .catch(() => {});
+  }, [userProfile.collegiateNumber, userProfile.status]);
+
   const currentDate = new Date();
   const fmt = (d) => d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
   const certificateCode = 'CPG-' + fmt(currentDate) + '-' + userProfile.collegiateNumber;
   const dateFormatted = currentDate.toLocaleDateString('es-GT', { year: 'numeric', month: 'long', day: 'numeric' });
-  const statusText = userProfile.status ? String(userProfile.status).toUpperCase() : '';
+  const statusText = String(resolvedStatus || '').toUpperCase();
 
   const handleDownloadPDF = async () => {
     if (!certRef.current || !imageLoaded) { alert('Espera a que la plantilla del certificado cargue completamente.'); return; }
