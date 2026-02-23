@@ -595,17 +595,20 @@ function PlayerView({ video, viewCounts, onBack, sessionUser, userProfile, setUs
   const viewCount = viewCounts[video.id] || 0;
 
   const handleStartQuiz = async () => {
-    // Para invitados: abrir directamente
     if (sessionUser.isGuest) { setShowQuiz(true); return; }
-    // Siempre re-consultar el estado antes de la evaluación
     setLookingUpStatus(true);
     try {
       const res = await fetch(EDGE_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: sessionUser.collegiateNumber }) });
       const data = await res.json();
-      if (data?.status && data.status !== 'DESCONOCIDO') {
-        setUserProfile(prev => ({ ...prev, status: data.status }));
+      console.log('[CPG] Respuesta API colegiado:', JSON.stringify(data));
+      if (data?.status) {
+        const s = String(data.status).toUpperCase();
+        console.log('[CPG] Status normalizado:', s);
+        setUserProfile(prev => ({ ...prev, status: s }));
       }
-    } catch {}
+    } catch (err) {
+      console.error('[CPG] Error consultando colegiado:', err);
+    }
     setLookingUpStatus(false);
     setShowQuiz(true);
   };
@@ -613,7 +616,7 @@ function PlayerView({ video, viewCounts, onBack, sessionUser, userProfile, setUs
     <div className="min-h-screen bg-[#141414] pt-20 px-4 md:px-16 pb-12">
       <button onClick={onBack} className="flex items-center gap-2 text-gray-400 hover:text-white mb-6 transition"><ChevronLeft /> Regresar</button>
       {showCert ? (
-        <CertificateView video={video} userProfile={userProfile} onBack={() => setShowCert(false)} />
+        <CertificateView video={video} userProfile={userProfile} sessionUser={sessionUser} onBack={() => setShowCert(false)} />
       ) : showQuiz ? (
         <QuizModal video={video} onCancel={() => setShowQuiz(false)} onPass={() => { onMarkCompleted(); setShowCert(true); }} sessionUser={sessionUser} userProfile={userProfile} setUserProfile={setUserProfile} />
       ) : (
@@ -739,31 +742,57 @@ function QuizModal({ video, onCancel, onPass, sessionUser, userProfile, setUserP
   );
 }
 
-function CertificateView({ video, userProfile, onBack }) {
+function CertificateView({ video, userProfile, sessionUser, onBack }) {
   const certRef = useRef(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [imageLoaded, setImageLoaded] = useState(false);
-  const [resolvedStatus, setResolvedStatus] = useState(userProfile.status || '');
+  const [resolvedStatus, setResolvedStatus] = useState('');
+  const [debugInfo, setDebugInfo] = useState('');
 
-  // Si el status está vacío o es DESCONOCIDO, re-consultar la API automáticamente
   useEffect(() => {
-    const current = String(userProfile.status || '').toUpperCase();
-    if (current && current !== 'DESCONOCIDO' && current !== 'INVITADO') {
-      setResolvedStatus(userProfile.status);
-      return;
-    }
-    if (!userProfile.collegiateNumber || userProfile.collegiateNumber === '0000') return;
-    fetch(EDGE_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: userProfile.collegiateNumber }) })
-      .then(r => r.json())
-      .then(data => { if (data?.status && data.status !== 'DESCONOCIDO') setResolvedStatus(data.status); })
-      .catch(() => {});
-  }, [userProfile.collegiateNumber, userProfile.status]);
+    const tryResolve = async () => {
+      // 1. Usar userProfile.status si es válido
+      const profileStatus = String(userProfile.status || '').toUpperCase().trim();
+      if (profileStatus && profileStatus !== 'DESCONOCIDO' && profileStatus !== 'INVITADO') {
+        console.log('[CPG Cert] Usando status de userProfile:', profileStatus);
+        setResolvedStatus(profileStatus);
+        setDebugInfo('Fuente: userProfile → ' + profileStatus);
+        return;
+      }
+      // 2. Usar sessionUser.status como fallback
+      const sessionStatus = String(sessionUser?.status || '').toUpperCase().trim();
+      if (sessionStatus && sessionStatus !== 'DESCONOCIDO' && sessionStatus !== 'INVITADO') {
+        console.log('[CPG Cert] Usando status de sessionUser:', sessionStatus);
+        setResolvedStatus(sessionStatus);
+        setDebugInfo('Fuente: sessionUser → ' + sessionStatus);
+        return;
+      }
+      // 3. Re-consultar la API como último recurso
+      const collegiateNum = userProfile.collegiateNumber || sessionUser?.collegiateNumber;
+      if (!collegiateNum || collegiateNum === '0000') return;
+      console.log('[CPG Cert] Consultando API para:', collegiateNum);
+      try {
+        const res = await fetch(EDGE_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: collegiateNum }) });
+        const data = await res.json();
+        console.log('[CPG Cert] Respuesta API:', JSON.stringify(data));
+        const apiStatus = String(data?.status || '').toUpperCase().trim();
+        setDebugInfo('Fuente: API → status=' + apiStatus + ' rawStatus=' + data?.rawStatus);
+        if (apiStatus && apiStatus !== 'DESCONOCIDO') {
+          setResolvedStatus(apiStatus);
+        }
+      } catch (e) {
+        console.error('[CPG Cert] Error API:', e);
+        setDebugInfo('Error API: ' + e.message);
+      }
+    };
+    tryResolve();
+  }, [userProfile.status, userProfile.collegiateNumber]);
 
   const currentDate = new Date();
   const fmt = (d) => d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
   const certificateCode = 'CPG-' + fmt(currentDate) + '-' + userProfile.collegiateNumber;
   const dateFormatted = currentDate.toLocaleDateString('es-GT', { year: 'numeric', month: 'long', day: 'numeric' });
-  const statusText = String(resolvedStatus || '').toUpperCase();
+  const statusText = resolvedStatus;
 
   const handleDownloadPDF = async () => {
     if (!certRef.current || !imageLoaded) { alert('Espera a que la plantilla del certificado cargue completamente.'); return; }
@@ -785,6 +814,14 @@ function CertificateView({ video, userProfile, onBack }) {
         <button onClick={handleDownloadPDF} disabled={isGenerating || !imageLoaded} className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 disabled:cursor-not-allowed text-white px-6 py-2 rounded font-bold flex items-center gap-2">
           {isGenerating ? <><Loader2 size={18} className="animate-spin" /> Generando PDF...</> : <><Download size={18} /> Descargar PDF</>}
         </button>
+      </div>
+      {/* DEBUG TEMPORAL — quitar después de confirmar */}
+      <div className="bg-gray-900 border border-yellow-700 rounded px-4 py-2 text-xs text-yellow-300 font-mono print:hidden max-w-xl">
+        <p><b>Status userProfile:</b> "{userProfile.status}"</p>
+        <p><b>Status sessionUser:</b> "{sessionUser?.status}"</p>
+        <p><b>resolvedStatus:</b> "{resolvedStatus}"</p>
+        <p><b>statusText (en cert):</b> "{statusText}"</p>
+        <p><b>Info:</b> {debugInfo || '(esperando...)'}</p>
       </div>
       {!imageLoaded && <div className="text-yellow-400 text-sm flex items-center gap-2"><Loader2 size={16} className="animate-spin" /> Cargando plantilla...</div>}
       <div className="overflow-auto w-full flex justify-center p-4">
