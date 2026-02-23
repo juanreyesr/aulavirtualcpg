@@ -652,8 +652,8 @@ function CertificateView({ video, userProfile, onBack }) {
               </div>
             )}
 
-            {/* NÚMERO DE COLEGIADO — misma línea, justo después de "número:" */}
-            <div className="absolute" style={{ top: '385px', left: '755px' }}>
+            {/* NÚMERO DE COLEGIADO — más cerca de "número:" */}
+            <div className="absolute" style={{ top: '385px', left: '700px' }}>
               <p style={{ fontSize: '17px', fontWeight: 'bold', color: '#1a1a2e' }}>
                 {userProfile.collegiateNumber}
               </p>
@@ -674,7 +674,7 @@ function CertificateView({ video, userProfile, onBack }) {
             </div>
 
             {/* HORAS — en la misma línea que "Desarrollado en ... horas" */}
-            <div className="absolute" style={{ top: '540px', left: '390px' }}>
+            <div className="absolute" style={{ top: '540px', left: '430px' }}>
               <p style={{ fontSize: '18px', fontWeight: 'bold', color: '#1a1a2e' }}>
                 {video.duration}
               </p>
