@@ -714,6 +714,15 @@ function QuizModal({ video, onCancel, onPass, sessionUser, userProfile, setUserP
           <label className="block text-gray-500 text-xs mb-1 uppercase tracking-wider">Colegiado No.</label>
           <div className="bg-gray-900 border border-gray-700 rounded p-2.5 text-gray-400 text-sm font-mono flex items-center gap-2"><Lock size={12} className="text-gray-600" />{sessionUser.collegiateNumber}</div>
         </div>
+        {!sessionUser.isGuest && userProfile.status && userProfile.status !== 'DESCONOCIDO' && (
+          <div className="md:w-36">
+            <label className="block text-gray-500 text-xs mb-1 uppercase tracking-wider">Estado</label>
+            <div className={`rounded p-2.5 text-sm font-bold flex items-center gap-2 border ${String(userProfile.status).toUpperCase().includes('ACTIVO') ? 'bg-green-900/30 border-green-700 text-green-300' : 'bg-red-900/30 border-red-700 text-red-300'}`}>
+              <span className={`w-2 h-2 rounded-full ${String(userProfile.status).toUpperCase().includes('ACTIVO') ? 'bg-green-400' : 'bg-red-400'}`}></span>
+              {String(userProfile.status).toUpperCase().includes('ACTIVO') ? 'ACTIVO' : 'INACTIVO'}
+            </div>
+          </div>
+        )}
       </div>
       <div className="flex justify-between items-center mb-6 border-b border-gray-800 pb-4">
         <h2 className="text-xl font-bold text-white">Evaluación: {video.title}</h2>
@@ -814,14 +823,6 @@ function CertificateView({ video, userProfile, sessionUser, onBack }) {
         <button onClick={handleDownloadPDF} disabled={isGenerating || !imageLoaded} className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 disabled:cursor-not-allowed text-white px-6 py-2 rounded font-bold flex items-center gap-2">
           {isGenerating ? <><Loader2 size={18} className="animate-spin" /> Generando PDF...</> : <><Download size={18} /> Descargar PDF</>}
         </button>
-      </div>
-      {/* DEBUG TEMPORAL — quitar después de confirmar */}
-      <div className="bg-gray-900 border border-yellow-700 rounded px-4 py-2 text-xs text-yellow-300 font-mono print:hidden max-w-xl">
-        <p><b>Status userProfile:</b> "{userProfile.status}"</p>
-        <p><b>Status sessionUser:</b> "{sessionUser?.status}"</p>
-        <p><b>resolvedStatus:</b> "{resolvedStatus}"</p>
-        <p><b>statusText (en cert):</b> "{statusText}"</p>
-        <p><b>Info:</b> {debugInfo || '(esperando...)'}</p>
       </div>
       {!imageLoaded && <div className="text-yellow-400 text-sm flex items-center gap-2"><Loader2 size={16} className="animate-spin" /> Cargando plantilla...</div>}
       <div className="overflow-auto w-full flex justify-center p-4">
