@@ -233,7 +233,7 @@ export default function App() {
       {/* ── NAVBAR ── */}
       <nav className="fixed top-0 w-full z-50 bg-[#0e0e0e] border-b border-gray-800 px-4 py-3 flex justify-between items-center shadow-lg">
 
-        {/* Lado izquierdo: logo CPG + texto + logo CAEDUC */}
+        {/* Lado izquierdo: logo CPG + texto + logo CAEDUC + contador */}
         <div className="flex items-center gap-3 cursor-pointer" onClick={() => setView('home')}>
           <img
             src="/logo-cpg-grande.png"
@@ -251,6 +251,12 @@ export default function App() {
             className="w-11 h-11 object-contain filter drop-shadow-lg"
             onError={(e) => { e.target.style.display = 'none'; }}
           />
+          {totalViews > 0 && (
+            <div className="hidden sm:flex items-center gap-1.5 bg-blue-900/30 border border-blue-700/50 text-blue-300 text-xs font-semibold px-3 py-1.5 rounded-full">
+              <Eye size={12} />
+              {totalViews.toLocaleString()} reproducciones
+            </div>
+          )}
         </div>
 
         {/* Lado derecho: links + usuario + admin */}
@@ -273,7 +279,7 @@ export default function App() {
       </nav>
 
       <div className="pt-0">
-        {view === 'home' && <HomeView videos={videos} viewCounts={viewCounts} totalViews={totalViews} recentVideos={recentVideos} categories={categories} upcomingVideos={upcomingVideos} activities={activities} completedVideos={completedVideos} onVideoSelect={(v) => { if (!isVideoPublished(v)) return; setSelectedVideo(v); incrementViewCount(v.id); setView('player'); }} />}
+        {view === 'home' && <HomeView videos={videos} viewCounts={viewCounts} recentVideos={recentVideos} categories={categories} upcomingVideos={upcomingVideos} activities={activities} completedVideos={completedVideos} onVideoSelect={(v) => { if (!isVideoPublished(v)) return; setSelectedVideo(v); incrementViewCount(v.id); setView('player'); }} />}
         {view === 'player' && selectedVideo && <PlayerView video={selectedVideo} viewCounts={viewCounts} onBack={() => setView('home')} sessionUser={sessionUser} userProfile={userProfile} setUserProfile={setUserProfile} isCompleted={completedVideos.has(selectedVideo.id)} onMarkCompleted={() => markVideoCompleted(selectedVideo.id)} />}
         {view === 'login' && <LoginView onLogin={handleLogin} onBack={() => setView('home')} authError={authError} />}
         {view === 'admin' && isAdmin && <AdminDashboard videos={videos} viewCounts={viewCounts} totalViews={totalViews} activities={activities} onVideosChange={persistVideos} onActivitiesChange={persistActivities} onGenerateCertificate={handleManualCertificate} />}
@@ -314,7 +320,7 @@ export default function App() {
   );
 }
 
-function HomeView({ videos, viewCounts, totalViews, recentVideos, categories, upcomingVideos, activities, completedVideos, onVideoSelect }) {
+function HomeView({ videos, viewCounts, recentVideos, categories, upcomingVideos, activities, completedVideos, onVideoSelect }) {
   const heroVideo = recentVideos[0];
   const [activeCategory, setActiveCategory] = useState(null);
   const [showCalendar, setShowCalendar] = useState(false);
@@ -462,14 +468,7 @@ function HomeView({ videos, viewCounts, totalViews, recentVideos, categories, up
 
       {!activeCategory && (
         <div className="pl-8 md:pl-16 mt-8 md:mt-10">
-          <div className="flex items-center gap-3 mb-4">
-            <h2 className="text-xl md:text-2xl font-bold text-white">Recién Añadidos</h2>
-            {totalViews > 0 && (
-              <span className="flex items-center gap-1.5 bg-blue-900/30 border border-blue-800 text-blue-300 text-xs font-semibold px-3 py-1 rounded-full">
-                <Eye size={12} /> {totalViews.toLocaleString()} {totalViews === 1 ? 'reproducción total' : 'reproducciones totales'}
-              </span>
-            )}
-          </div>
+          <h2 className="text-xl md:text-2xl font-bold mb-4 text-white">Recién Añadidos</h2>
           <div className="flex gap-4 overflow-x-auto pb-8 pr-8 scrollbar-hide snap-x">
             {recentVideos.map(v => <VideoCard key={v.id} video={v} viewCount={viewCounts[v.id] || 0} onClick={() => onVideoSelect(v)} isPublished={isVideoPublished(v)} isCompleted={completedVideos.has(v.id)} />)}
           </div>
