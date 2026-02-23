@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Play, CheckCircle, XCircle, LogOut, Plus, Trash2, Award,
-  ChevronLeft, Lock, ExternalLink, X, CalendarDays, Eye,
-  Download, Loader2, UserCheck, UserX, Edit2
+  ChevronLeft, ChevronDown, Lock, ExternalLink, X, CalendarDays, Eye,
+  Download, Loader2, UserCheck, UserX, Edit2, Users
 } from 'lucide-react';
 import { supabase } from './supabaseClient';
 import html2canvas from 'html2canvas';
@@ -320,8 +320,60 @@ function HomeView({ videos, viewCounts, totalViews, recentVideos, categories, up
   const [showCalendar, setShowCalendar] = useState(false);
   const categoriesToRender = activeCategory ? [activeCategory] : categories;
 
-  const activitiesByMonth = activities.filter(a => a?.date).map(a => ({ ...a, parsedDate: new Date(a.date + 'T00:00:00') })).filter(a => !Number.isNaN(a.parsedDate.valueOf())).sort((a, b) => a.parsedDate - b.parsedDate).reduce((acc, a) => { const key = a.parsedDate.getFullYear() + '-' + a.parsedDate.getMonth(); if (!acc[key]) acc[key] = { label: a.parsedDate.toLocaleDateString('es-GT', { month: 'long', year: 'numeric' }), items: [] }; acc[key].items.push(a); return acc; }, {});
-  const monthKeys = Object.keys(activitiesByMonth);
+  const now = new Date();
+  const [showPast, setShowPast] = useState(false);
+
+  const parseActDate = (a) => new Date(a.date + 'T00:00:00');
+  const allActivities = activities.filter(a => a?.date).map(a => ({ ...a, parsedDate: parseActDate(a) })).filter(a => !Number.isNaN(a.parsedDate.valueOf())).sort((a, b) => a.parsedDate - b.parsedDate);
+  const upcomingActs = allActivities.filter(a => a.parsedDate >= now);
+  const pastActs = allActivities.filter(a => a.parsedDate < now).reverse();
+
+  const groupByMonth = (list) => list.reduce((acc, a) => {
+    const key = a.parsedDate.getFullYear() + '-' + a.parsedDate.getMonth();
+    if (!acc[key]) acc[key] = { label: a.parsedDate.toLocaleDateString('es-GT', { month: 'long', year: 'numeric' }), items: [] };
+    acc[key].items.push(a);
+    return acc;
+  }, {});
+
+  const upcomingByMonth = groupByMonth(upcomingActs);
+  const pastByMonth = groupByMonth(pastActs);
+
+  const ActivityCard = ({ activity, isPast }) => (
+    <div className={`bg-[#1f1f1f] border rounded-xl p-4 md:p-5 ${isPast ? 'border-gray-700 opacity-75' : 'border-gray-800'}`}>
+      <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <h5 className="text-lg font-bold text-white">{activity.title}</h5>
+            {isPast && <span className="text-xs uppercase bg-gray-700 text-gray-300 border border-gray-600 px-2 py-0.5 rounded-full">Finalizada</span>}
+            {activity.isFull && !isPast && <span className="text-xs uppercase bg-red-500/20 text-red-200 border border-red-500/40 px-2 py-1 rounded-full">Cupo lleno</span>}
+          </div>
+          <p className="text-sm text-gray-400">Organiza: {activity.organizer}</p>
+          {/* Costo */}
+          {activity.costType === 'free' && <span className="inline-flex mt-1 text-xs bg-green-900/30 text-green-300 border border-green-700/40 px-2 py-0.5 rounded-full">Gratuito</span>}
+          {activity.costType === 'paid' && <span className="inline-flex mt-1 text-xs bg-blue-900/30 text-blue-300 border border-blue-700/40 px-2 py-0.5 rounded-full">Costo: Q.{activity.cost}</span>}
+          {activity.costType === 'scholarship' && <span className="inline-flex mt-1 text-xs bg-purple-900/30 text-purple-300 border border-purple-700/40 px-2 py-0.5 rounded-full">Con beca {activity.scholarshipPct}% — Agremiado paga Q.{activity.scholarshipAmt}</span>}
+          {activity.participants > 0 && <p className="text-xs text-gray-500 mt-1 flex items-center gap-1"><Users size={11} /> {activity.participants} participantes</p>}
+        </div>
+        <div className="text-sm text-gray-300 shrink-0">
+          <p><span className="text-gray-400">Fecha:</span> {new Date(activity.date + 'T00:00:00').toLocaleDateString('es-GT')}</p>
+          <p><span className="text-gray-400">Hora:</span> {activity.time || 'Por confirmar'}</p>
+          <p><span className="text-gray-400">Lugar:</span> {activity.location || 'Por confirmar'}</p>
+        </div>
+      </div>
+      <div className="flex flex-wrap gap-4 mt-4">
+        {activity.meetingLink && (
+          isPast
+            ? <span className="inline-flex items-center gap-2 text-sm text-gray-500 cursor-not-allowed line-through"><ExternalLink size={14} /> Enlace de actividad</span>
+            : <a href={activity.meetingLink} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 text-sm text-blue-300 hover:text-blue-200"><ExternalLink size={14} /> Enlace de actividad</a>
+        )}
+        {activity.registrationLink && (
+          isPast
+            ? <span className="inline-flex items-center gap-2 text-sm text-gray-500 cursor-not-allowed line-through"><ExternalLink size={14} /> Formulario de inscripción</span>
+            : <a href={activity.registrationLink} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 text-sm text-blue-300 hover:text-blue-200"><ExternalLink size={14} /> Formulario de inscripción</a>
+        )}
+      </div>
+    </div>
+  );
 
   return (
     <div className="pb-10">
@@ -361,35 +413,49 @@ function HomeView({ videos, viewCounts, totalViews, recentVideos, categories, up
               <button type="button" onClick={() => setShowCalendar(false)} className="text-gray-400 hover:text-white"><X size={18} /></button>
             </div>
             <div className="px-6 py-6 overflow-y-auto max-h-[70vh] space-y-8">
-              {monthKeys.length === 0 && <div className="text-center text-gray-400 py-10">No hay actividades programadas por el momento.</div>}
-              {monthKeys.map(key => (
-                <div key={key}>
-                  <h4 className="text-lg font-semibold text-blue-300 mb-4 capitalize">{activitiesByMonth[key].label}</h4>
-                  <div className="grid gap-4">
-                    {activitiesByMonth[key].items.map(activity => (
-                      <div key={activity.id} className="bg-[#1f1f1f] border border-gray-800 rounded-xl p-4 md:p-5">
-                        <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
-                          <div>
-                            <h5 className="text-lg font-bold text-white">{activity.title}</h5>
-                            <p className="text-sm text-gray-400">Organiza: {activity.organizer}</p>
-                            {activity.isFull && <span className="inline-flex mt-2 text-xs uppercase tracking-wide bg-red-500/20 text-red-200 border border-red-500/40 px-2 py-1 rounded-full">Cupo lleno</span>}
-                          </div>
-                          <div className="text-sm text-gray-300">
-                            <p><span className="text-gray-400">Fecha:</span> {new Date(activity.date + 'T00:00:00').toLocaleDateString('es-GT')}</p>
-                            <p><span className="text-gray-400">Hora:</span> {activity.time || 'Por confirmar'}</p>
-                            <p><span className="text-gray-400">Lugar:</span> {activity.location || 'Por confirmar'}</p>
-                          </div>
-                        </div>
-                        <div className="flex flex-wrap gap-4 mt-4">
-                          {activity.meetingLink && <a href={activity.meetingLink} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 text-sm text-blue-300 hover:text-blue-200"><ExternalLink size={14} /> Enlace de actividad</a>}
-                          {activity.registrationLink && <a href={activity.registrationLink} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 text-sm text-blue-300 hover:text-blue-200"><ExternalLink size={14} /> Formulario de inscripción</a>}
-                        </div>
-                      </div>
-                    ))}
+                {/* ACTIVIDADES VIGENTES */}
+                {Object.keys(upcomingByMonth).length === 0 && pastActs.length === 0 && (
+                  <div className="text-center text-gray-400 py-10">No hay actividades programadas por el momento.</div>
+                )}
+                {Object.keys(upcomingByMonth).length === 0 && pastActs.length > 0 && (
+                  <div className="text-center text-gray-400 py-4 text-sm">No hay actividades próximas programadas.</div>
+                )}
+                {Object.keys(upcomingByMonth).map(key => (
+                  <div key={key}>
+                    <h4 className="text-lg font-semibold text-blue-300 mb-4 capitalize">{upcomingByMonth[key].label}</h4>
+                    <div className="grid gap-4">
+                      {upcomingByMonth[key].items.map(activity => <ActivityCard key={activity.id} activity={activity} isPast={false} />)}
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+
+                {/* CURSOS PASADOS */}
+                {pastActs.length > 0 && (
+                  <div>
+                    <button
+                      type="button"
+                      onClick={() => setShowPast(p => !p)}
+                      className="flex items-center gap-2 w-full bg-gray-800/60 hover:bg-gray-700/60 border border-gray-700 rounded-xl px-5 py-3 text-gray-300 font-semibold text-sm transition"
+                    >
+                      <CalendarDays size={16} className="text-gray-400" />
+                      Cursos pasados ({pastActs.length})
+                      <ChevronDown size={16} className={`ml-auto transition-transform ${showPast ? 'rotate-180' : ''}`} />
+                    </button>
+                    {showPast && (
+                      <div className="mt-4 space-y-8">
+                        {Object.keys(pastByMonth).map(key => (
+                          <div key={key}>
+                            <h4 className="text-base font-semibold text-gray-500 mb-3 capitalize">{pastByMonth[key].label}</h4>
+                            <div className="grid gap-4">
+                              {pastByMonth[key].items.map(activity => <ActivityCard key={activity.id} activity={activity} isPast={true} />)}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
           </div>
         </div>
       )}
@@ -748,17 +814,46 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, onVideosCh
   const [reportError, setReportError] = useState('');
   const [formData, setFormData] = useState({ title: '', category: '', youtubeId: '', duration: '', description: '', thumbnail: '', scheduledAt: '', quizEnabled: false });
   const [questions, setQuestions] = useState([]);
-  const [activityForm, setActivityForm] = useState({ title: '', organizer: '', date: '', time: '', location: '', registrationLink: '', meetingLink: '', isFull: false });
+  const EMPTY_ACTIVITY_FORM = { title: '', organizer: '', date: '', time: '', location: '', registrationLink: '', meetingLink: '', isFull: false, participants: '', costType: 'free', cost: '', scholarshipPct: '', scholarshipAmt: '' };
+  const [activityForm, setActivityForm] = useState(EMPTY_ACTIVITY_FORM);
 
   const handleEdit = (video) => { setSaveError(''); setEditingVideo(video); setFormData({ ...video, scheduledAt: video.scheduledAt || '', thumbnail: video.thumbnail || '' }); setQuestions((video.questions || []).map(q => ({ ...q, options: [...(q.options || [])] }))); };
   const handleCreate = () => { setSaveError(''); const e = { id: Date.now(), title: '', category: '', youtubeId: '', duration: '', description: '', thumbnail: '', scheduledAt: '', quizEnabled: false, viewCount: 0 }; setEditingVideo(e); setFormData(e); setQuestions(Array(10).fill(null).map((_, i) => ({ question: 'Pregunta ' + (i+1), options: ['Opción 1', 'Opción 2', 'Opción 3'], correctAnswer: 0 }))); };
   const updateQuestion = useCallback((idx, updater) => { setQuestions(prev => prev.map((q, i) => i !== idx ? q : updater(q))); }, []);
   const handleSave = async () => { const nv = { ...formData, questions, viewCount: formData.viewCount || 0 }; setSaveError(''); try { if (videos.some(v => v.id === nv.id)) await onVideosChange(videos.map(v => v.id === nv.id ? nv : v)); else await onVideosChange([...videos, nv]); setEditingVideo(null); } catch (e) { setSaveError('No se pudieron guardar los cambios: ' + e.message); } };
   const handleDelete = async (id) => { if (confirm('¿Eliminar este video?')) { setSaveError(''); try { await onVideosChange(videos.filter(v => v.id !== id)); } catch (e) { setSaveError('No se pudo eliminar: ' + e.message); } } };
-  const handleActivityEdit = (a) => { setActivityError(''); setEditingActivity(a); setActivityForm({ title: a.title || '', organizer: a.organizer || '', date: a.date || '', time: a.time || '', location: a.location || '', registrationLink: a.registrationLink || '', meetingLink: a.meetingLink || '', isFull: Boolean(a.isFull) }); };
-  const handleActivitySave = async () => { if (!activityForm.title || !activityForm.date) { setActivityError('El título y la fecha son obligatorios.'); return; } setActivityError(''); const next = { ...editingActivity, ...activityForm }; try { const exists = activities.some(a => a.id === next.id); await onActivitiesChange(exists ? activities.map(a => a.id === next.id ? next : a) : [...activities, next]); setEditingActivity(null); setActivityForm({ title: '', organizer: '', date: '', time: '', location: '', registrationLink: '', meetingLink: '', isFull: false }); } catch (e) { setActivityError('No se pudo guardar: ' + e.message); } };
+  const handleActivityEdit = (a) => { setActivityError(''); setEditingActivity(a); setActivityForm({ title: a.title || '', organizer: a.organizer || '', date: a.date || '', time: a.time || '', location: a.location || '', registrationLink: a.registrationLink || '', meetingLink: a.meetingLink || '', isFull: Boolean(a.isFull), participants: a.participants || '', costType: a.costType || 'free', cost: a.cost || '', scholarshipPct: a.scholarshipPct || '', scholarshipAmt: a.scholarshipAmt || '' }); };
+  const handleActivitySave = async () => { if (!activityForm.title || !activityForm.date) { setActivityError('El título y la fecha son obligatorios.'); return; } setActivityError(''); const next = { ...editingActivity, ...activityForm }; try { const exists = activities.some(a => a.id === next.id); await onActivitiesChange(exists ? activities.map(a => a.id === next.id ? next : a) : [...activities, next]); setEditingActivity(null); setActivityForm(EMPTY_ACTIVITY_FORM); } catch (e) { setActivityError('No se pudo guardar: ' + e.message); } };
   const handleActivityDelete = async (id) => { if (!confirm('¿Eliminar esta actividad?')) return; setActivityError(''); try { await onActivitiesChange(activities.filter(a => a.id !== id)); } catch (e) { setActivityError('No se pudo eliminar: ' + e.message); } };
-  const handleReportGenerate = () => { if (!reportRange.start || !reportRange.end) { setReportError('Selecciona un rango de fechas completo.'); return; } const s = new Date(reportRange.start + 'T00:00:00'), e = new Date(reportRange.end + 'T23:59:59'); if (isNaN(s) || isNaN(e)) { setReportError('Rango inválido.'); return; } if (e < s) { setReportError('La fecha final debe ser posterior.'); return; } const filtered = activities.filter(a => a?.date).map(a => ({ ...a, pd: new Date(a.date + 'T00:00:00') })).filter(a => !isNaN(a.pd) && a.pd >= s && a.pd <= e); if (!filtered.length) { setReportError('No hay actividades en este rango.'); return; } const esc = v => { if (!v) return ''; const str = String(v); return (str.includes('"') || str.includes(',') || str.includes('\n')) ? '"' + str.replace(/"/g, '""') + '"' : str; }; const rows = [['Título', 'Organizador', 'Fecha', 'Hora', 'Lugar', 'Cupo lleno', 'Enlace actividad', 'Enlace inscripción'], ...filtered.map(a => [a.title, a.organizer || '', a.date, a.time || '', a.location || '', a.isFull ? 'Sí' : 'No', a.meetingLink || '', a.registrationLink || ''])]; const csv = rows.map(r => r.map(esc).join(',')).join('\n'); const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' }); const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = 'informe-actividades-' + reportRange.start + '-a-' + reportRange.end + '.csv'; document.body.appendChild(link); link.click(); document.body.removeChild(link); URL.revokeObjectURL(url); setShowReportModal(false); };
+  const handleReportGenerate = () => {
+    if (!reportRange.start || !reportRange.end) { setReportError('Selecciona un rango de fechas completo.'); return; }
+    const s = new Date(reportRange.start + 'T00:00:00'), e = new Date(reportRange.end + 'T23:59:59');
+    if (isNaN(s) || isNaN(e)) { setReportError('Rango inválido.'); return; }
+    if (e < s) { setReportError('La fecha final debe ser posterior.'); return; }
+    const filtered = activities.filter(a => a?.date).map(a => ({ ...a, pd: new Date(a.date + 'T00:00:00') })).filter(a => !isNaN(a.pd) && a.pd >= s && a.pd <= e);
+    if (!filtered.length) { setReportError('No hay actividades en este rango.'); return; }
+    const esc = v => { if (!v) return ''; const str = String(v); return (str.includes('"') || str.includes(',') || str.includes('\n')) ? '"' + str.replace(/"/g, '""') + '"' : str; };
+    const costLabel = (a) => { if (a.costType === 'paid') return 'Con costo'; if (a.costType === 'scholarship') return 'Con beca'; return 'Gratuito'; };
+    const rows = [
+      ['Título', 'Organizador', 'Fecha', 'Hora', 'Lugar', 'Participantes', 'Cupo lleno', 'Modalidad de costo', 'Costo total (Q.)', 'Pago agremiado (Q.)', '% de beca', 'Enlace actividad', 'Enlace inscripción'],
+      ...filtered.map(a => [
+        a.title, a.organizer || '', a.date, a.time || '', a.location || '',
+        a.participants || '0', a.isFull ? 'Sí' : 'No',
+        costLabel(a),
+        a.costType === 'paid' ? (a.cost || '') : a.costType === 'scholarship' ? (a.cost || '') : '',
+        a.costType === 'scholarship' ? (a.scholarshipAmt || '') : '',
+        a.costType === 'scholarship' ? (a.scholarshipPct ? a.scholarshipPct + '%' : '') : '',
+        a.meetingLink || '', a.registrationLink || ''
+      ])
+    ];
+    const csv = rows.map(r => r.map(esc).join(',')).join('\n');
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url; link.download = 'informe-actividades-' + reportRange.start + '-a-' + reportRange.end + '.csv';
+    document.body.appendChild(link); link.click(); document.body.removeChild(link); URL.revokeObjectURL(url);
+    setShowReportModal(false);
+  };
 
   if (editingVideo) {
     return (
@@ -823,22 +918,98 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, onVideosCh
               <div><label className="block text-sm text-gray-400 mb-1">Lugar</label><input type="text" value={activityForm.location} onChange={e => setActivityForm({ ...activityForm, location: e.target.value })} className="w-full bg-black border border-gray-700 rounded p-2 text-white" /></div>
               <div><label className="block text-sm text-gray-400 mb-1">Enlace (Zoom/Meet)</label><input type="url" value={activityForm.meetingLink} onChange={e => setActivityForm({ ...activityForm, meetingLink: e.target.value })} className="w-full bg-black border border-gray-700 rounded p-2 text-white" /></div>
               <div><label className="block text-sm text-gray-400 mb-1">Enlace de inscripción</label><input type="url" value={activityForm.registrationLink} onChange={e => setActivityForm({ ...activityForm, registrationLink: e.target.value })} className="w-full bg-black border border-gray-700 rounded p-2 text-white" /></div>
-              <div className="flex items-center gap-2"><input id="activity-full" type="checkbox" checked={activityForm.isFull} onChange={e => setActivityForm({ ...activityForm, isFull: e.target.checked })} className="w-5 h-5 text-blue-600 rounded" /><label htmlFor="activity-full" className="text-sm text-gray-300">Cupo lleno</label></div>
+              <div><label className="block text-sm text-gray-400 mb-1">Participantes</label><input type="number" min="0" value={activityForm.participants} onChange={e => setActivityForm({ ...activityForm, participants: e.target.value })} className="w-full bg-black border border-gray-700 rounded p-2 text-white" placeholder="0" /></div>
+              <div className="flex items-center gap-2 mt-1"><input id="activity-full" type="checkbox" checked={activityForm.isFull} onChange={e => setActivityForm({ ...activityForm, isFull: e.target.checked })} className="w-5 h-5 text-blue-600 rounded" /><label htmlFor="activity-full" className="text-sm text-gray-300">Cupo lleno</label></div>
             </div>
+
+            {/* ── MODALIDAD DE COSTO ── */}
+            <div className="mt-5 border-t border-gray-800 pt-4">
+              <p className="text-sm text-gray-400 mb-3 font-semibold uppercase tracking-wider">Modalidad de costo</p>
+              <div className="flex flex-wrap gap-4 mb-4">
+                {[['free', 'Gratuito'], ['paid', 'Con costo'], ['scholarship', 'Con beca']].map(([val, label]) => (
+                  <label key={val} className={`flex items-center gap-2 px-4 py-2 rounded-lg border cursor-pointer transition text-sm font-medium ${activityForm.costType === val ? 'border-blue-500 bg-blue-900/30 text-blue-200' : 'border-gray-700 text-gray-400 hover:border-gray-500'}`}>
+                    <input type="radio" name="costType" value={val} checked={activityForm.costType === val} onChange={() => setActivityForm({ ...activityForm, costType: val, cost: '', scholarshipPct: '', scholarshipAmt: '' })} className="accent-blue-500" />
+                    {label}
+                  </label>
+                ))}
+              </div>
+
+              {activityForm.costType === 'paid' && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm text-gray-400 mb-1">Costo total (Q.)</label>
+                    <div className="flex items-center gap-2">
+                      <span className="text-gray-400 font-bold">Q.</span>
+                      <input type="number" min="0" step="0.01" value={activityForm.cost} onChange={e => setActivityForm({ ...activityForm, cost: e.target.value })} className="flex-1 bg-black border border-gray-700 rounded p-2 text-white" placeholder="0.00" />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {activityForm.costType === 'scholarship' && (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-sm text-gray-400 mb-1">Costo total (Q.)</label>
+                    <div className="flex items-center gap-2">
+                      <span className="text-gray-400 font-bold">Q.</span>
+                      <input type="number" min="0" step="0.01" value={activityForm.cost} onChange={e => setActivityForm({ ...activityForm, cost: e.target.value })} className="flex-1 bg-black border border-gray-700 rounded p-2 text-white" placeholder="0.00" />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm text-gray-400 mb-1">Pago del agremiado (Q.)</label>
+                    <div className="flex items-center gap-2">
+                      <span className="text-gray-400 font-bold">Q.</span>
+                      <input type="number" min="0" step="0.01" value={activityForm.scholarshipAmt} onChange={e => setActivityForm({ ...activityForm, scholarshipAmt: e.target.value })} className="flex-1 bg-black border border-gray-700 rounded p-2 text-white" placeholder="0.00" />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm text-gray-400 mb-1">Porcentaje de beca (%)</label>
+                    <div className="flex items-center gap-2">
+                      <input type="number" min="0" max="100" value={activityForm.scholarshipPct} onChange={e => setActivityForm({ ...activityForm, scholarshipPct: e.target.value })} className="flex-1 bg-black border border-gray-700 rounded p-2 text-white" placeholder="0" />
+                      <span className="text-gray-400 font-bold">%</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
             <div className="flex justify-end gap-2 mt-4"><button onClick={() => setEditingActivity(null)} className="px-4 py-2 bg-gray-700 rounded hover:bg-gray-600">Cancelar</button><button onClick={handleActivitySave} className="px-4 py-2 bg-green-600 rounded hover:bg-green-700 font-bold">Guardar actividad</button></div>
           </div>
         )}
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {activities.map(a => (
-            <div key={a.id} className="bg-[#141414] border border-gray-800 rounded-xl p-4">
-              <div className="flex items-center justify-between gap-3"><h3 className="text-lg font-bold text-white">{a.title}</h3>{a.isFull && <span className="text-xs uppercase bg-red-500/20 text-red-200 border border-red-500/40 px-2 py-1 rounded-full">Cupo lleno</span>}</div>
-              <p className="text-sm text-gray-400">Organiza: {a.organizer || 'Por definir'}</p>
-              <div className="text-sm text-gray-300 mt-2 space-y-1"><p><span className="text-gray-500">Fecha:</span> {a.date ? new Date(a.date + 'T00:00:00').toLocaleDateString('es-GT') : 'Pendiente'}</p><p><span className="text-gray-500">Hora:</span> {a.time || 'Por confirmar'}</p><p><span className="text-gray-500">Lugar:</span> {a.location || 'Por confirmar'}</p></div>
-              {a.meetingLink && <a href={a.meetingLink} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 mt-3 text-sm text-blue-300 hover:text-blue-200"><ExternalLink size={14} /> Enlace de actividad</a>}
-              {a.registrationLink && <a href={a.registrationLink} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 mt-3 text-sm text-blue-300 hover:text-blue-200"><ExternalLink size={14} /> Inscripción</a>}
-              <div className="flex gap-2 mt-4"><button onClick={() => handleActivityEdit(a)} className="flex-1 bg-blue-900/40 hover:bg-blue-900/60 text-blue-200 py-2 rounded text-sm transition">Editar</button><button onClick={() => handleActivityDelete(a.id)} className="px-3 bg-red-900/40 hover:bg-red-900/60 text-red-300 rounded transition"><Trash2 size={16} /></button></div>
-            </div>
-          ))}
+          {activities.map(a => {
+            const isPast = new Date(a.date + 'T00:00:00') < new Date();
+            return (
+              <div key={a.id} className={`bg-[#141414] border rounded-xl p-4 ${isPast ? 'border-gray-700 opacity-80' : 'border-gray-800'}`}>
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                  <h3 className="text-lg font-bold text-white">{a.title}</h3>
+                  <div className="flex gap-1 flex-wrap">
+                    {isPast && <span className="text-xs uppercase bg-gray-700 text-gray-300 px-2 py-0.5 rounded-full">Pasada</span>}
+                    {a.isFull && <span className="text-xs uppercase bg-red-500/20 text-red-200 border border-red-500/40 px-2 py-0.5 rounded-full">Cupo lleno</span>}
+                  </div>
+                </div>
+                <p className="text-sm text-gray-400">Organiza: {a.organizer || 'Por definir'}</p>
+                <div className="text-sm text-gray-300 mt-2 space-y-0.5">
+                  <p><span className="text-gray-500">Fecha:</span> {a.date ? new Date(a.date + 'T00:00:00').toLocaleDateString('es-GT') : 'Pendiente'}</p>
+                  <p><span className="text-gray-500">Hora:</span> {a.time || 'Por confirmar'}</p>
+                  <p><span className="text-gray-500">Lugar:</span> {a.location || 'Por confirmar'}</p>
+                  {a.participants > 0 && <p className="flex items-center gap-1"><Users size={12} className="text-gray-500" /> <span className="text-gray-500">Participantes:</span> {a.participants}</p>}
+                </div>
+                {/* Costo */}
+                <div className="mt-2">
+                  {(!a.costType || a.costType === 'free') && <span className="text-xs bg-green-900/30 text-green-300 border border-green-700/30 px-2 py-0.5 rounded-full">Gratuito</span>}
+                  {a.costType === 'paid' && <span className="text-xs bg-blue-900/30 text-blue-300 border border-blue-700/30 px-2 py-0.5 rounded-full">Q.{a.cost}</span>}
+                  {a.costType === 'scholarship' && <span className="text-xs bg-purple-900/30 text-purple-300 border border-purple-700/30 px-2 py-0.5 rounded-full">Beca {a.scholarshipPct}% — Q.{a.scholarshipAmt}</span>}
+                </div>
+                {a.meetingLink && <a href={a.meetingLink} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 mt-3 text-sm text-blue-300 hover:text-blue-200"><ExternalLink size={14} /> Enlace de actividad</a>}
+                {a.registrationLink && <a href={a.registrationLink} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 mt-1 text-sm text-blue-300 hover:text-blue-200 block"><ExternalLink size={14} /> Inscripción</a>}
+                <div className="flex gap-2 mt-4">
+                  <button onClick={() => handleActivityEdit(a)} className="flex-1 bg-blue-900/40 hover:bg-blue-900/60 text-blue-200 py-2 rounded text-sm transition">Editar</button>
+                  <button onClick={() => handleActivityDelete(a.id)} className="px-3 bg-red-900/40 hover:bg-red-900/60 text-red-300 rounded transition"><Trash2 size={16} /></button>
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
 
