@@ -179,6 +179,9 @@ export default function App() {
     const interval = setInterval(loadLiveSession, 30000);
     return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    const loadContent = async () => {
       if (supabase) {
         try {
           const { data, error } = await supabase.from('cpg_content').select('videos, activities').eq('id', 1).single();
