@@ -785,7 +785,7 @@ function CertificateView({ video, userProfile, sessionUser, onBack }) {
         const data = await res.json();
         console.log('[CPG Cert] Respuesta API:', JSON.stringify(data));
         const apiStatus = String(data?.status || '').toUpperCase().trim();
-        setDebugInfo('Fuente: API → status=' + apiStatus + ' rawStatus=' + data?.rawStatus);
+        setDebugInfo('Fuente: API → status=' + apiStatus + ' | debug=' + JSON.stringify(data?.debug || data?.rawHtml || ''));
         if (apiStatus && apiStatus !== 'DESCONOCIDO') {
           setResolvedStatus(apiStatus);
         }
@@ -944,7 +944,7 @@ function QuestionEditor({ question, idx, onQuestionChange }) {
 // ─────────────────────────────────────────────
 // LIVE ADMIN PANEL
 // ─────────────────────────────────────────────
-function LiveAdminPanel({ liveSession, onSave }) {
+function LiveAdminPanel({ liveSession, onSave, embedded = false }) {
   const PLATFORMS = [
     { id: 'youtube', label: 'YouTube Live', hint: 'Pega la URL del video en vivo (ej. https://youtube.com/watch?v=XYZ)', color: 'border-red-600 bg-red-900/20 text-red-300' },
     { id: 'zoom',    label: 'Zoom',         hint: 'Pega el enlace de invitación de Zoom',                               color: 'border-blue-600 bg-blue-900/20 text-blue-300' },
@@ -1009,14 +1009,13 @@ function LiveAdminPanel({ liveSession, onSave }) {
   };
 
   return (
-    <div className={`rounded-2xl border p-6 mb-8 transition-colors ${isActive ? 'border-red-700/60 bg-red-950/20' : 'border-gray-800 bg-[#1b1b1b]'}`}>
+    <div className="p-6">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
         <div className="flex items-center gap-3">
           <div className={`p-2.5 rounded-xl ${isActive ? 'bg-red-600' : 'bg-gray-700'}`}>
             <Radio size={20} />
           </div>
           <div>
-            <h2 className="text-xl font-bold text-white">Transmisión en vivo</h2>
             <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${isActive ? 'bg-red-600/30 text-red-300' : 'bg-gray-700 text-gray-400'}`}>
               {isActive ? '● ACTIVA' : '○ INACTIVA'}
             </span>
@@ -1269,6 +1268,10 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
     } catch {}
     setLookingUpStatus(false);
   };
+  const [showLiveSection, setShowLiveSection] = useState(false);
+  const [showActivitiesSection, setShowActivitiesSection] = useState(false);
+  const now = new Date();
+  const [filterMonth, setFilterMonth] = useState(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`);
   const [saveError, setSaveError] = useState('');
   const [editingActivity, setEditingActivity] = useState(null);
   const [activityError, setActivityError] = useState('');
@@ -1367,14 +1370,44 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
       {activityError && <div className="mb-6 rounded border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-200">{activityError}</div>}
 
       {/* ── PANEL TRANSMISIÓN EN VIVO ── */}
-      <LiveAdminPanel liveSession={liveSession} onSave={onSaveLiveSession} />
+      <div className="bg-[#1b1b1b] border border-gray-800 rounded-2xl mb-6 overflow-hidden">
+        <button type="button" onClick={() => setShowLiveSection(v => !v)} className="w-full flex items-center justify-between px-6 py-4 hover:bg-white/5 transition">
+          <div className="flex items-center gap-3">
+            <div className="bg-red-600 p-2 rounded-lg"><span className="text-white text-xs font-bold">LIVE</span></div>
+            <div className="text-left">
+              <h2 className="text-xl font-bold text-white">Transmisión en vivo</h2>
+              <p className="text-xs text-gray-400">{liveSession?.active ? '🔴 Sesión activa: ' + liveSession.title : 'Sin sesión activa'}</p>
+            </div>
+          </div>
+          <span className="text-gray-400 text-lg">{showLiveSection ? '▲' : '▼'}</span>
+        </button>
+        {showLiveSection && <div className="border-t border-gray-800"><LiveAdminPanel liveSession={liveSession} onSave={onSaveLiveSession} embedded /></div>}
+      </div>
 
-      <div className="bg-[#1b1b1b] border border-gray-800 rounded-2xl p-6 mb-10">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
-          <div><h2 className="text-xl font-bold text-white">Actividades de capacitación</h2><span className="text-xs text-gray-400">{activities.length} actividades registradas</span></div>
-          <button type="button" onClick={() => { setReportError(''); setShowReportModal(true); }} className="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 px-4 py-2 rounded font-semibold text-sm">Informe de actividades</button>
-        </div>
-        {editingActivity !== null && (
+      <div className="bg-[#1b1b1b] border border-gray-800 rounded-2xl mb-10 overflow-hidden">
+        <button type="button" onClick={() => setShowActivitiesSection(v => !v)} className="w-full flex items-center justify-between px-6 py-4 hover:bg-white/5 transition">
+          <div className="flex items-center gap-3">
+            <div className="bg-indigo-600 p-2 rounded-lg"><CalendarDays size={18} className="text-white" /></div>
+            <div className="text-left">
+              <h2 className="text-xl font-bold text-white">Actividades de capacitación</h2>
+              <p className="text-xs text-gray-400">{activities.length} actividades registradas</p>
+            </div>
+          </div>
+          <span className="text-gray-400 text-lg">{showActivitiesSection ? '▲' : '▼'}</span>
+        </button>
+        {showActivitiesSection && (
+          <div className="border-t border-gray-800 p-6">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
+              <div className="flex items-center gap-3">
+                <label className="text-sm text-gray-400 whitespace-nowrap">Ver mes:</label>
+                <input type="month" value={filterMonth} onChange={e => setFilterMonth(e.target.value)} className="bg-black border border-gray-700 rounded px-3 py-1.5 text-white text-sm focus:border-indigo-500 outline-none" />
+                <span className="text-xs text-gray-500">
+                  {activities.filter(a => a.date && a.date.startsWith(filterMonth)).length} actividades
+                </span>
+              </div>
+              <button type="button" onClick={() => { setReportError(''); setShowReportModal(true); }} className="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 px-4 py-2 rounded font-semibold text-sm">Informe de actividades</button>
+            </div>
+            {editingActivity !== null && (
           <div className="bg-[#141414] border border-gray-800 rounded-xl p-4 mb-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div><label className="block text-sm text-gray-400 mb-1">Nombre de la actividad</label><input type="text" value={activityForm.title} onChange={e => setActivityForm({ ...activityForm, title: e.target.value })} className="w-full bg-black border border-gray-700 rounded p-2 text-white" /></div>
@@ -1443,7 +1476,7 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
           </div>
         )}
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {activities.map(a => {
+          {activities.filter(a => !a.date || a.date.startsWith(filterMonth)).map(a => {
             const isPast = new Date(a.date + 'T00:00:00') < new Date();
             return (
               <div key={a.id} className={`bg-[#141414] border rounded-xl p-4 ${isPast ? 'border-gray-700 opacity-80' : 'border-gray-800'}`}>
@@ -1477,6 +1510,8 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
             );
           })}
         </div>
+          </div>
+        )}
       </div>
 
       {showReportModal && (
