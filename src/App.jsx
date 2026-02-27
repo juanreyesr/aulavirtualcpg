@@ -1574,18 +1574,18 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
               </div>
               <div>
                 <label className="block text-sm text-gray-400 mb-1">Estado en certificado</label>
-                <div className="flex gap-3">
-                  {['ACTIVO', 'INACTIVO'].map(s => (
-                    <label key={s} className={`flex items-center gap-2 px-4 py-2 rounded-lg border cursor-pointer text-sm font-semibold transition ${manualProfile.status === s ? (s === 'ACTIVO' ? 'border-green-600 bg-green-900/30 text-green-300' : 'border-red-600 bg-red-900/30 text-red-300') : 'border-gray-700 text-gray-500 hover:border-gray-500'}`}>
-                      <input type="radio" name="manualStatus" value={s} checked={manualProfile.status === s} onChange={() => setManualProfile({ ...manualProfile, status: s })} className="accent-blue-500" />
-                      {s}
-                    </label>
-                  ))}
-                  <label className="flex items-center gap-2 px-4 py-2 rounded-lg border cursor-pointer text-sm font-semibold transition border-gray-700 text-gray-500 hover:border-gray-500">
-                    <input type="radio" name="manualStatus" value="" checked={!manualProfile.status} onChange={() => setManualProfile({ ...manualProfile, status: '' })} className="accent-blue-500" />
-                    Sin estado
-                  </label>
-                </div>
+                {manualProfile.status ? (
+                  <div className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-lg border text-sm font-bold ${manualProfile.status === 'ACTIVO' ? 'border-green-600 bg-green-900/30 text-green-300' : 'border-red-600 bg-red-900/30 text-red-300'}`}>
+                    <span className={`w-2 h-2 rounded-full ${manualProfile.status === 'ACTIVO' ? 'bg-green-400' : 'bg-red-400'}`}></span>
+                    {manualProfile.status}
+                    <span className="text-xs font-normal opacity-60 ml-1">(obtenido del CPG)</span>
+                  </div>
+                ) : (
+                  <div className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg border border-gray-700 text-sm text-gray-500">
+                    <span className="w-2 h-2 rounded-full bg-gray-600"></span>
+                    Ingresa el número de colegiado para consultar
+                  </div>
+                )}
               </div>
             </div>
             <div className="flex justify-end gap-3 mt-6">
