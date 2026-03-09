@@ -67,6 +67,179 @@ const getCertQrUrl = (code) => {
   return `https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(verifyUrl)}&bgcolor=ffffff&color=1a1a2e&margin=4`;
 };
 
+// ── VERIFICACIÓN PÚBLICA DE CERTIFICADO ──────────
+function CertificateVerifyView({ code }) {
+  const [status, setStatus] = useState('loading'); // loading | found | not_found | error
+  const [cert, setCert] = useState(null);
+
+  useEffect(() => {
+    const verify = async () => {
+      if (!supabase) { setStatus('error'); return; }
+      try {
+        const { data, error } = await supabase
+          .from('cpg_certificates')
+          .select('*')
+          .eq('certificate_code', code)
+          .single();
+        if (error || !data) { setStatus('not_found'); return; }
+        setCert(data);
+        setStatus('found');
+      } catch {
+        setStatus('error');
+      }
+    };
+    verify();
+  }, [code]);
+
+  const fmt = (iso) => new Date(iso).toLocaleDateString('es-GT', {
+    year: 'numeric', month: 'long', day: 'numeric'
+  });
+
+  return (
+    <div className="min-h-screen bg-[#0e0e0e] flex flex-col items-center justify-center px-4 py-12">
+      {/* Logo y encabezado */}
+      <div className="flex flex-col items-center gap-3 mb-8">
+        <div className="flex items-center gap-4">
+          <img src="/logo-cpg-grande.png" alt="CPG" className="w-16 h-16 object-contain" onError={e => e.target.style.display='none'} />
+          <img src="/logo-caeduc.png" alt="CAEDUC" className="w-16 h-16 object-contain" onError={e => e.target.style.display='none'} />
+        </div>
+        <div className="text-center">
+          <h1 className="text-lg font-bold text-white">Colegio de Psicólogos de Guatemala</h1>
+          <p className="text-blue-400 text-xs tracking-widest uppercase">Verificación de Certificado · Aula Virtual CAEDUC</p>
+        </div>
+      </div>
+
+      <div className="w-full max-w-xl">
+        {/* Cargando */}
+        {status === 'loading' && (
+          <div className="bg-[#1a1a1a] border border-gray-800 rounded-2xl p-10 text-center">
+            <Loader2 size={40} className="animate-spin text-blue-400 mx-auto mb-4" />
+            <p className="text-gray-400">Verificando certificado...</p>
+            <p className="text-gray-600 text-xs mt-1 font-mono">{code}</p>
+          </div>
+        )}
+
+        {/* CERTIFICADO VÁLIDO */}
+        {status === 'found' && cert && (
+          <div className="bg-[#1a1a1a] border border-green-700/50 rounded-2xl overflow-hidden shadow-2xl shadow-green-900/20">
+            {/* Header verde */}
+            <div className="bg-gradient-to-r from-green-900/60 to-green-800/30 border-b border-green-700/40 px-6 py-5 flex items-center gap-4">
+              <div className="bg-green-600 rounded-full p-3 shrink-0">
+                <CheckCircle size={28} className="text-white" fill="white" />
+              </div>
+              <div>
+                <p className="text-green-300 text-xs font-bold uppercase tracking-widest mb-0.5">Certificado válido</p>
+                <h2 className="text-white text-xl font-bold leading-tight">Documento auténtico verificado</h2>
+                <p className="text-green-400/80 text-xs mt-0.5">Emitido por el Aula Virtual — Colegio de Psicólogos de Guatemala</p>
+              </div>
+            </div>
+
+            {/* Datos del certificado */}
+            <div className="px-6 py-6 space-y-4">
+              <div className="grid grid-cols-1 gap-3">
+                {/* Nombre */}
+                <div className="bg-black/30 rounded-xl p-4 flex items-start gap-3 border border-gray-800">
+                  <UserCheck size={18} className="text-blue-400 mt-0.5 shrink-0" />
+                  <div>
+                    <p className="text-gray-500 text-xs uppercase tracking-wider mb-0.5">Profesional</p>
+                    <p className="text-white font-bold text-lg">{cert.recipient_name}</p>
+                  </div>
+                </div>
+
+                {/* Colegiado + Estado en la misma fila */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="bg-black/30 rounded-xl p-4 border border-gray-800">
+                    <p className="text-gray-500 text-xs uppercase tracking-wider mb-1">No. Colegiado</p>
+                    <p className="text-white font-bold font-mono text-lg">{cert.collegiate_number}</p>
+                  </div>
+                  <div className="bg-black/30 rounded-xl p-4 border border-gray-800">
+                    <p className="text-gray-500 text-xs uppercase tracking-wider mb-1">Estado CPG</p>
+                    <span className={`inline-flex items-center gap-1.5 font-bold text-sm ${cert.status === 'ACTIVO' ? 'text-green-400' : 'text-red-400'}`}>
+                      <span className={`w-2 h-2 rounded-full ${cert.status === 'ACTIVO' ? 'bg-green-400' : 'bg-red-400'}`}></span>
+                      {cert.status}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Curso */}
+                <div className="bg-black/30 rounded-xl p-4 flex items-start gap-3 border border-gray-800">
+                  <Award size={18} className="text-yellow-500 mt-0.5 shrink-0" />
+                  <div>
+                    <p className="text-gray-500 text-xs uppercase tracking-wider mb-0.5">Curso completado</p>
+                    <p className="text-white font-semibold">{cert.video_title}</p>
+                  </div>
+                </div>
+
+                {/* Fecha y código */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="bg-black/30 rounded-xl p-4 border border-gray-800">
+                    <p className="text-gray-500 text-xs uppercase tracking-wider mb-1">Fecha de emisión</p>
+                    <p className="text-gray-200 text-sm font-medium">{fmt(cert.issued_at)}</p>
+                  </div>
+                  <div className="bg-black/30 rounded-xl p-4 border border-gray-800">
+                    <p className="text-gray-500 text-xs uppercase tracking-wider mb-1">Código</p>
+                    <p className="text-gray-400 text-xs font-mono break-all">{cert.certificate_code}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Sello de verificación */}
+              <div className="flex items-center gap-2 bg-green-900/20 border border-green-700/30 rounded-xl px-4 py-3 mt-2">
+                <Shield size={16} className="text-green-400 shrink-0" />
+                <p className="text-green-300 text-xs">Este certificado fue generado y registrado automáticamente por el sistema de Aula Virtual CPG. Su autenticidad está garantizada mediante código único e infalsificable.</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* NO ENCONTRADO */}
+        {status === 'not_found' && (
+          <div className="bg-[#1a1a1a] border border-red-700/40 rounded-2xl overflow-hidden shadow-2xl">
+            <div className="bg-gradient-to-r from-red-900/40 to-red-800/20 border-b border-red-700/30 px-6 py-5 flex items-center gap-4">
+              <div className="bg-red-700 rounded-full p-3 shrink-0">
+                <XCircle size={28} className="text-white" />
+              </div>
+              <div>
+                <p className="text-red-300 text-xs font-bold uppercase tracking-widest mb-0.5">No encontrado</p>
+                <h2 className="text-white text-xl font-bold">Certificado no registrado</h2>
+              </div>
+            </div>
+            <div className="px-6 py-6 space-y-4">
+              <p className="text-gray-300 text-sm">El código <span className="font-mono text-red-300 bg-red-900/20 px-2 py-0.5 rounded">{code}</span> no corresponde a ningún certificado emitido por el Aula Virtual CPG.</p>
+              <div className="bg-yellow-900/20 border border-yellow-700/30 rounded-xl px-4 py-3">
+                <p className="text-yellow-300 text-xs font-semibold mb-1">Posibles causas:</p>
+                <ul className="text-yellow-200/70 text-xs space-y-1 list-disc list-inside">
+                  <li>El código fue alterado o es incorrecto</li>
+                  <li>El documento es una falsificación</li>
+                  <li>El certificado fue emitido antes de activarse el sistema de verificación</li>
+                </ul>
+              </div>
+              <p className="text-gray-500 text-xs">Para verificación adicional comuníquese con CAEDUC: <a href="mailto:gestor.caeduc@colegiodepsicologos.org.gt" className="text-blue-400 hover:underline">gestor.caeduc@colegiodepsicologos.org.gt</a></p>
+            </div>
+          </div>
+        )}
+
+        {/* ERROR */}
+        {status === 'error' && (
+          <div className="bg-[#1a1a1a] border border-gray-700 rounded-2xl p-8 text-center">
+            <Wifi size={40} className="text-gray-600 mx-auto mb-4" />
+            <p className="text-gray-300 font-semibold mb-2">No se pudo conectar al servidor</p>
+            <p className="text-gray-500 text-sm">Intenta recargar la página. Si el problema persiste, contacta a CAEDUC.</p>
+          </div>
+        )}
+
+        {/* Volver al Aula */}
+        <div className="text-center mt-6">
+          <a href="/" className="text-gray-500 hover:text-blue-400 text-sm transition flex items-center justify-center gap-1">
+            <ChevronLeft size={14} /> Volver al Aula Virtual CPG
+          </a>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
 // ── LOGIN MODAL (2 pasos) ─────────────────────────
 function LoginColModal({ onSession }) {
   const [step, setStep] = useState('collegiate'); // 'collegiate' | 'auth'
@@ -231,6 +404,9 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [liveSession, setLiveSession] = useState(null);
 
+  // Detectar ?cert=CPG-... en la URL (verificación pública de certificados)
+  const certCodeFromUrl = new URLSearchParams(window.location.search).get('cert');
+
   const loadViewCounts = async () => {
     if (!supabase) return;
     try {
@@ -355,6 +531,9 @@ export default function App() {
   const publishedVideos = videos.filter(isVideoPublished);
   const upcomingVideos = videos.filter(v => !isVideoPublished(v));
   const recentVideos = [...publishedVideos].reverse().slice(0, 5);
+
+  // Vista pública de verificación de certificado (no requiere login)
+  if (certCodeFromUrl) return <CertificateVerifyView code={certCodeFromUrl} />;
 
   if (!sessionUser) return <LoginColModal onSession={setSessionUser} />;
 
