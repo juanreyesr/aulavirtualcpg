@@ -3,7 +3,7 @@ import {
   Play, CheckCircle, XCircle, LogOut, Plus, Trash2, Award,
   ChevronLeft, ChevronDown, Lock, ExternalLink, X, CalendarDays, Eye,
   Download, Loader2, UserCheck, UserX, Edit2, Users, Radio, Wifi, Video,
-  Search, Mail, Shield, History, QrCode
+  Search, Mail, Shield, History, QrCode, KeyRound
 } from 'lucide-react';
 import { supabase } from './supabaseClient';
 import html2canvas from 'html2canvas';
@@ -241,15 +241,25 @@ function CertificateVerifyView({ code }) {
 
 
 // ── LOGIN MODAL (2 pasos) ─────────────────────────
+// Enmascara correo: tucorreo@gmail.com → tuc***@gmail.com
+function maskEmail(email) {
+  const [user, domain] = email.split('@');
+  const visible = user.slice(0, 3);
+  return `${visible}***@${domain}`;
+}
+
 function LoginColModal({ onSession }) {
   const [step, setStep] = useState('collegiate');
   const [colegiadoInput, setColegiadoInput] = useState('');
   const [emailInput, setEmailInput] = useState('');
   const [passwordInput, setPasswordInput] = useState('');
-  const [authMode, setAuthMode] = useState('login'); // 'login' | 'register'
+  const [authMode, setAuthMode] = useState('login');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [cpgData, setCpgData] = useState(null);
+  // Para el caso de colegiado ya registrado
+  const [registeredEmail, setRegisteredEmail] = useState(null); // email ya vinculado
+  const [resetSent, setResetSent] = useState(false);
 
   const handleVerifyCollegiado = async () => {
     const val = colegiadoInput.trim();
@@ -258,10 +268,35 @@ function LoginColModal({ onSession }) {
     try {
       const data = await consultarColegiado(val);
       setCpgData(data);
+      setRegisteredEmail(null);
+      setResetSent(false);
+      // Verificar si el colegiado ya tiene cuenta registrada
+      if (supabase) {
+        const { data: profile } = await supabase
+          .from('cpg_user_profiles')
+          .select('email')
+          .eq('collegiate_number', val)
+          .maybeSingle();
+        if (profile?.email) {
+          setRegisteredEmail(profile.email);
+          setAuthMode('login'); // Forzar modo login
+        }
+      }
       setStep('auth');
     } catch (e) {
       setError(e.message || 'No se encontró el colegiado.');
     } finally { setLoading(false); }
+  };
+
+  const handlePasswordReset = async () => {
+    if (!registeredEmail || !supabase) return;
+    setLoading(true);
+    const { error: resetErr } = await supabase.auth.resetPasswordForEmail(registeredEmail, {
+      redirectTo: `${APP_URL}/?reset=true`,
+    });
+    setLoading(false);
+    if (resetErr) { setError('No se pudo enviar el correo: ' + resetErr.message); return; }
+    setResetSent(true);
   };
 
   const handleEmailAuth = async () => {
@@ -274,24 +309,40 @@ function LoginColModal({ onSession }) {
     }
     setLoading(true); setError('');
     try {
-      if (authMode === 'login') {
-        const { error: signInErr } = await supabase.auth.signInWithPassword({ email: emailInput.trim(), password: passwordInput });
-        if (signInErr) {
-          if (signInErr.message.includes('Invalid') || signInErr.message.includes('not found')) {
-            setError('Credenciales incorrectas. ¿Primera vez? Selecciona "Crear cuenta".');
-          } else {
-            setError(signInErr.message);
-          }
-          setLoading(false); return;
+      if (authMode === 'register') {
+        // Verificar doble: que el colegiado no esté ya registrado
+        const { data: existing } = await supabase
+          .from('cpg_user_profiles')
+          .select('email')
+          .eq('collegiate_number', cpgData.colegiado)
+          .maybeSingle();
+        if (existing?.email) {
+          setRegisteredEmail(existing.email);
+          setAuthMode('login');
+          setError('');
+          setLoading(false);
+          return;
         }
-      } else {
+        // Registrar en Supabase Auth
         const { error: signUpErr } = await supabase.auth.signUp({ email: emailInput.trim(), password: passwordInput });
         if (signUpErr) {
           if (signUpErr.message.includes('already registered')) {
             setError('Este correo ya está registrado. Selecciona "Ingresar".');
-          } else {
-            setError(signUpErr.message);
-          }
+          } else { setError(signUpErr.message); }
+          setLoading(false); return;
+        }
+        // Vincular colegiado ↔ correo en la tabla de perfiles
+        await supabase.from('cpg_user_profiles').upsert(
+          { collegiate_number: cpgData.colegiado, email: emailInput.trim(), name: cpgData.name },
+          { onConflict: 'collegiate_number' }
+        );
+      } else {
+        // Login normal
+        const { error: signInErr } = await supabase.auth.signInWithPassword({ email: emailInput.trim(), password: passwordInput });
+        if (signInErr) {
+          if (signInErr.message.includes('Invalid') || signInErr.message.includes('not found')) {
+            setError('Contraseña incorrecta. Si olvidaste tu contraseña, usa "Recuperar contraseña".');
+          } else { setError(signInErr.message); }
           setLoading(false); return;
         }
       }
@@ -348,39 +399,100 @@ function LoginColModal({ onSession }) {
 
           {step === 'auth' && cpgData && (
             <>
+              {/* Card de colegiado verificado */}
               <div className="bg-green-900/20 border border-green-700/40 rounded-xl p-4 mb-6">
                 <p className="text-green-400 text-xs font-bold uppercase tracking-wider mb-1">✓ Colegiado verificado</p>
                 <p className="text-white font-bold">{cpgData.name}</p>
                 <p className="text-gray-400 text-sm">No. {cpgData.colegiado} · <span className={`font-semibold ${cpgData.status === 'ACTIVO' ? 'text-green-400' : 'text-red-400'}`}>{cpgData.status}</span></p>
               </div>
 
-              {/* Toggle login/register */}
-              <div className="flex bg-gray-900 border border-gray-700 rounded-xl p-1 mb-5">
-                <button onClick={() => { setAuthMode('login'); setError(''); }} className={`flex-1 py-2 rounded-lg text-sm font-semibold transition ${authMode === 'login' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'}`}>Ingresar</button>
-                <button onClick={() => { setAuthMode('register'); setError(''); }} className={`flex-1 py-2 rounded-lg text-sm font-semibold transition ${authMode === 'register' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'}`}>Crear cuenta</button>
-              </div>
+              {/* ── CASO: colegiado ya tiene correo registrado ── */}
+              {registeredEmail ? (
+                resetSent ? (
+                  <div className="text-center py-4">
+                    <div className="w-14 h-14 bg-green-800/30 border border-green-600/40 rounded-full flex items-center justify-center mx-auto mb-4">
+                      <CheckCircle size={28} className="text-green-400" />
+                    </div>
+                    <h2 className="text-white font-bold text-lg mb-2">Correo enviado</h2>
+                    <p className="text-gray-400 text-sm mb-1">Revisa tu bandeja de entrada en:</p>
+                    <p className="text-blue-300 font-mono text-sm mb-4">{maskEmail(registeredEmail)}</p>
+                    <p className="text-gray-500 text-xs">Sigue el enlace del correo para crear una nueva contraseña.</p>
+                    <button onClick={() => { setRegisteredEmail(null); setResetSent(false); setAuthMode('login'); }} className="mt-5 text-gray-500 hover:text-gray-300 text-sm transition">
+                      ← Volver al inicio de sesión
+                    </button>
+                  </div>
+                ) : (
+                  <div>
+                    <div className="bg-yellow-900/20 border border-yellow-600/40 rounded-xl p-4 mb-5">
+                      <p className="text-yellow-400 text-xs font-bold uppercase tracking-wider mb-1">⚠ Colegiado ya registrado</p>
+                      <p className="text-gray-300 text-sm">El número <span className="text-white font-bold">{cpgData.colegiado}</span> ya está vinculado a una cuenta.</p>
+                      <p className="text-gray-400 text-sm mt-1">Correo registrado: <span className="text-blue-300 font-mono">{maskEmail(registeredEmail)}</span></p>
+                    </div>
 
-              <h2 className="text-white font-bold text-lg mb-1">{authMode === 'login' ? 'Bienvenido de nuevo' : 'Crea tu cuenta'}</h2>
-              <p className="text-gray-400 text-sm mb-5">{authMode === 'login' ? 'Ingresa con tu correo y contraseña.' : 'Registra tu correo para acceder al aula virtual.'}</p>
+                    <h2 className="text-white font-bold text-lg mb-1">Ingresa a tu cuenta</h2>
+                    <p className="text-gray-400 text-sm mb-4">Usa el correo y contraseña con los que te registraste.</p>
 
-              {error && <div className="mb-4 bg-red-500/10 border border-red-500/30 rounded-lg px-4 py-3 text-sm text-red-300 flex items-start gap-2"><XCircle size={16} className="mt-0.5 flex-shrink-0" />{error}</div>}
+                    {error && <div className="mb-4 bg-red-500/10 border border-red-500/30 rounded-lg px-4 py-3 text-sm text-red-300 flex items-start gap-2"><XCircle size={16} className="mt-0.5 flex-shrink-0" />{error}</div>}
 
-              <div className="mb-3">
-                <label className="block text-gray-400 text-xs mb-1.5 uppercase tracking-wider">Correo electrónico</label>
-                <input type="email" value={emailInput} onChange={e => { setEmailInput(e.target.value); setError(''); }} onKeyDown={e => e.key === 'Enter' && handleEmailAuth()} className="w-full bg-black border border-gray-700 rounded-lg p-3 text-white focus:border-blue-500 outline-none transition" placeholder="tucorreo@ejemplo.com" />
-              </div>
-              <div className="mb-4">
-                <label className="block text-gray-400 text-xs mb-1.5 uppercase tracking-wider">Contraseña {authMode === 'register' && <span className="text-gray-600 normal-case">(mínimo 6 caracteres)</span>}</label>
-                <input type="password" value={passwordInput} onChange={e => { setPasswordInput(e.target.value); setError(''); }} onKeyDown={e => e.key === 'Enter' && handleEmailAuth()} className="w-full bg-black border border-gray-700 rounded-lg p-3 text-white focus:border-blue-500 outline-none transition" placeholder="••••••••" />
-              </div>
+                    <div className="mb-3">
+                      <label className="block text-gray-400 text-xs mb-1.5 uppercase tracking-wider">Correo electrónico</label>
+                      <input type="email" value={emailInput} onChange={e => { setEmailInput(e.target.value); setError(''); }} onKeyDown={e => e.key === 'Enter' && handleEmailAuth()} className="w-full bg-black border border-gray-700 rounded-lg p-3 text-white focus:border-blue-500 outline-none transition" placeholder={maskEmail(registeredEmail)} />
+                    </div>
+                    <div className="mb-4">
+                      <label className="block text-gray-400 text-xs mb-1.5 uppercase tracking-wider">Contraseña</label>
+                      <input type="password" value={passwordInput} onChange={e => { setPasswordInput(e.target.value); setError(''); }} onKeyDown={e => e.key === 'Enter' && handleEmailAuth()} className="w-full bg-black border border-gray-700 rounded-lg p-3 text-white focus:border-blue-500 outline-none transition" placeholder="••••••••" />
+                    </div>
 
-              <button onClick={handleEmailAuth} disabled={loading} className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 disabled:cursor-not-allowed text-white font-bold py-3 rounded-lg transition flex items-center justify-center gap-2 mb-4">
-                {loading ? <><Loader2 size={18} className="animate-spin" /> Procesando...</> : <><Mail size={18} /> {authMode === 'login' ? 'Ingresar' : 'Crear cuenta e ingresar'}</>}
-              </button>
+                    <button onClick={handleEmailAuth} disabled={loading} className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 disabled:cursor-not-allowed text-white font-bold py-3 rounded-lg transition flex items-center justify-center gap-2 mb-3">
+                      {loading ? <><Loader2 size={18} className="animate-spin" /> Verificando...</> : <><Mail size={18} /> Ingresar</>}
+                    </button>
 
-              <button onClick={() => { setStep('collegiate'); setError(''); }} className="w-full text-gray-500 hover:text-gray-300 text-sm py-2 transition">
-                ← Cambiar número de colegiado
-              </button>
+                    <button onClick={handlePasswordReset} disabled={loading} className="w-full bg-gray-800 hover:bg-gray-700 border border-gray-600 text-gray-300 hover:text-white font-medium py-3 rounded-lg transition flex items-center justify-center gap-2 text-sm mb-3">
+                      {loading ? <Loader2 size={16} className="animate-spin" /> : <><KeyRound size={16} /> Olvidé mi contraseña — enviar correo de recuperación</>}
+                    </button>
+
+                    <button onClick={() => { setStep('collegiate'); setError(''); setRegisteredEmail(null); }} className="w-full text-gray-500 hover:text-gray-300 text-sm py-2 transition">
+                      ← Cambiar número de colegiado
+                    </button>
+                  </div>
+                )
+              ) : (
+                /* ── CASO NORMAL: colegiado nuevo, toggle login/registro ── */
+                <>
+                  <div className="flex bg-gray-900 border border-gray-700 rounded-xl p-1 mb-5">
+                    <button onClick={() => { setAuthMode('login'); setError(''); }} className={`flex-1 py-2 rounded-lg text-sm font-semibold transition ${authMode === 'login' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'}`}>Ingresar</button>
+                    <button onClick={() => { setAuthMode('register'); setError(''); }} className={`flex-1 py-2 rounded-lg text-sm font-semibold transition ${authMode === 'register' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'}`}>Crear cuenta</button>
+                  </div>
+
+                  <h2 className="text-white font-bold text-lg mb-1">{authMode === 'login' ? 'Bienvenido de nuevo' : 'Crea tu cuenta'}</h2>
+                  <p className="text-gray-400 text-sm mb-5">{authMode === 'login' ? 'Ingresa con tu correo y contraseña.' : 'Registra tu correo para acceder al aula virtual.'}</p>
+
+                  {error && <div className="mb-4 bg-red-500/10 border border-red-500/30 rounded-lg px-4 py-3 text-sm text-red-300 flex items-start gap-2"><XCircle size={16} className="mt-0.5 flex-shrink-0" />{error}</div>}
+
+                  <div className="mb-3">
+                    <label className="block text-gray-400 text-xs mb-1.5 uppercase tracking-wider">Correo electrónico</label>
+                    <input type="email" value={emailInput} onChange={e => { setEmailInput(e.target.value); setError(''); }} onKeyDown={e => e.key === 'Enter' && handleEmailAuth()} className="w-full bg-black border border-gray-700 rounded-lg p-3 text-white focus:border-blue-500 outline-none transition" placeholder="tucorreo@ejemplo.com" />
+                  </div>
+                  <div className="mb-4">
+                    <label className="block text-gray-400 text-xs mb-1.5 uppercase tracking-wider">Contraseña {authMode === 'register' && <span className="text-gray-600 normal-case">(mínimo 6 caracteres)</span>}</label>
+                    <input type="password" value={passwordInput} onChange={e => { setPasswordInput(e.target.value); setError(''); }} onKeyDown={e => e.key === 'Enter' && handleEmailAuth()} className="w-full bg-black border border-gray-700 rounded-lg p-3 text-white focus:border-blue-500 outline-none transition" placeholder="••••••••" />
+                  </div>
+
+                  <button onClick={handleEmailAuth} disabled={loading} className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 disabled:cursor-not-allowed text-white font-bold py-3 rounded-lg transition flex items-center justify-center gap-2 mb-4">
+                    {loading ? <><Loader2 size={18} className="animate-spin" /> Procesando...</> : <><Mail size={18} /> {authMode === 'login' ? 'Ingresar' : 'Crear cuenta e ingresar'}</>}
+                  </button>
+
+                  {authMode === 'login' && (
+                    <button onClick={() => setAuthMode('register')} className="w-full text-gray-500 hover:text-gray-300 text-xs py-1 transition mb-2">
+                      ¿Primera vez? Crear cuenta →
+                    </button>
+                  )}
+
+                  <button onClick={() => { setStep('collegiate'); setError(''); }} className="w-full text-gray-500 hover:text-gray-300 text-sm py-2 transition">
+                    ← Cambiar número de colegiado
+                  </button>
+                </>
+              )}
             </>
           )}
         </div>
