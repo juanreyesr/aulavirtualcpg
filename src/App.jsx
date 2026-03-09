@@ -242,30 +242,14 @@ function CertificateVerifyView({ code }) {
 
 // ── LOGIN MODAL (2 pasos) ─────────────────────────
 function LoginColModal({ onSession }) {
-  const [step, setStep] = useState('collegiate'); // 'collegiate' | 'auth'
+  const [step, setStep] = useState('collegiate');
   const [colegiadoInput, setColegiadoInput] = useState('');
   const [emailInput, setEmailInput] = useState('');
+  const [passwordInput, setPasswordInput] = useState('');
+  const [authMode, setAuthMode] = useState('login'); // 'login' | 'register'
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [cpgData, setCpgData] = useState(null);
-
-  // Manejar retorno de OAuth Google
-  useEffect(() => {
-    if (!supabase) return;
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event === 'SIGNED_IN' && session) {
-        const pending = localStorage.getItem('cpg_google_pending');
-        if (pending) {
-          try {
-            const data = JSON.parse(pending);
-            localStorage.removeItem('cpg_google_pending');
-            onSession({ name: data.name, collegiateNumber: data.colegiado, status: data.status, isGuest: false, email: session.user.email });
-          } catch {}
-        }
-      }
-    });
-    return () => subscription.unsubscribe();
-  }, []);
 
   const handleVerifyCollegiado = async () => {
     const val = colegiadoInput.trim();
@@ -280,21 +264,41 @@ function LoginColModal({ onSession }) {
     } finally { setLoading(false); }
   };
 
-  const handleEmailContinue = () => {
+  const handleEmailAuth = async () => {
     if (!emailInput.trim()) { setError('Ingresa tu correo electrónico.'); return; }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailInput.trim())) { setError('Correo electrónico inválido.'); return; }
-    onSession({ name: cpgData.name, collegiateNumber: cpgData.colegiado, status: cpgData.status, isGuest: false, email: emailInput.trim() });
-  };
-
-  const handleGoogle = async () => {
-    if (!supabase) { setError('Supabase no configurado.'); return; }
-    setError('');
-    localStorage.setItem('cpg_google_pending', JSON.stringify(cpgData));
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: { redirectTo: window.location.origin }
-    });
-    if (error) { setError('Error con Google: ' + error.message); localStorage.removeItem('cpg_google_pending'); }
+    if (!passwordInput || passwordInput.length < 6) { setError('La contraseña debe tener al menos 6 caracteres.'); return; }
+    if (!supabase) {
+      onSession({ name: cpgData.name, collegiateNumber: cpgData.colegiado, status: cpgData.status, isGuest: false, email: emailInput.trim() });
+      return;
+    }
+    setLoading(true); setError('');
+    try {
+      if (authMode === 'login') {
+        const { error: signInErr } = await supabase.auth.signInWithPassword({ email: emailInput.trim(), password: passwordInput });
+        if (signInErr) {
+          if (signInErr.message.includes('Invalid') || signInErr.message.includes('not found')) {
+            setError('Credenciales incorrectas. ¿Primera vez? Selecciona "Crear cuenta".');
+          } else {
+            setError(signInErr.message);
+          }
+          setLoading(false); return;
+        }
+      } else {
+        const { error: signUpErr } = await supabase.auth.signUp({ email: emailInput.trim(), password: passwordInput });
+        if (signUpErr) {
+          if (signUpErr.message.includes('already registered')) {
+            setError('Este correo ya está registrado. Selecciona "Ingresar".');
+          } else {
+            setError(signUpErr.message);
+          }
+          setLoading(false); return;
+        }
+      }
+      onSession({ name: cpgData.name, collegiateNumber: cpgData.colegiado, status: cpgData.status, isGuest: false, email: emailInput.trim() });
+    } catch (e) {
+      setError('Error de autenticación: ' + e.message);
+    } finally { setLoading(false); }
   };
 
   const handleGuest = () => onSession({ name: 'Invitado', collegiateNumber: '0000', status: 'INVITADO', isGuest: true });
@@ -387,7 +391,12 @@ function LoginColModal({ onSession }) {
 
 // ── APP PRINCIPAL ─────────────────────────────────
 export default function App() {
-  const [sessionUser, setSessionUser] = useState(null);
+  const [sessionUser, setSessionUser] = useState(() => {
+    try {
+      const saved = localStorage.getItem('cpg_session');
+      return saved ? JSON.parse(saved) : null;
+    } catch { return null; }
+  });
   const [completedVideos, setCompletedVideos] = useState(new Set());
   const [view, setView] = useState('home');
   const [videos, setVideos] = useState([]);
@@ -522,7 +531,7 @@ export default function App() {
     } else { setAuthError('Credenciales incorrectas'); }
   };
 
-  const handleLogout = async () => { if (supabase) await supabase.auth.signOut(); setIsAdmin(false); setView('home'); };
+  const handleLogout = async () => { if (supabase) await supabase.auth.signOut(); localStorage.removeItem('cpg_session'); setIsAdmin(false); setSessionUser(null); setView('home'); };
   const handleManualCertificate = (video, profile) => { setManualCertificate({ video, profile }); setView('certificate'); };
   const handleCloseManualCertificate = () => { setManualCertificate(null); setView('admin'); };
 
@@ -534,7 +543,10 @@ export default function App() {
   // Vista pública de verificación de certificado (no requiere login)
   if (certCodeFromUrl) return <CertificateVerifyView code={certCodeFromUrl} />;
 
-  if (!sessionUser) return <LoginColModal onSession={setSessionUser} />;
+  if (!sessionUser) return <LoginColModal onSession={(user) => {
+    localStorage.setItem('cpg_session', JSON.stringify(user));
+    setSessionUser(user);
+  }} />;
 
   const firstName = getFirstName(sessionUser.name);
 
