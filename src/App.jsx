@@ -350,30 +350,28 @@ function LoginColModal({ onSession }) {
                 <p className="text-gray-400 text-sm">No. {cpgData.colegiado} · <span className={`font-semibold ${cpgData.status === 'ACTIVO' ? 'text-green-400' : 'text-red-400'}`}>{cpgData.status}</span></p>
               </div>
 
-              <h2 className="text-white font-bold text-lg mb-1">Confirma tu identidad</h2>
-              <p className="text-gray-400 text-sm mb-5">Ingresa tu correo o continúa con Google para completar el ingreso.</p>
+              {/* Toggle login/register */}
+              <div className="flex bg-gray-900 border border-gray-700 rounded-xl p-1 mb-5">
+                <button onClick={() => { setAuthMode('login'); setError(''); }} className={`flex-1 py-2 rounded-lg text-sm font-semibold transition ${authMode === 'login' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'}`}>Ingresar</button>
+                <button onClick={() => { setAuthMode('register'); setError(''); }} className={`flex-1 py-2 rounded-lg text-sm font-semibold transition ${authMode === 'register' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'}`}>Crear cuenta</button>
+              </div>
+
+              <h2 className="text-white font-bold text-lg mb-1">{authMode === 'login' ? 'Bienvenido de nuevo' : 'Crea tu cuenta'}</h2>
+              <p className="text-gray-400 text-sm mb-5">{authMode === 'login' ? 'Ingresa con tu correo y contraseña.' : 'Registra tu correo para acceder al aula virtual.'}</p>
 
               {error && <div className="mb-4 bg-red-500/10 border border-red-500/30 rounded-lg px-4 py-3 text-sm text-red-300 flex items-start gap-2"><XCircle size={16} className="mt-0.5 flex-shrink-0" />{error}</div>}
 
-              {/* Email */}
               <div className="mb-3">
                 <label className="block text-gray-400 text-xs mb-1.5 uppercase tracking-wider">Correo electrónico</label>
-                <input type="email" value={emailInput} onChange={e => { setEmailInput(e.target.value); setError(''); }} onKeyDown={e => e.key === 'Enter' && handleEmailContinue()} className="w-full bg-black border border-gray-700 rounded-lg p-3 text-white focus:border-blue-500 outline-none transition" placeholder="tucorreo@ejemplo.com" />
+                <input type="email" value={emailInput} onChange={e => { setEmailInput(e.target.value); setError(''); }} onKeyDown={e => e.key === 'Enter' && handleEmailAuth()} className="w-full bg-black border border-gray-700 rounded-lg p-3 text-white focus:border-blue-500 outline-none transition" placeholder="tucorreo@ejemplo.com" />
               </div>
-              <button onClick={handleEmailContinue} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg transition flex items-center justify-center gap-2 mb-4">
-                <Mail size={18} /> Continuar con correo
-              </button>
-
-              <div className="flex items-center gap-3 mb-4">
-                <div className="flex-1 h-px bg-gray-700" />
-                <span className="text-gray-500 text-xs">o</span>
-                <div className="flex-1 h-px bg-gray-700" />
+              <div className="mb-4">
+                <label className="block text-gray-400 text-xs mb-1.5 uppercase tracking-wider">Contraseña {authMode === 'register' && <span className="text-gray-600 normal-case">(mínimo 6 caracteres)</span>}</label>
+                <input type="password" value={passwordInput} onChange={e => { setPasswordInput(e.target.value); setError(''); }} onKeyDown={e => e.key === 'Enter' && handleEmailAuth()} className="w-full bg-black border border-gray-700 rounded-lg p-3 text-white focus:border-blue-500 outline-none transition" placeholder="••••••••" />
               </div>
 
-              {/* Google */}
-              <button onClick={handleGoogle} className="w-full bg-white hover:bg-gray-100 text-gray-900 font-bold py-3 rounded-lg transition flex items-center justify-center gap-3 mb-4">
-                <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.31-8.16 2.31-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
-                Continuar con Google
+              <button onClick={handleEmailAuth} disabled={loading} className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 disabled:cursor-not-allowed text-white font-bold py-3 rounded-lg transition flex items-center justify-center gap-2 mb-4">
+                {loading ? <><Loader2 size={18} className="animate-spin" /> Procesando...</> : <><Mail size={18} /> {authMode === 'login' ? 'Ingresar' : 'Crear cuenta e ingresar'}</>}
               </button>
 
               <button onClick={() => { setStep('collegiate'); setError(''); }} className="w-full text-gray-500 hover:text-gray-300 text-sm py-2 transition">
@@ -403,6 +401,7 @@ export default function App() {
   const [userProfile, setUserProfile] = useState({ name: '', collegiateNumber: '' });
   const [searchQuery, setSearchQuery] = useState('');
   const [liveSession, setLiveSession] = useState(null);
+  const [reprintCert, setReprintCert] = useState(null);
 
   // Detectar ?cert=CPG-... en la URL (verificación pública de certificados)
   const certCodeFromUrl = new URLSearchParams(window.location.search).get('cert');
@@ -622,7 +621,8 @@ export default function App() {
         {view === 'login' && <LoginView onLogin={handleLogin} onBack={() => setView('home')} authError={authError} />}
         {view === 'admin' && isAdmin && <AdminDashboard videos={videos} viewCounts={viewCounts} totalViews={totalViews} activities={activities} liveSession={liveSession} onSaveLiveSession={saveLiveSession} onVideosChange={persistVideos} onActivitiesChange={persistActivities} onGenerateCertificate={handleManualCertificate} />}
         {view === 'certificate' && manualCertificate && <div className="min-h-screen bg-[#141414] pt-20 px-4 md:px-16 pb-12"><CertificateView video={manualCertificate.video} userProfile={manualCertificate.profile} onBack={handleCloseManualCertificate} /></div>}
-        {view === 'history' && !sessionUser.isGuest && <HistoryView videos={videos} completedVideos={completedVideos} sessionUser={sessionUser} onVideoSelect={(v) => { setSelectedVideo(v); setView('player'); }} onBack={() => setView('home')} />}
+        {view === 'history' && !sessionUser.isGuest && !reprintCert && <HistoryView sessionUser={sessionUser} onBack={() => setView('home')} onReprintCert={(cert) => setReprintCert(cert)} />}
+        {view === 'history' && reprintCert && <div className="min-h-screen bg-[#141414] pt-20 px-4 md:px-16 pb-12"><CertificateReprintView cert={reprintCert} onBack={() => setReprintCert(null)} /></div>}
       </div>
 
       <footer className="py-12 px-10 bg-black/80 text-gray-500 text-sm border-t border-gray-800 mt-10">
@@ -647,39 +647,151 @@ export default function App() {
   );
 }
 
-// ── HISTORIAL DE CURSOS ───────────────────────────
-function HistoryView({ videos, completedVideos, sessionUser, onVideoSelect, onBack }) {
-  const completedList = videos.filter(v => completedVideos.has(v.id));
+// ── HISTORIAL Y CERTIFICADOS EMITIDOS ────────────────
+function HistoryView({ sessionUser, onBack, onReprintCert }) {
+  const [certs, setCerts] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const load = async () => {
+      if (!supabase) { setLoading(false); return; }
+      try {
+        const { data } = await supabase
+          .from('cpg_certificates')
+          .select('*')
+          .eq('collegiate_number', sessionUser.collegiateNumber)
+          .order('issued_at', { ascending: false });
+        setCerts(data || []);
+      } catch {}
+      setLoading(false);
+    };
+    load();
+  }, [sessionUser.collegiateNumber]);
+
+  const fmt = (iso) => new Date(iso).toLocaleDateString('es-GT', { year: 'numeric', month: 'long', day: 'numeric' });
+
   return (
     <div className="min-h-screen bg-[#141414] pt-24 px-4 md:px-16 pb-12">
       <button onClick={onBack} className="flex items-center gap-2 text-gray-400 hover:text-white mb-6 transition"><ChevronLeft /> Regresar</button>
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-white mb-1">Mis cursos completados</h1>
-        <p className="text-gray-400 text-sm">Colegiado No. {sessionUser.collegiateNumber} · {completedList.length} curso{completedList.length !== 1 ? 's' : ''} completado{completedList.length !== 1 ? 's' : ''}</p>
+        <h1 className="text-3xl font-bold text-white mb-1">Mis certificados</h1>
+        <p className="text-gray-400 text-sm">Colegiado No. {sessionUser.collegiateNumber} · {certs.length} certificado{certs.length !== 1 ? 's' : ''} emitido{certs.length !== 1 ? 's' : ''}</p>
+        <p className="text-gray-600 text-xs mt-1">Puedes descargar tus certificados las veces que necesites.</p>
       </div>
-      {completedList.length === 0 ? (
+
+      {loading && (
+        <div className="text-center py-20"><Loader2 size={40} className="animate-spin text-blue-400 mx-auto mb-4" /><p className="text-gray-400">Cargando certificados...</p></div>
+      )}
+
+      {!loading && certs.length === 0 && (
         <div className="text-center py-20 text-gray-500">
-          <History size={48} className="mx-auto mb-4 opacity-30" />
-          <p className="text-lg">Aún no has completado ningún curso.</p>
-          <p className="text-sm mt-2">Marca los cursos como completados al verlos para que aparezcan aquí.</p>
+          <Award size={48} className="mx-auto mb-4 opacity-30" />
+          <p className="text-lg">Aún no tienes certificados emitidos.</p>
+          <p className="text-sm mt-2">Completa la evaluación de un curso con más del 80% para obtener tu certificado.</p>
         </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-          {completedList.map(v => (
-            <div key={v.id} onClick={() => onVideoSelect(v)} className="bg-gray-900 border border-green-800/40 rounded-xl overflow-hidden cursor-pointer hover:border-green-600 transition group">
-              <div className="h-36 relative">
-                <img src={getVideoThumbnail(v)} alt={v.title} className="w-full h-full object-cover" onError={(e) => { e.target.src = getYouTubeThumbnail(''); }} />
-                <div className="absolute top-2 right-2 bg-green-500 rounded-full p-1"><CheckCircle size={14} className="text-white" fill="white" /></div>
+      )}
+
+      {!loading && certs.length > 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+          {certs.map(cert => (
+            <div key={cert.id} className="bg-[#1a1a1a] border border-gray-800 rounded-xl overflow-hidden hover:border-yellow-700/50 transition">
+              <div className="bg-gradient-to-r from-yellow-900/30 to-amber-900/10 border-b border-gray-800 px-4 py-3 flex items-center gap-2">
+                <Award size={16} className="text-yellow-500 shrink-0" />
+                <span className="text-xs font-bold text-yellow-400 uppercase tracking-wider">Certificado oficial</span>
+                <span className={`ml-auto text-xs font-bold px-2 py-0.5 rounded-full ${cert.status === 'ACTIVO' ? 'bg-green-900/40 text-green-400' : 'bg-red-900/40 text-red-400'}`}>{cert.status}</span>
               </div>
-              <div className="p-3">
-                <h3 className="font-semibold text-white text-sm line-clamp-2 mb-1">{v.title}</h3>
-                <p className="text-xs text-gray-400">{v.category} · {v.duration} hrs</p>
-                {v.quizEnabled && <span className="inline-block mt-2 text-xs text-yellow-400 border border-yellow-400/30 px-2 py-0.5 rounded">Certificado disponible</span>}
+              <div className="p-4">
+                <h3 className="font-bold text-white text-sm mb-1 line-clamp-2">{cert.video_title}</h3>
+                <p className="text-xs text-gray-500 mb-3">{fmt(cert.issued_at)}</p>
+                <p className="text-xs font-mono text-gray-600 mb-4 truncate">{cert.certificate_code}</p>
+                <button
+                  onClick={() => onReprintCert(cert)}
+                  className="w-full bg-yellow-600/20 hover:bg-yellow-600/40 border border-yellow-700/50 text-yellow-300 hover:text-yellow-200 py-2 rounded-lg text-sm font-semibold transition flex items-center justify-center gap-2"
+                >
+                  <Download size={14} /> Descargar certificado
+                </button>
               </div>
             </div>
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// ── REIMPRESIÓN DE CERTIFICADO DESDE HISTORIAL ────────────────
+function CertificateReprintView({ cert, onBack }) {
+  const certRef = useRef(null);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [imageLoaded, setImageLoaded] = useState(false);
+
+  const issuedDate = new Date(cert.issued_at);
+  const dateFormatted = issuedDate.toLocaleDateString('es-GT', { year: 'numeric', month: 'long', day: 'numeric' });
+  const qrUrl = getCertQrUrl(cert.certificate_code);
+  const statusText = cert.status || '';
+
+  const handleDownloadPDF = async () => {
+    if (!certRef.current || !imageLoaded) { alert('Espera a que la plantilla cargue completamente.'); return; }
+    setIsGenerating(true);
+    try {
+      const canvas = await html2canvas(certRef.current, { scale: 3, useCORS: true, allowTaint: true, backgroundColor: '#ffffff', logging: false, imageTimeout: 15000 });
+      const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'letter' });
+      const imgData = canvas.toDataURL('image/png', 1.0);
+      pdf.addImage(imgData, 'PNG', 0, 0, pdf.internal.pageSize.getWidth(), pdf.internal.pageSize.getHeight());
+      pdf.save('Certificado_' + cert.recipient_name.replace(/\s+/g, '_') + '_' + cert.certificate_code + '.pdf');
+    } catch (error) { console.error('Error generando PDF:', error); alert('Hubo un error al generar el PDF.'); }
+    finally { setIsGenerating(false); }
+  };
+
+  return (
+    <div className="flex flex-col items-center gap-6">
+      <div className="flex gap-4 print:hidden">
+        <button onClick={onBack} className="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded">← Mis certificados</button>
+        <button onClick={handleDownloadPDF} disabled={isGenerating || !imageLoaded} className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 disabled:cursor-not-allowed text-white px-6 py-2 rounded font-bold flex items-center gap-2">
+          {isGenerating ? <><Loader2 size={18} className="animate-spin" /> Generando PDF...</> : <><Download size={18} /> Descargar PDF</>}
+        </button>
+      </div>
+      <div className="flex items-center gap-2 bg-gray-800/60 border border-gray-700 rounded-full px-4 py-1.5 text-xs text-gray-400 print:hidden">
+        <Shield size={12} className="text-green-400" />
+        <span className="font-mono">{cert.certificate_code}</span>
+      </div>
+      {!imageLoaded && <div className="text-yellow-400 text-sm flex items-center gap-2"><Loader2 size={16} className="animate-spin" /> Cargando plantilla...</div>}
+      <div className="overflow-auto w-full flex justify-center p-4">
+        <div ref={certRef} className="relative shadow-2xl" style={{ width: '1056px', height: '816px', fontFamily: "'Georgia', 'Times New Roman', serif" }}>
+          <img src="/certificado-plantilla1.png" alt="Plantilla" className="absolute inset-0 w-full h-full object-fill" crossOrigin="anonymous" onLoad={() => setImageLoaded(true)} onError={(e) => { e.target.style.display = 'none'; setImageLoaded(true); }} />
+          <div className="absolute inset-0" style={{ fontFamily: "'Georgia', 'Times New Roman', serif" }}>
+            <div className="absolute text-center" style={{ top: '315px', left: '53%', transform: 'translateX(-50%)', width: '580px' }}>
+              <p style={{ fontSize: '34px', fontWeight: 'bold', color: '#1a1a2e', letterSpacing: '0.3px', lineHeight: '1.2' }}>{cert.recipient_name}</p>
+            </div>
+            {statusText && statusText !== 'DESCONOCIDO' && statusText !== 'INVITADO' && (
+              <div className="absolute" style={{ top: '387px', left: '490px' }}>
+                <p style={{ fontSize: '15px', fontWeight: 'bold', color: statusText.includes('ACTIVO') ? '#166534' : '#991b1b', letterSpacing: '0.5px' }}>
+                  {statusText.includes('ACTIVO') ? 'ACTIVO' : 'INACTIVO'}
+                </p>
+              </div>
+            )}
+            <div className="absolute" style={{ top: '385px', left: '700px' }}>
+              <p style={{ fontSize: '17px', fontWeight: 'bold', color: '#1a1a2e' }}>{cert.collegiate_number}</p>
+            </div>
+            <div className="absolute text-center" style={{ top: '478px', left: '53%', transform: 'translateX(-50%)', width: '640px' }}>
+              <p style={{ fontSize: cert.video_title.length > 60 ? '18px' : cert.video_title.length > 40 ? '21px' : '25px', fontWeight: 'bold', color: '#1a1a2e', textTransform: 'uppercase', lineHeight: '1.35', wordBreak: 'break-word' }}>{cert.video_title}</p>
+            </div>
+            <div className="absolute" style={{ top: '540px', left: '430px' }}>
+              <p style={{ fontSize: '18px', fontWeight: 'bold', color: '#1a1a2e' }}>{cert.video_duration || ''}</p>
+            </div>
+            <div className="absolute text-center" style={{ top: '606px', left: '53%', transform: 'translateX(-50%)', width: '400px' }}>
+              <p style={{ fontSize: '13px', color: '#333333' }}>{dateFormatted}</p>
+            </div>
+            <div className="absolute text-center" style={{ top: '622px', left: '53%', transform: 'translateX(-50%)', width: '400px' }}>
+              <p style={{ fontSize: '11px', color: '#555555', fontFamily: "'Courier New', monospace", letterSpacing: '0.5px' }}>{cert.certificate_code}</p>
+            </div>
+            <div className="absolute" style={{ bottom: '48px', right: '52px', textAlign: 'center' }}>
+              <img src={qrUrl} alt="QR Verificación" crossOrigin="anonymous" style={{ width: '90px', height: '90px', display: 'block' }} />
+              <p style={{ fontSize: '7px', color: '#888888', marginTop: '3px', fontFamily: 'monospace', letterSpacing: '0.3px' }}>Escanea para verificar</p>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1205,6 +1317,7 @@ function CertificateView({ video, userProfile, sessionUser, onBack }) {
       status: resolvedStatus,
       video_id: video.id,
       video_title: video.title,
+      video_duration: String(video.duration || ''),
       issued_at: currentDate.toISOString(),
       verify_url: `${APP_URL}/?cert=${certificateCode}`,
     }, { onConflict: 'certificate_code' }).then(({ error }) => {
@@ -1514,6 +1627,11 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
   const [lookingUpStatus, setLookingUpStatus] = useState(false);
   const [showLiveSection, setShowLiveSection] = useState(false);
   const [showActivitiesSection, setShowActivitiesSection] = useState(false);
+  const [showCertsSection, setShowCertsSection] = useState(false);
+  const [certsData, setCertsData] = useState([]);
+  const [certsLoading, setCertsLoading] = useState(false);
+  const [certsLoaded, setCertsLoaded] = useState(false);
+  const [certsFilter, setCertsFilter] = useState('');
   const now = new Date();
   const [filterMonth, setFilterMonth] = useState(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`);
   const [saveError, setSaveError] = useState('');
@@ -1568,6 +1686,40 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
     link.href = url; link.download = 'informe-actividades-' + reportRange.start + '-a-' + reportRange.end + '.csv';
     document.body.appendChild(link); link.click(); document.body.removeChild(link); URL.revokeObjectURL(url);
     setShowReportModal(false);
+  };
+
+  const loadAdminCerts = async () => {
+    if (!supabase || certsLoaded) return;
+    setCertsLoading(true);
+    try {
+      const { data } = await supabase.from('cpg_certificates').select('*').order('issued_at', { ascending: false });
+      setCertsData(data || []);
+      setCertsLoaded(true);
+    } catch {}
+    setCertsLoading(false);
+  };
+
+  const handleDeleteCert = async (id) => {
+    if (!confirm('¿Eliminar este certificado del registro? Esta acción no puede deshacerse.')) return;
+    if (!supabase) return;
+    try {
+      await supabase.from('cpg_certificates').delete().eq('id', id);
+      setCertsData(prev => prev.filter(c => c.id !== id));
+    } catch (e) { alert('Error al eliminar: ' + e.message); }
+  };
+
+  const exportCertsCSV = (data) => {
+    const esc = v => { const s = String(v || ''); return s.includes(',') || s.includes('"') ? '"' + s.replace(/"/g, '""')+'"' : s; };
+    const rows = [
+      ['Código', 'Colegiado', 'Nombre', 'Estado CPG', 'Curso', 'Duración (hrs)', 'Fecha de emisión', 'URL verificación'],
+      ...data.map(c => [c.certificate_code, c.collegiate_number, c.recipient_name, c.status, c.video_title, c.video_duration || '', new Date(c.issued_at).toLocaleString('es-GT'), c.verify_url || ''])
+    ];
+    const csv = rows.map(r => r.map(esc).join(',')).join('\n');
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a'); link.href = url;
+    link.download = 'certificados-emitidos-' + new Date().toISOString().slice(0,10) + '.csv';
+    document.body.appendChild(link); link.click(); document.body.removeChild(link); URL.revokeObjectURL(url);
   };
 
   if (editingVideo) {
@@ -1745,6 +1897,131 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
           </div>
         </div>
       )}
+
+      {/* ── CERTIFICADOS EMITIDOS (colapsable) ── */}
+      <div className="bg-[#1b1b1b] border border-gray-800 rounded-2xl mb-10 overflow-hidden">
+        <button type="button" onClick={() => { setShowCertsSection(v => !v); if (!showCertsSection) loadAdminCerts(); }} className="w-full flex items-center justify-between px-6 py-4 hover:bg-white/5 transition">
+          <div className="flex items-center gap-3">
+            <div className="bg-yellow-600 p-2 rounded-lg"><Award size={18} className="text-white" /></div>
+            <div className="text-left">
+              <h2 className="text-xl font-bold text-white">Certificados emitidos</h2>
+              <p className="text-xs text-gray-400">{certsLoaded ? `${certsData.length} certificados registrados` : 'Haz clic para cargar'}</p>
+            </div>
+          </div>
+          <span className="text-gray-400 text-lg">{showCertsSection ? '▲' : '▼'}</span>
+        </button>
+
+        {showCertsSection && (
+          <div className="border-t border-gray-800 p-6">
+            {/* Barra de herramientas */}
+            <div className="flex flex-col md:flex-row md:items-center gap-3 mb-5">
+              <div className="relative flex-1 max-w-sm">
+                <Search size={14} className="absolute left-3 top-2.5 text-gray-500 pointer-events-none" />
+                <input
+                  type="text"
+                  value={certsFilter}
+                  onChange={e => setCertsFilter(e.target.value)}
+                  placeholder="Filtrar por colegiado, nombre o curso..."
+                  className="w-full bg-black border border-gray-700 rounded-lg pl-8 pr-4 py-2 text-sm text-white focus:border-yellow-500 outline-none"
+                />
+              </div>
+              <div className="flex gap-2 shrink-0">
+                <button onClick={() => { setCertsLoaded(false); loadAdminCerts(); }} className="flex items-center gap-2 bg-gray-700 hover:bg-gray-600 px-3 py-2 rounded-lg text-sm font-semibold transition">
+                  <Loader2 size={14} className={certsLoading ? 'animate-spin' : ''} /> Actualizar
+                </button>
+                {certsData.length > 0 && (
+                  <button onClick={() => exportCertsCSV(certsFilter ? certsData.filter(c => {
+                    const q = certsFilter.toLowerCase();
+                    return c.collegiate_number?.includes(q) || c.recipient_name?.toLowerCase().includes(q) || c.video_title?.toLowerCase().includes(q);
+                  }) : certsData)} className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 px-3 py-2 rounded-lg text-sm font-semibold transition">
+                    <Download size={14} /> Exportar CSV
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {certsLoading && <div className="text-center py-10"><Loader2 size={32} className="animate-spin text-yellow-500 mx-auto mb-3" /><p className="text-gray-400 text-sm">Cargando certificados...</p></div>}
+
+            {!certsLoading && certsData.length === 0 && certsLoaded && (
+              <div className="text-center py-10 text-gray-500"><Award size={40} className="mx-auto mb-3 opacity-30" /><p>No hay certificados emitidos aún.</p></div>
+            )}
+
+            {!certsLoading && certsData.length > 0 && (() => {
+              const filtered = certsFilter
+                ? certsData.filter(c => {
+                    const q = certsFilter.toLowerCase();
+                    return c.collegiate_number?.includes(q) || c.recipient_name?.toLowerCase().includes(q) || c.video_title?.toLowerCase().includes(q);
+                  })
+                : certsData;
+
+              return (
+                <>
+                  {/* Resumen */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+                    <div className="bg-yellow-900/20 border border-yellow-700/30 rounded-xl p-3 text-center">
+                      <p className="text-2xl font-bold text-yellow-400">{certsData.length}</p>
+                      <p className="text-xs text-gray-400">Total emitidos</p>
+                    </div>
+                    <div className="bg-green-900/20 border border-green-700/30 rounded-xl p-3 text-center">
+                      <p className="text-2xl font-bold text-green-400">{certsData.filter(c => c.status === 'ACTIVO').length}</p>
+                      <p className="text-xs text-gray-400">Colegiados activos</p>
+                    </div>
+                    <div className="bg-blue-900/20 border border-blue-700/30 rounded-xl p-3 text-center">
+                      <p className="text-2xl font-bold text-blue-400">{new Set(certsData.map(c => c.collegiate_number)).size}</p>
+                      <p className="text-xs text-gray-400">Profesionales únicos</p>
+                    </div>
+                    <div className="bg-purple-900/20 border border-purple-700/30 rounded-xl p-3 text-center">
+                      <p className="text-2xl font-bold text-purple-400">{new Set(certsData.map(c => c.video_id)).size}</p>
+                      <p className="text-xs text-gray-400">Cursos con certs.</p>
+                    </div>
+                  </div>
+
+                  {certsFilter && <p className="text-xs text-gray-500 mb-3">{filtered.length} resultado{filtered.length !== 1 ? 's' : ''} para "{certsFilter}"</p>}
+
+                  {/* Tabla */}
+                  <div className="overflow-x-auto rounded-xl border border-gray-800">
+                    <table className="w-full text-sm">
+                      <thead className="bg-gray-900 text-gray-400 uppercase text-xs">
+                        <tr>
+                          <th className="text-left px-4 py-3">Profesional</th>
+                          <th className="text-left px-4 py-3">Colegiado</th>
+                          <th className="text-left px-4 py-3">Estado</th>
+                          <th className="text-left px-4 py-3">Curso</th>
+                          <th className="text-left px-4 py-3">Emisión</th>
+                          <th className="text-left px-4 py-3">Código</th>
+                          <th className="px-4 py-3">Acciones</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filtered.map(c => (
+                          <tr key={c.id} className="border-t border-gray-800 hover:bg-gray-900/40">
+                            <td className="px-4 py-2.5 text-white font-medium">{c.recipient_name}</td>
+                            <td className="px-4 py-2.5 text-gray-300 font-mono">{c.collegiate_number}</td>
+                            <td className="px-4 py-2.5">
+                              <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${c.status === 'ACTIVO' ? 'bg-green-900/40 text-green-400' : 'bg-red-900/40 text-red-400'}`}>{c.status}</span>
+                            </td>
+                            <td className="px-4 py-2.5 text-gray-300 max-w-xs truncate">{c.video_title}</td>
+                            <td className="px-4 py-2.5 text-gray-400 whitespace-nowrap text-xs">{new Date(c.issued_at).toLocaleDateString('es-GT')}</td>
+                            <td className="px-4 py-2.5 text-gray-600 font-mono text-xs truncate max-w-[140px]">{c.certificate_code}</td>
+                            <td className="px-4 py-2.5">
+                              <div className="flex gap-1 justify-center">
+                                {c.verify_url && (
+                                  <a href={c.verify_url} target="_blank" rel="noreferrer" className="p-1.5 bg-blue-900/40 hover:bg-blue-900/70 text-blue-300 rounded" title="Ver verificación"><ExternalLink size={13} /></a>
+                                )}
+                                <button onClick={() => handleDeleteCert(c.id)} className="p-1.5 bg-red-900/40 hover:bg-red-900/70 text-red-300 rounded" title="Eliminar registro"><Trash2 size={13} /></button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              );
+            })()}
+          </div>
+        )}
+      </div>
 
       <h2 className="text-xl font-bold mb-4">Cursos</h2>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-12">
