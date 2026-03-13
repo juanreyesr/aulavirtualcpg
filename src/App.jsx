@@ -380,18 +380,18 @@ function LoginColModal({ onSession }) {
   const handleGuest = () => onSession({ name: 'Invitado', collegiateNumber: '0000', status: 'INVITADO', isGuest: true });
 
   return (
-    <div className="fixed inset-0 bg-black z-[100] flex items-center justify-center px-4">
-      <div className="absolute inset-0 bg-gradient-to-br from-[#0a0a1a] via-[#0e0e0e] to-[#1a0a2e] opacity-90" />
-      <div className="relative z-10 w-full max-w-md">
-        <div className="flex flex-col items-center mb-8 gap-3">
-          <img src="/logo-cpg-grande.png" alt="CPG" className="w-24 h-24 object-contain drop-shadow-2xl" onError={(e) => { e.target.style.display = 'none'; }} />
+    <div className="fixed inset-0 bg-black z-[100] overflow-y-auto">
+      <div className="absolute inset-0 bg-gradient-to-br from-[#0a0a1a] via-[#0e0e0e] to-[#1a0a2e]" />
+      <div className="relative z-10 w-full max-w-md mx-auto px-4 py-8 min-h-full flex flex-col justify-center">
+        <div className="flex flex-col items-center mb-6 gap-2">
+          <img src="/logo-cpg-grande.png" alt="CPG" className="w-20 h-20 object-contain drop-shadow-2xl" onError={(e) => { e.target.style.display = 'none'; }} />
           <div className="text-center">
-            <h1 className="text-xl font-bold text-white leading-tight">Colegio de Psicólogos de Guatemala</h1>
+            <h1 className="text-lg font-bold text-white leading-tight">Colegio de Psicólogos de Guatemala</h1>
             <p className="text-blue-400 text-xs tracking-widest uppercase mt-1">Aula Virtual — CAEDUC</p>
           </div>
         </div>
 
-        <div className="bg-[#1a1a1a] border border-gray-800 rounded-2xl p-8 shadow-2xl">
+        <div className="bg-[#1a1a1a] border border-gray-800 rounded-2xl p-6 shadow-2xl">
           {/* Indicador de pasos */}
           <div className="flex items-center gap-2 mb-6">
             <div className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1 rounded-full ${step === 'collegiate' ? 'bg-blue-600 text-white' : 'bg-green-700/40 text-green-300'}`}>
