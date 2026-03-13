@@ -258,8 +258,20 @@ function LoginColModal({ onSession }) {
   const [error, setError] = useState('');
   const [cpgData, setCpgData] = useState(null);
   // Para el caso de colegiado ya registrado
-  const [registeredEmail, setRegisteredEmail] = useState(null); // email ya vinculado
+  const [registeredEmail, setRegisteredEmail] = useState(null);
   const [resetSent, setResetSent] = useState(false);
+
+  // Detectar bloqueo de Google OAuth (colegiado ya vinculado a otro correo)
+  useEffect(() => {
+    const blocked = localStorage.getItem('cpg_google_blocked');
+    if (blocked) {
+      try {
+        const { maskedEmail, colegiado } = JSON.parse(blocked);
+        localStorage.removeItem('cpg_google_blocked');
+        setError(`El colegiado ${colegiado} ya está registrado con ${maskedEmail}. Inicia sesión con ese correo o usa "Olvidé mi contraseña".`);
+      } catch {}
+    }
+  }, []);
 
   const handleVerifyCollegiado = async () => {
     const val = colegiadoInput.trim();
@@ -574,7 +586,34 @@ export default function App() {
           try {
             const data = JSON.parse(pending);
             localStorage.removeItem('cpg_google_pending');
-            const user = { name: data.name, collegiateNumber: data.colegiado, status: data.status, isGuest: false, email: session.user.email };
+            const googleEmail = session.user.email;
+            const collegiateNumber = data.colegiado;
+
+            // Verificar si el colegiado ya está vinculado a otro correo
+            const { data: existing } = await supabase
+              .from('cpg_user_profiles')
+              .select('email')
+              .eq('collegiate_number', collegiateNumber)
+              .maybeSingle();
+
+            if (existing?.email && existing.email.toLowerCase() !== googleEmail.toLowerCase()) {
+              // Otro correo ya registrado — cerrar sesión y mostrar error
+              await supabase.auth.signOut();
+              localStorage.setItem('cpg_google_blocked', JSON.stringify({
+                maskedEmail: existing.email.slice(0,3) + '***@' + existing.email.split('@')[1],
+                colegiado: collegiateNumber
+              }));
+              window.location.reload();
+              return;
+            }
+
+            // Guardar o actualizar el vínculo colegiado ↔ correo
+            await supabase.from('cpg_user_profiles').upsert(
+              { collegiate_number: collegiateNumber, email: googleEmail, name: data.name },
+              { onConflict: 'collegiate_number' }
+            );
+
+            const user = { name: data.name, collegiateNumber: collegiateNumber, status: data.status, isGuest: false, email: googleEmail };
             localStorage.setItem('cpg_session', JSON.stringify(user));
             setSessionUser(user);
           } catch {}
