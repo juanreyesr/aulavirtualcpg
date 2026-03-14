@@ -976,7 +976,8 @@ function CertificateReprintView({ cert, onBack }) {
         <span className="font-mono">{cert.certificate_code}</span>
       </div>
       {!imageLoaded && <div className="text-yellow-400 text-sm flex items-center gap-2"><Loader2 size={16} className="animate-spin" /> Cargando plantilla...</div>}
-      <div className="overflow-auto w-full flex justify-center p-4">
+      {/* Vista previa escalada para móvil — el certRef está oculto a tamaño real para html2canvas */}
+      <CertScaledPreview certRef={certRef} imageLoaded={imageLoaded}>
         <div ref={certRef} className="relative shadow-2xl" style={{ width: '1056px', height: '816px', fontFamily: "'Georgia', 'Times New Roman', serif" }}>
           <img src="/certificado-plantilla1.png" alt="Plantilla" className="absolute inset-0 w-full h-full object-fill" crossOrigin="anonymous" onLoad={() => setImageLoaded(true)} onError={(e) => { e.target.style.display = 'none'; setImageLoaded(true); }} />
           <div className="absolute inset-0" style={{ fontFamily: "'Georgia', 'Times New Roman', serif" }}>
@@ -1011,7 +1012,7 @@ function CertificateReprintView({ cert, onBack }) {
             </div>
           </div>
         </div>
-      </div>
+      </CertScaledPreview>
     </div>
   );
 }
@@ -1642,6 +1643,48 @@ function CertificateView({ video, userProfile, sessionUser, onBack }) {
             </div>
 
           </div>
+        </div>
+      </CertScaledPreview>
+    </div>
+  );
+}
+
+// ── CERT SCALED PREVIEW — escala el certificado para móvil sin afectar html2canvas ──
+function CertScaledPreview({ certRef, imageLoaded, children }) {
+  const [scale, setScale] = React.useState(1);
+  const wrapperRef = React.useRef(null);
+
+  React.useEffect(() => {
+    const updateScale = () => {
+      if (wrapperRef.current) {
+        const available = wrapperRef.current.offsetWidth;
+        const newScale = Math.min(1, available / 1056);
+        setScale(newScale);
+      }
+    };
+    updateScale();
+    window.addEventListener('resize', updateScale);
+    return () => window.removeEventListener('resize', updateScale);
+  }, []);
+
+  return (
+    <div ref={wrapperRef} className="w-full flex justify-center">
+      <div style={{
+        width: `${1056 * scale}px`,
+        height: `${816 * scale}px`,
+        position: 'relative',
+        overflow: 'hidden',
+      }}>
+        <div style={{
+          transform: `scale(${scale})`,
+          transformOrigin: 'top left',
+          width: '1056px',
+          height: '816px',
+          position: 'absolute',
+          top: 0,
+          left: 0,
+        }}>
+          {children}
         </div>
       </div>
     </div>
