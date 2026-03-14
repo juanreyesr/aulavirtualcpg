@@ -954,7 +954,10 @@ function CertificateReprintView({ cert, onBack }) {
     if (!certRef.current || !imageLoaded) { alert('Espera a que la plantilla cargue completamente.'); return; }
     setIsGenerating(true);
     try {
-      const canvas = await html2canvas(certRef.current, { scale: 3, useCORS: true, allowTaint: true, backgroundColor: '#ffffff', logging: false, imageTimeout: 15000 });
+      const canvas = await html2canvas(certRef.current, {
+        scale: 3, useCORS: true, allowTaint: true, backgroundColor: '#ffffff', logging: false, imageTimeout: 15000,
+        width: 1056, height: 816, windowWidth: 1056, windowHeight: 816, scrollX: 0, scrollY: 0,
+      });
       const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'letter' });
       const imgData = canvas.toDataURL('image/png', 1.0);
       pdf.addImage(imgData, 'PNG', 0, 0, pdf.internal.pageSize.getWidth(), pdf.internal.pageSize.getHeight());
@@ -1552,7 +1555,21 @@ function CertificateView({ video, userProfile, sessionUser, onBack }) {
     if (!certRef.current || !imageLoaded) { alert('Espera a que la plantilla del certificado cargue completamente.'); return; }
     setIsGenerating(true);
     try {
-      const canvas = await html2canvas(certRef.current, { scale: 3, useCORS: true, allowTaint: true, backgroundColor: '#ffffff', logging: false, imageTimeout: 15000 });
+      // Forzar captura a 1056x816 independiente del viewport del dispositivo
+      const canvas = await html2canvas(certRef.current, {
+        scale: 3,
+        useCORS: true,
+        allowTaint: true,
+        backgroundColor: '#ffffff',
+        logging: false,
+        imageTimeout: 15000,
+        width: 1056,
+        height: 816,
+        windowWidth: 1056,
+        windowHeight: 816,
+        scrollX: 0,
+        scrollY: 0,
+      });
       const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'letter' });
       const imgData = canvas.toDataURL('image/png', 1.0);
       pdf.addImage(imgData, 'PNG', 0, 0, pdf.internal.pageSize.getWidth(), pdf.internal.pageSize.getHeight());
@@ -1668,23 +1685,17 @@ function CertScaledPreview({ certRef, imageLoaded, children }) {
   }, []);
 
   return (
-    <div ref={wrapperRef} className="w-full flex justify-center">
-      <div style={{
-        width: `${1056 * scale}px`,
-        height: `${816 * scale}px`,
-        position: 'relative',
-        overflow: 'hidden',
-      }}>
-        <div style={{
-          transform: `scale(${scale})`,
-          transformOrigin: 'top left',
-          width: '1056px',
-          height: '816px',
-          position: 'absolute',
-          top: 0,
-          left: 0,
-        }}>
-          {children}
+    <div ref={wrapperRef} className="w-full">
+      {/* Elemento REAL para html2canvas: fuera del flujo, tamaño fijo, no escalado */}
+      <div style={{ position: 'fixed', top: '-9999px', left: '-9999px', width: '1056px', height: '816px', zIndex: -1, pointerEvents: 'none' }}>
+        {children}
+      </div>
+      {/* Vista VISUAL escalada para el usuario — solo es decorativa */}
+      <div className="w-full flex justify-center">
+        <div style={{ width: `${1056 * scale}px`, height: `${816 * scale}px`, position: 'relative', overflow: 'hidden' }}>
+          <div style={{ transform: `scale(${scale})`, transformOrigin: 'top left', width: '1056px', height: '816px', position: 'absolute', top: 0, left: 0, pointerEvents: 'none' }}>
+            {children}
+          </div>
         </div>
       </div>
     </div>
