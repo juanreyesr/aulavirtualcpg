@@ -59,6 +59,7 @@ const DEFAULT_CERT_CONFIG = {
     signature:  { w: 300, h: 100, x: 0, y: 0 },
     coordName:  { fontSize: 16 },
     coordTitle: { fontSize: 13 },
+    coordBlock: { x: 0, y: 0 },
     seal:       { w: 130, x: 0, y: 0 },
     qr:         { w: 110 },
     bottomY:    25,
@@ -1137,11 +1138,13 @@ function CertificateCanvas({ certRef, onImageLoaded, tpl, recipientName, statusT
         {/* Fila inferior: Firma | Sello | QR */}
         <div className="absolute" style={{ bottom: (L.bottomY || 25) + 'px', left: '0px', right: '0px' }}>
           <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'center', gap: (L.bottomGap || 60) + 'px' }}>
-            <div style={{ textAlign: 'center', width: (L.signature.w + 40) + 'px', position: 'relative', left: (L.signature.x || 0) + 'px', top: (L.signature.y || 0) + 'px' }}>
+            <div style={{ textAlign: 'center', width: (L.signature.w + 40) + 'px' }}>
               {tpl.signatureUrl && (
-                <img src={tpl.signatureUrl} alt="Firma" crossOrigin="anonymous" style={{ maxWidth: L.signature.w + 'px', maxHeight: L.signature.h + 'px', objectFit: 'contain', margin: '0 auto 6px' }} onLoad={handleImgLoad} onError={(e) => { e.target.style.display='none'; handleImgLoad(); }} />
+                <div style={{ position: 'relative', left: (L.signature.x || 0) + 'px', top: (L.signature.y || 0) + 'px' }}>
+                  <img src={tpl.signatureUrl} alt="Firma" crossOrigin="anonymous" style={{ maxWidth: L.signature.w + 'px', maxHeight: L.signature.h + 'px', objectFit: 'contain', margin: '0 auto 6px', display: 'block' }} onLoad={handleImgLoad} onError={(e) => { e.target.style.display='none'; handleImgLoad(); }} />
+                </div>
               )}
-              <div style={{ borderTop: '1.5px solid #444', paddingTop: '6px', width: (L.signature.w - 30) + 'px', margin: '0 auto' }}>
+              <div style={{ borderTop: '1.5px solid #444', paddingTop: '6px', width: (L.signature.w - 30) + 'px', margin: '0 auto', position: 'relative', left: (L.coordBlock?.x || 0) + 'px', top: (L.coordBlock?.y || 0) + 'px' }}>
                 <p style={{ fontSize: L.coordName.fontSize + 'px', fontWeight: 'bold', color: '#1a1a2e' }}>{tpl.coordinatorName}</p>
                 <p style={{ fontSize: L.coordTitle.fontSize + 'px', color: '#555' }}>{tpl.coordinatorTitle}</p>
               </div>
@@ -2157,11 +2160,15 @@ function CertTemplateAdmin({ certTemplate, onSave }) {
       { label: 'Y', path: 'date.top', max: 750 },
       { label: 'Texto', path: 'date.fontSize', step: 1, max: 20 },
     ]},
-    { title: 'Firma', controls: [
+    { title: 'Imagen firma', controls: [
       { label: 'X', path: 'signature.x', step: 5, min: -200, max: 200 },
       { label: 'Y', path: 'signature.y', step: 5, min: -100, max: 100 },
       { label: 'Ancho', path: 'signature.w', step: 10, max: 400 },
       { label: 'Alto', path: 'signature.h', step: 10, max: 200 },
+    ]},
+    { title: 'Texto coordinador', controls: [
+      { label: 'X', path: 'coordBlock.x', step: 5, min: -200, max: 200 },
+      { label: 'Y', path: 'coordBlock.y', step: 5, min: -100, max: 100 },
       { label: 'Nombre', path: 'coordName.fontSize', step: 1, max: 24 },
       { label: 'Cargo', path: 'coordTitle.fontSize', step: 1, max: 20 },
     ]},
