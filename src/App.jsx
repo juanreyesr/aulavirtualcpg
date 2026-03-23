@@ -56,10 +56,10 @@ const DEFAULT_CERT_CONFIG = {
     hours:      { top: 530, fontSize: 15 },
     motto:      { top: 568, fontSize: 17 },
     date:       { top: 600, fontSize: 13 },
-    signature:  { w: 300, h: 100 },
+    signature:  { w: 300, h: 100, x: 0, y: 0 },
     coordName:  { fontSize: 16 },
     coordTitle: { fontSize: 13 },
-    seal:       { w: 130 },
+    seal:       { w: 130, x: 0, y: 0 },
     qr:         { w: 110 },
     bottomY:    25,
     bottomGap:  60,
@@ -1137,7 +1137,7 @@ function CertificateCanvas({ certRef, onImageLoaded, tpl, recipientName, statusT
         {/* Fila inferior: Firma | Sello | QR */}
         <div className="absolute" style={{ bottom: (L.bottomY || 25) + 'px', left: '0px', right: '0px' }}>
           <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'center', gap: (L.bottomGap || 60) + 'px' }}>
-            <div style={{ textAlign: 'center', width: (L.signature.w + 40) + 'px' }}>
+            <div style={{ textAlign: 'center', width: (L.signature.w + 40) + 'px', position: 'relative', left: (L.signature.x || 0) + 'px', top: (L.signature.y || 0) + 'px' }}>
               {tpl.signatureUrl && (
                 <img src={tpl.signatureUrl} alt="Firma" crossOrigin="anonymous" style={{ maxWidth: L.signature.w + 'px', maxHeight: L.signature.h + 'px', objectFit: 'contain', margin: '0 auto 6px' }} onLoad={handleImgLoad} onError={(e) => { e.target.style.display='none'; handleImgLoad(); }} />
               )}
@@ -1146,7 +1146,7 @@ function CertificateCanvas({ certRef, onImageLoaded, tpl, recipientName, statusT
                 <p style={{ fontSize: L.coordTitle.fontSize + 'px', color: '#555' }}>{tpl.coordinatorTitle}</p>
               </div>
             </div>
-            <div style={{ textAlign: 'center', width: (L.seal.w + 20) + 'px' }}>
+            <div style={{ textAlign: 'center', width: (L.seal.w + 20) + 'px', position: 'relative', left: (L.seal.x || 0) + 'px', top: (L.seal.y || 0) + 'px' }}>
               {tpl.sealUrl && (
                 <img src={tpl.sealUrl} alt="Sello" crossOrigin="anonymous" style={{ width: L.seal.w + 'px', height: L.seal.w + 'px', objectFit: 'contain', margin: '0 auto', opacity: 0.85 }} onLoad={handleImgLoad} onError={(e) => { e.target.style.display='none'; handleImgLoad(); }} />
               )}
@@ -2025,7 +2025,7 @@ function LiveSessionView({ session, onBack, sessionUser, onRegisterAttendance })
 
 // ── EDITOR DE PLANTILLA DE CERTIFICADO (Admin) ────────────────
 // Control de posición/tamaño reutilizable
-function LayoutControl({ label, value, onChange, step = 2, unit = 'px', min = 0, max = 1056 }) {
+function LayoutControl({ label, value, onChange, step = 2, unit = 'px', min = -200, max = 1056 }) {
   return (
     <div className="flex items-center gap-1.5">
       <span className="text-[11px] text-gray-500 w-10 text-right shrink-0">{label}</span>
@@ -2158,12 +2158,16 @@ function CertTemplateAdmin({ certTemplate, onSave }) {
       { label: 'Texto', path: 'date.fontSize', step: 1, max: 20 },
     ]},
     { title: 'Firma', controls: [
+      { label: 'X', path: 'signature.x', step: 5, min: -200, max: 200 },
+      { label: 'Y', path: 'signature.y', step: 5, min: -100, max: 100 },
       { label: 'Ancho', path: 'signature.w', step: 10, max: 400 },
       { label: 'Alto', path: 'signature.h', step: 10, max: 200 },
       { label: 'Nombre', path: 'coordName.fontSize', step: 1, max: 24 },
       { label: 'Cargo', path: 'coordTitle.fontSize', step: 1, max: 20 },
     ]},
     { title: 'Sello', controls: [
+      { label: 'X', path: 'seal.x', step: 5, min: -200, max: 200 },
+      { label: 'Y', path: 'seal.y', step: 5, min: -100, max: 100 },
       { label: 'Tamano', path: 'seal.w', step: 5, max: 200 },
     ]},
     { title: 'QR', controls: [
