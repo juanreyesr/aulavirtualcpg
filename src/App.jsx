@@ -3,7 +3,7 @@ import {
   Play, CheckCircle, XCircle, LogOut, Plus, Trash2, Award,
   ChevronLeft, ChevronDown, Lock, ExternalLink, X, CalendarDays, Eye,
   Download, Loader2, UserCheck, UserX, Edit2, Users, Radio, Wifi, Video,
-  Search, Mail, Shield, History, QrCode, KeyRound
+  Search, Mail, Shield, History, QrCode, KeyRound, Upload, Image, Type, Settings
 } from 'lucide-react';
 import { supabase } from './supabaseClient';
 import html2canvas from 'html2canvas';
@@ -22,6 +22,38 @@ const INITIAL_VIDEOS = [
   { id: 2, platform: 'youtube', title: 'Ética Profesional en la Salud Mental', category: 'Ética y Legislación', youtubeId: 'PrJj3sP7b-M', duration: '1.5', description: 'Análisis del código deontológico y dilemas éticos frecuentes en la consulta.', thumbnail: 'https://i.ytimg.com/vi/PrJj3sP7b-M/hqdefault.jpg', scheduledAt: '', quizEnabled: false, viewCount: 0, questions: [] },
   { id: 3, platform: 'youtube', title: 'Neuropsicología del Aprendizaje', category: 'Neuropsicología', youtubeId: 'MMP3e9yZqIw', duration: '3', description: 'Exploración de las bases neurológicas que sustentan los procesos de aprendizaje y memoria.', thumbnail: 'https://i.ytimg.com/vi/MMP3e9yZqIw/hqdefault.jpg', scheduledAt: '', quizEnabled: true, viewCount: 0, questions: Array(10).fill(null).map((_, i) => ({ question: 'Pregunta conceptual ' + (i+1) + '?', options: ['Respuesta Incorrecta', 'Respuesta Correcta', 'Otra Incorrecta'], correctAnswer: 1 })) }
 ];
+
+// ── CONFIGURACIÓN POR DEFECTO DE PLANTILLA DE CERTIFICADO ──
+const DEFAULT_CERT_CONFIG = {
+  headerLine1: 'La Comisión de Acreditación y Educación continua',
+  headerLine2: 'mediante el Aula Virtual',
+  diplomaText: 'Otorgan el presente diploma a:',
+  collegiateText: 'Con colegiado',
+  numberText: 'número:',
+  courseText: 'por completar el curso virtual y su evaluación:',
+  hoursPrefix: 'Desarrollado en',
+  hoursSuffix: 'horas de formación en modalidad virtual',
+  motto: 'Etica-Crecimiento-Desarrollo',
+  boardText: 'Junta Directiva 2025-2027',
+  coordinatorName: 'M.A. Juan J. Reyes',
+  coordinatorTitle: 'Coordinador CAEDUC',
+  logoCpgUrl: '',
+  logoCaeducUrl: '',
+  signatureUrl: '',
+  sealUrl: '',
+  backgroundUrl: '',
+};
+
+// Sube imagen al Storage de Supabase y devuelve la URL pública
+const uploadCertAsset = async (file, filename) => {
+  if (!supabase || !file) return null;
+  const ext = file.name.split('.').pop()?.toLowerCase() || 'png';
+  const path = `${filename}-${Date.now()}.${ext}`;
+  const { error } = await supabase.storage.from('cert-assets').upload(path, file, { cacheControl: '3600', upsert: true });
+  if (error) throw new Error('Error subiendo imagen: ' + error.message);
+  const { data: { publicUrl } } = supabase.storage.from('cert-assets').getPublicUrl(path);
+  return publicUrl;
+};
 
 // ── YOUTUBE UTILS ────────────────────────────────
 const extractYouTubeId = (value) => {
@@ -591,6 +623,7 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [liveSession, setLiveSession] = useState(null);
   const [reprintCert, setReprintCert] = useState(null);
+  const [certTemplate, setCertTemplate] = useState(DEFAULT_CERT_CONFIG);
 
   const certCodeFromUrl = new URLSearchParams(window.location.search).get('cert');
 
@@ -674,6 +707,22 @@ export default function App() {
     } catch {}
   };
 
+  // ── Cargar y guardar config de plantilla de certificado ──
+  const loadCertConfig = async () => {
+    if (!supabase) return;
+    try {
+      const { data } = await supabase.from('cpg_cert_config').select('config').eq('id', 1).single();
+      if (data?.config) setCertTemplate(prev => ({ ...DEFAULT_CERT_CONFIG, ...prev, ...data.config }));
+    } catch {}
+  };
+
+  const saveCertConfig = async (newConfig) => {
+    const merged = { ...certTemplate, ...newConfig };
+    setCertTemplate(merged);
+    if (!supabase) return;
+    await supabase.from('cpg_cert_config').upsert({ id: 1, config: merged, updated_at: new Date().toISOString() }, { onConflict: 'id' });
+  };
+
   useEffect(() => {
     const interval = setInterval(loadLiveSession, 30000);
     return () => clearInterval(interval);
@@ -687,7 +736,7 @@ export default function App() {
           if (!error) {
             if (data?.videos?.length) { setVideos(data.videos); localStorage.setItem('cpg_videos', JSON.stringify(data.videos)); }
             if (data?.activities?.length) { setActivities(data.activities); localStorage.setItem('cpg_activities', JSON.stringify(data.activities)); }
-            if (data?.videos?.length || data?.activities?.length) { await loadViewCounts(); await loadLiveSession(); return; }
+            if (data?.videos?.length || data?.activities?.length) { await loadViewCounts(); await loadLiveSession(); await loadCertConfig(); return; }
           }
         } catch {}
       }
@@ -697,6 +746,7 @@ export default function App() {
       if (sa) setActivities(JSON.parse(sa));
       await loadViewCounts();
       await loadLiveSession();
+      await loadCertConfig();
     };
     loadContent();
   }, []);
@@ -845,12 +895,12 @@ export default function App() {
 
         {view === 'home' && <HomeView videos={videos} viewCounts={viewCounts} recentVideos={recentVideos} categories={categories} upcomingVideos={upcomingVideos} activities={activities} completedVideos={completedVideos} sessionUser={sessionUser} searchQuery={searchQuery} setSearchQuery={setSearchQuery} onVideoSelect={(v) => { if (!isVideoPublished(v)) return; setSelectedVideo(v); incrementViewCount(v.id); setView('player'); }} />}
         {view === 'live' && <LiveSessionView session={liveSession} onBack={() => setView('home')} sessionUser={sessionUser} onRegisterAttendance={registerAttendance} />}
-        {view === 'player' && selectedVideo && <PlayerView video={selectedVideo} viewCounts={viewCounts} onBack={() => setView('home')} sessionUser={sessionUser} userProfile={userProfile} setUserProfile={setUserProfile} isCompleted={completedVideos.has(selectedVideo.id)} onMarkCompleted={() => markVideoCompleted(selectedVideo.id)} />}
+        {view === 'player' && selectedVideo && <PlayerView video={selectedVideo} viewCounts={viewCounts} onBack={() => setView('home')} sessionUser={sessionUser} userProfile={userProfile} setUserProfile={setUserProfile} isCompleted={completedVideos.has(selectedVideo.id)} onMarkCompleted={() => markVideoCompleted(selectedVideo.id)} certTemplate={certTemplate} />}
         {view === 'login' && <LoginView onLogin={handleLogin} onBack={() => setView('home')} authError={authError} />}
-        {view === 'admin' && isAdmin && <AdminDashboard videos={videos} viewCounts={viewCounts} totalViews={totalViews} activities={activities} liveSession={liveSession} onSaveLiveSession={saveLiveSession} onVideosChange={persistVideos} onActivitiesChange={persistActivities} onGenerateCertificate={handleManualCertificate} />}
-        {view === 'certificate' && manualCertificate && <div className="min-h-screen bg-[#141414] pt-20 px-4 md:px-16 pb-12"><CertificateView video={manualCertificate.video} userProfile={manualCertificate.profile} onBack={handleCloseManualCertificate} /></div>}
+        {view === 'admin' && isAdmin && <AdminDashboard videos={videos} viewCounts={viewCounts} totalViews={totalViews} activities={activities} liveSession={liveSession} onSaveLiveSession={saveLiveSession} onVideosChange={persistVideos} onActivitiesChange={persistActivities} onGenerateCertificate={handleManualCertificate} certTemplate={certTemplate} onSaveCertConfig={saveCertConfig} />}
+        {view === 'certificate' && manualCertificate && <div className="min-h-screen bg-[#141414] pt-20 px-4 md:px-16 pb-12"><CertificateView video={manualCertificate.video} userProfile={manualCertificate.profile} onBack={handleCloseManualCertificate} certTemplate={certTemplate} /></div>}
         {view === 'history' && !sessionUser.isGuest && !reprintCert && <HistoryView sessionUser={sessionUser} onBack={() => setView('home')} onReprintCert={(cert) => setReprintCert(cert)} />}
-        {view === 'history' && reprintCert && <div className="min-h-screen bg-[#141414] pt-20 px-4 md:px-16 pb-12"><CertificateReprintView cert={reprintCert} onBack={() => setReprintCert(null)} /></div>}
+        {view === 'history' && reprintCert && <div className="min-h-screen bg-[#141414] pt-20 px-4 md:px-16 pb-12"><CertificateReprintView cert={reprintCert} onBack={() => setReprintCert(null)} certTemplate={certTemplate} /></div>}
       </div>
 
       <footer className="py-12 px-10 bg-black/80 text-gray-500 text-sm border-t border-gray-800 mt-10">
@@ -947,12 +997,143 @@ function HistoryView({ sessionUser, onBack, onReprintCert }) {
   );
 }
 
+// ── CERTIFICADO CANVAS COMPARTIDO — renderiza el certificado completo ──
+function CertificateCanvas({ certRef, onImageLoaded, tpl, recipientName, statusText, collegiateNumber, videoTitle, videoDuration, dateFormatted, certificateCode, qrUrl }) {
+  const [imagesReady, setImagesReady] = useState(0);
+  const totalImages = [tpl.logoCpgUrl, tpl.logoCaeducUrl, tpl.signatureUrl, tpl.sealUrl, tpl.backgroundUrl].filter(Boolean).length;
+  const handleImgLoad = () => { setImagesReady(p => p + 1); };
+  useEffect(() => { if (imagesReady >= totalImages) onImageLoaded?.(); }, [imagesReady, totalImages]);
+  // Si no hay imágenes, marcar listo inmediatamente
+  useEffect(() => { if (totalImages === 0) onImageLoaded?.(); }, []);
+
+  const statusColor = statusText?.includes('ACTIVO') ? '#166534' : '#991b1b';
+  const statusLabel = statusText?.includes('ACTIVO') ? 'ACTIVO' : statusText?.includes('INACTIVO') ? 'INACTIVO' : statusText;
+  const showStatus = statusText && statusText !== 'DESCONOCIDO' && statusText !== 'INVITADO' && statusText.length > 0;
+  const titleSize = videoTitle.length > 60 ? '17px' : videoTitle.length > 40 ? '20px' : '24px';
+
+  return (
+    <div ref={certRef} className="relative" style={{ width: '1056px', height: '816px', fontFamily: "'Georgia', 'Times New Roman', serif", background: '#f5f5f0', overflow: 'hidden' }}>
+      {/* Fondo personalizado o barras de color por defecto */}
+      {tpl.backgroundUrl ? (
+        <img src={tpl.backgroundUrl} alt="Fondo" className="absolute inset-0 w-full h-full object-fill" crossOrigin="anonymous" onLoad={handleImgLoad} onError={(e) => { e.target.style.display='none'; handleImgLoad(); }} />
+      ) : (
+        <>
+          {/* Barras laterales decorativas (como en la plantilla original) */}
+          <div className="absolute left-0 top-0 bottom-0" style={{ width: '28px' }}>
+            <div style={{ height: '20%', background: '#e8c03a' }}></div>
+            <div style={{ height: '20%', background: '#1e5c8b' }}></div>
+            <div style={{ height: '20%', background: '#d63384' }}></div>
+            <div style={{ height: '20%', background: '#e8c03a' }}></div>
+            <div style={{ height: '20%', background: '#5bb363' }}></div>
+          </div>
+          {/* Textura sutil de fondo */}
+          <div className="absolute inset-0" style={{ background: 'radial-gradient(circle at 80% 80%, rgba(200,200,200,0.15) 0%, transparent 60%)' }}></div>
+        </>
+      )}
+
+      {/* Contenido sobre el fondo */}
+      <div className="absolute inset-0" style={{ fontFamily: "'Georgia', 'Times New Roman', serif" }}>
+
+        {/* ── FILA SUPERIOR: Logo CPG | Junta Directiva | Logo CAEDUC ── */}
+        <div className="absolute flex items-center justify-between" style={{ top: '30px', left: '50px', right: '50px', height: '100px' }}>
+          {/* Logo CPG */}
+          <div style={{ width: '200px', height: '100px', display: 'flex', alignItems: 'center' }}>
+            {tpl.logoCpgUrl && <img src={tpl.logoCpgUrl} alt="Logo CPG" crossOrigin="anonymous" style={{ maxWidth: '200px', maxHeight: '100px', objectFit: 'contain' }} onLoad={handleImgLoad} onError={(e) => { e.target.style.display='none'; handleImgLoad(); }} />}
+          </div>
+          {/* Texto central */}
+          <div style={{ textAlign: 'center', flex: 1 }}>
+            <p style={{ fontSize: '18px', fontWeight: 'bold', fontStyle: 'italic', color: '#c2185b' }}>{tpl.boardText}</p>
+          </div>
+          {/* Logo CAEDUC */}
+          <div style={{ width: '200px', height: '100px', display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
+            {tpl.logoCaeducUrl && <img src={tpl.logoCaeducUrl} alt="Logo CAEDUC" crossOrigin="anonymous" style={{ maxWidth: '200px', maxHeight: '100px', objectFit: 'contain' }} onLoad={handleImgLoad} onError={(e) => { e.target.style.display='none'; handleImgLoad(); }} />}
+          </div>
+        </div>
+
+        {/* ── ENCABEZADOS ── */}
+        <div className="absolute text-center" style={{ top: '155px', left: '50px', right: '50px' }}>
+          <p style={{ fontSize: '22px', fontWeight: 'bold', color: '#1a1a2e', lineHeight: '1.4' }}>{tpl.headerLine1}</p>
+          <p style={{ fontSize: '22px', fontWeight: 'bold', color: '#1a1a2e', lineHeight: '1.4' }}>{tpl.headerLine2}</p>
+          <p style={{ fontSize: '17px', color: '#333', marginTop: '8px', fontStyle: 'italic' }}>{tpl.diplomaText}</p>
+        </div>
+
+        {/* ── NOMBRE DEL PROFESIONAL ── */}
+        <div className="absolute text-center" style={{ top: '295px', left: '53%', transform: 'translateX(-50%)', width: '600px' }}>
+          <p style={{ fontSize: '34px', fontWeight: 'bold', color: '#1a1a2e', letterSpacing: '0.3px', lineHeight: '1.2' }}>{recipientName}</p>
+        </div>
+
+        {/* ── COLEGIADO + ESTADO + NÚMERO ── */}
+        <div className="absolute text-center" style={{ top: '365px', left: '53%', transform: 'translateX(-50%)', width: '600px' }}>
+          <p style={{ fontSize: '16px', color: '#333' }}>
+            {tpl.collegiateText}{' '}
+            {showStatus && <span style={{ fontWeight: 'bold', color: statusColor, margin: '0 12px' }}>{statusLabel}</span>}
+            {tpl.numberText}{' '}
+            <span style={{ fontWeight: 'bold', fontSize: '18px', color: '#1a1a2e' }}>{collegiateNumber}</span>
+          </p>
+        </div>
+
+        {/* ── TEXTO DEL CURSO ── */}
+        <div className="absolute text-center" style={{ top: '410px', left: '53%', transform: 'translateX(-50%)', width: '640px' }}>
+          <p style={{ fontSize: '15px', color: '#444' }}>{tpl.courseText}</p>
+        </div>
+
+        {/* ── TÍTULO DEL CURSO ── */}
+        <div className="absolute text-center" style={{ top: '450px', left: '53%', transform: 'translateX(-50%)', width: '680px' }}>
+          <p style={{ fontSize: titleSize, fontWeight: 'bold', color: '#1a1a2e', textTransform: 'uppercase', lineHeight: '1.35', wordBreak: 'break-word' }}>{videoTitle}</p>
+        </div>
+
+        {/* ── HORAS ── */}
+        <div className="absolute text-center" style={{ top: '525px', left: '53%', transform: 'translateX(-50%)', width: '640px' }}>
+          <p style={{ fontSize: '15px', color: '#444' }}>
+            {tpl.hoursPrefix} <span style={{ fontWeight: 'bold', fontSize: '18px', color: '#1a1a2e' }}>{videoDuration}</span> {tpl.hoursSuffix}
+          </p>
+        </div>
+
+        {/* ── LEMA ── */}
+        <div className="absolute text-center" style={{ top: '570px', left: '53%', transform: 'translateX(-50%)', width: '640px' }}>
+          <p style={{ fontSize: '16px', color: '#c2185b', fontStyle: 'italic', letterSpacing: '1px' }}>{tpl.motto}</p>
+        </div>
+
+        {/* ── FILA INFERIOR: Firma | Sello | QR ── */}
+        <div className="absolute flex items-end justify-between" style={{ bottom: '40px', left: '60px', right: '60px', height: '150px' }}>
+          {/* Firma + Coordinador */}
+          <div style={{ textAlign: 'center', width: '250px' }}>
+            {tpl.signatureUrl && (
+              <img src={tpl.signatureUrl} alt="Firma" crossOrigin="anonymous" style={{ maxWidth: '180px', maxHeight: '60px', objectFit: 'contain', margin: '0 auto 4px' }} onLoad={handleImgLoad} onError={(e) => { e.target.style.display='none'; handleImgLoad(); }} />
+            )}
+            <div style={{ borderTop: '1.5px solid #333', paddingTop: '4px', width: '200px', margin: '0 auto' }}>
+              <p style={{ fontSize: '13px', fontWeight: 'bold', color: '#1a1a2e' }}>{tpl.coordinatorName}</p>
+              <p style={{ fontSize: '11px', color: '#555' }}>{tpl.coordinatorTitle}</p>
+            </div>
+          </div>
+
+          {/* Sello */}
+          <div style={{ textAlign: 'center', width: '140px' }}>
+            {tpl.sealUrl && (
+              <img src={tpl.sealUrl} alt="Sello" crossOrigin="anonymous" style={{ width: '110px', height: '110px', objectFit: 'contain', margin: '0 auto', opacity: 0.85 }} onLoad={handleImgLoad} onError={(e) => { e.target.style.display='none'; handleImgLoad(); }} />
+            )}
+          </div>
+
+          {/* QR + Código + Fecha */}
+          <div style={{ textAlign: 'center', width: '160px' }}>
+            <p style={{ fontSize: '12px', color: '#333', marginBottom: '4px' }}>{dateFormatted}</p>
+            <img src={qrUrl} alt="QR" crossOrigin="anonymous" style={{ width: '80px', height: '80px', display: 'block', margin: '0 auto' }} />
+            <p style={{ fontSize: '8px', color: '#888', marginTop: '3px', fontFamily: 'monospace', letterSpacing: '0.3px' }}>{certificateCode}</p>
+            <p style={{ fontSize: '7px', color: '#aaa', marginTop: '1px' }}>Escanea para verificar</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── REIMPRESIÓN DE CERTIFICADO DESDE HISTORIAL ────────────────
-function CertificateReprintView({ cert, onBack }) {
+function CertificateReprintView({ cert, onBack, certTemplate }) {
   const certRef = useRef(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [imageLoaded, setImageLoaded] = useState(false);
 
+  const tpl = { ...DEFAULT_CERT_CONFIG, ...certTemplate };
   const issuedDate = new Date(cert.issued_at);
   const dateFormatted = issuedDate.toLocaleDateString('es-GT', { year: 'numeric', month: 'long', day: 'numeric' });
   const qrUrl = getCertQrUrl(cert.certificate_code);
@@ -963,7 +1144,7 @@ function CertificateReprintView({ cert, onBack }) {
     setIsGenerating(true);
     try {
       const canvas = await html2canvas(certRef.current, {
-        scale: 3, useCORS: true, allowTaint: true, backgroundColor: '#ffffff', logging: false, imageTimeout: 15000,
+        scale: 3, useCORS: true, allowTaint: true, backgroundColor: '#f5f5f0', logging: false, imageTimeout: 15000,
         width: 1056, height: 816, windowWidth: 1056, windowHeight: 816, scrollX: 0, scrollY: 0,
       });
       const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'letter' });
@@ -988,40 +1169,13 @@ function CertificateReprintView({ cert, onBack }) {
       </div>
       {!imageLoaded && <div className="text-yellow-400 text-sm flex items-center gap-2"><Loader2 size={16} className="animate-spin" /> Cargando plantilla...</div>}
       <CertScaledPreview certRef={certRef} imageLoaded={imageLoaded}>
-        <div ref={certRef} className="relative shadow-2xl" style={{ width: '1056px', height: '816px', fontFamily: "'Georgia', 'Times New Roman', serif" }}>
-          <img src="/certificado-plantilla1.png" alt="Plantilla" className="absolute inset-0 w-full h-full object-fill" crossOrigin="anonymous" onLoad={() => setImageLoaded(true)} onError={(e) => { e.target.style.display = 'none'; setImageLoaded(true); }} />
-          <div className="absolute inset-0" style={{ fontFamily: "'Georgia', 'Times New Roman', serif" }}>
-            <div className="absolute text-center" style={{ top: '315px', left: '53%', transform: 'translateX(-50%)', width: '580px' }}>
-              <p style={{ fontSize: '34px', fontWeight: 'bold', color: '#1a1a2e', letterSpacing: '0.3px', lineHeight: '1.2' }}>{cert.recipient_name}</p>
-            </div>
-            {statusText && statusText !== 'DESCONOCIDO' && statusText !== 'INVITADO' && (
-              <div className="absolute" style={{ top: '387px', left: '490px' }}>
-                <p style={{ fontSize: '15px', fontWeight: 'bold', color: statusText.includes('ACTIVO') ? '#166534' : '#991b1b', letterSpacing: '0.5px' }}>
-                  {statusText.includes('ACTIVO') ? 'ACTIVO' : 'INACTIVO'}
-                </p>
-              </div>
-            )}
-            <div className="absolute" style={{ top: '385px', left: '700px' }}>
-              <p style={{ fontSize: '17px', fontWeight: 'bold', color: '#1a1a2e' }}>{cert.collegiate_number}</p>
-            </div>
-            <div className="absolute text-center" style={{ top: '478px', left: '53%', transform: 'translateX(-50%)', width: '640px' }}>
-              <p style={{ fontSize: cert.video_title.length > 60 ? '18px' : cert.video_title.length > 40 ? '21px' : '25px', fontWeight: 'bold', color: '#1a1a2e', textTransform: 'uppercase', lineHeight: '1.35', wordBreak: 'break-word' }}>{cert.video_title}</p>
-            </div>
-            <div className="absolute" style={{ top: '540px', left: '430px' }}>
-              <p style={{ fontSize: '18px', fontWeight: 'bold', color: '#1a1a2e' }}>{cert.video_duration || ''}</p>
-            </div>
-            <div className="absolute text-center" style={{ top: '606px', left: '53%', transform: 'translateX(-50%)', width: '400px' }}>
-              <p style={{ fontSize: '13px', color: '#333333' }}>{dateFormatted}</p>
-            </div>
-            <div className="absolute text-center" style={{ top: '622px', left: '53%', transform: 'translateX(-50%)', width: '400px' }}>
-              <p style={{ fontSize: '11px', color: '#555555', fontFamily: "'Courier New', monospace", letterSpacing: '0.5px' }}>{cert.certificate_code}</p>
-            </div>
-            <div className="absolute" style={{ bottom: '48px', right: '52px', textAlign: 'center' }}>
-              <img src={qrUrl} alt="QR Verificación" crossOrigin="anonymous" style={{ width: '90px', height: '90px', display: 'block' }} />
-              <p style={{ fontSize: '7px', color: '#888888', marginTop: '3px', fontFamily: 'monospace', letterSpacing: '0.3px' }}>Escanea para verificar</p>
-            </div>
-          </div>
-        </div>
+        <CertificateCanvas
+          certRef={certRef} tpl={tpl} onImageLoaded={() => setImageLoaded(true)}
+          recipientName={cert.recipient_name} statusText={statusText}
+          collegiateNumber={cert.collegiate_number} videoTitle={cert.video_title}
+          videoDuration={cert.video_duration || ''} dateFormatted={dateFormatted}
+          certificateCode={cert.certificate_code} qrUrl={qrUrl}
+        />
       </CertScaledPreview>
     </div>
   );
@@ -1307,7 +1461,7 @@ function VideoCard({ video, viewCount = 0, onClick, isSmall, isPublished, isComp
 }
 
 // ── PLAYER VIEW ───────────────────────────────────
-function PlayerView({ video, viewCounts, onBack, sessionUser, userProfile, setUserProfile, isCompleted, onMarkCompleted }) {
+function PlayerView({ video, viewCounts, onBack, sessionUser, userProfile, setUserProfile, isCompleted, onMarkCompleted, certTemplate }) {
   const [showQuiz, setShowQuiz] = useState(false);
   const [showCert, setShowCert] = useState(false);
   const [lookingUpStatus, setLookingUpStatus] = useState(false);
@@ -1359,7 +1513,7 @@ function PlayerView({ video, viewCounts, onBack, sessionUser, userProfile, setUs
     <div className="min-h-screen bg-[#141414] pt-20 px-4 md:px-16 pb-12">
       <button onClick={onBack} className="flex items-center gap-2 text-gray-400 hover:text-white mb-6 transition"><ChevronLeft /> Regresar</button>
       {showCert ? (
-        <CertificateView video={video} userProfile={userProfile} sessionUser={sessionUser} onBack={() => setShowCert(false)} />
+        <CertificateView video={video} userProfile={userProfile} sessionUser={sessionUser} onBack={() => setShowCert(false)} certTemplate={certTemplate} />
       ) : showQuiz ? (
         <QuizModal video={video} onCancel={() => setShowQuiz(false)} onPass={() => { onMarkCompleted(); setShowCert(true); }} sessionUser={sessionUser} userProfile={userProfile} setUserProfile={setUserProfile} />
       ) : (
@@ -1508,13 +1662,14 @@ function QuizModal({ video, onCancel, onPass, sessionUser, userProfile, setUserP
 }
 
 // ── CERTIFICATE VIEW ──────────────────────────────
-function CertificateView({ video, userProfile, sessionUser, onBack }) {
+function CertificateView({ video, userProfile, sessionUser, onBack, certTemplate }) {
   const certRef = useRef(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [imageLoaded, setImageLoaded] = useState(false);
   const [resolvedStatus, setResolvedStatus] = useState('');
   const [saved, setSaved] = useState(false);
 
+  const tpl = { ...DEFAULT_CERT_CONFIG, ...certTemplate };
   const currentDate = new Date();
   const fmt = (d) => d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
   const certificateCode = 'CPG-' + fmt(currentDate) + '-' + (userProfile.collegiateNumber || sessionUser?.collegiateNumber || '0000');
@@ -1563,14 +1718,12 @@ function CertificateView({ video, userProfile, sessionUser, onBack }) {
     });
   }, [resolvedStatus, saved]);
 
-  const statusText = resolvedStatus;
-
   const handleDownloadPDF = async () => {
     if (!certRef.current || !imageLoaded) { alert('Espera a que la plantilla del certificado cargue completamente.'); return; }
     setIsGenerating(true);
     try {
       const canvas = await html2canvas(certRef.current, {
-        scale: 3, useCORS: true, allowTaint: true, backgroundColor: '#ffffff', logging: false, imageTimeout: 15000,
+        scale: 3, useCORS: true, allowTaint: true, backgroundColor: '#f5f5f0', logging: false, imageTimeout: 15000,
         width: 1056, height: 816, windowWidth: 1056, windowHeight: 816, scrollX: 0, scrollY: 0,
       });
       const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'letter' });
@@ -1597,40 +1750,13 @@ function CertificateView({ video, userProfile, sessionUser, onBack }) {
       </div>
       {!imageLoaded && <div className="text-yellow-400 text-sm flex items-center gap-2"><Loader2 size={16} className="animate-spin" /> Cargando plantilla...</div>}
       <CertScaledPreview certRef={certRef} imageLoaded={imageLoaded}>
-        <div ref={certRef} className="relative shadow-2xl" style={{ width: '1056px', height: '816px', fontFamily: "'Georgia', 'Times New Roman', serif" }}>
-          <img src="/certificado-plantilla1.png" alt="Plantilla Certificado" className="absolute inset-0 w-full h-full object-fill" crossOrigin="anonymous" onLoad={() => setImageLoaded(true)} onError={(e) => { e.target.style.display = 'none'; setImageLoaded(true); }} />
-          <div className="absolute inset-0" style={{ fontFamily: "'Georgia', 'Times New Roman', serif" }}>
-            <div className="absolute text-center" style={{ top: '315px', left: '53%', transform: 'translateX(-50%)', width: '580px' }}>
-              <p style={{ fontSize: '34px', fontWeight: 'bold', color: '#1a1a2e', letterSpacing: '0.3px', lineHeight: '1.2' }}>{userProfile.name}</p>
-            </div>
-            {statusText && statusText !== 'DESCONOCIDO' && statusText !== 'INVITADO' && statusText.length > 0 && (
-              <div className="absolute" style={{ top: '387px', left: '490px' }}>
-                <p style={{ fontSize: '15px', fontWeight: 'bold', color: statusText.includes('ACTIVO') ? '#166534' : '#991b1b', letterSpacing: '0.5px' }}>
-                  {statusText.includes('ACTIVO') ? 'ACTIVO' : statusText.includes('INACTIVO') ? 'INACTIVO' : statusText}
-                </p>
-              </div>
-            )}
-            <div className="absolute" style={{ top: '385px', left: '700px' }}>
-              <p style={{ fontSize: '17px', fontWeight: 'bold', color: '#1a1a2e' }}>{userProfile.collegiateNumber}</p>
-            </div>
-            <div className="absolute text-center" style={{ top: '478px', left: '53%', transform: 'translateX(-50%)', width: '640px' }}>
-              <p style={{ fontSize: video.title.length > 60 ? '18px' : video.title.length > 40 ? '21px' : '25px', fontWeight: 'bold', color: '#1a1a2e', textTransform: 'uppercase', lineHeight: '1.35', wordBreak: 'break-word' }}>{video.title}</p>
-            </div>
-            <div className="absolute" style={{ top: '540px', left: '430px' }}>
-              <p style={{ fontSize: '18px', fontWeight: 'bold', color: '#1a1a2e' }}>{video.duration}</p>
-            </div>
-            <div className="absolute text-center" style={{ top: '606px', left: '53%', transform: 'translateX(-50%)', width: '400px' }}>
-              <p style={{ fontSize: '13px', color: '#333333' }}>{dateFormatted}</p>
-            </div>
-            <div className="absolute text-center" style={{ top: '622px', left: '53%', transform: 'translateX(-50%)', width: '400px' }}>
-              <p style={{ fontSize: '11px', color: '#555555', fontFamily: "'Courier New', monospace", letterSpacing: '0.5px' }}>{certificateCode}</p>
-            </div>
-            <div className="absolute" style={{ bottom: '48px', right: '52px', textAlign: 'center' }}>
-              <img src={qrUrl} alt="QR Verificación" crossOrigin="anonymous" style={{ width: '90px', height: '90px', display: 'block' }} />
-              <p style={{ fontSize: '7px', color: '#888888', marginTop: '3px', fontFamily: 'monospace', letterSpacing: '0.3px' }}>Escanea para verificar</p>
-            </div>
-          </div>
-        </div>
+        <CertificateCanvas
+          certRef={certRef} tpl={tpl} onImageLoaded={() => setImageLoaded(true)}
+          recipientName={userProfile.name} statusText={resolvedStatus}
+          collegiateNumber={userProfile.collegiateNumber} videoTitle={video.title}
+          videoDuration={String(video.duration || '')} dateFormatted={dateFormatted}
+          certificateCode={certificateCode} qrUrl={qrUrl}
+        />
       </CertScaledPreview>
     </div>
   );
@@ -1861,8 +1987,161 @@ function LiveSessionView({ session, onBack, sessionUser, onRegisterAttendance })
   );
 }
 
+// ── EDITOR DE PLANTILLA DE CERTIFICADO (Admin) ────────────────
+function CertTemplateAdmin({ certTemplate, onSave }) {
+  const [form, setForm] = useState({ ...DEFAULT_CERT_CONFIG, ...certTemplate });
+  const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState('');
+  const [saveMsg, setSaveMsg] = useState('');
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const previewRef = useRef(null);
+
+  useEffect(() => { setForm({ ...DEFAULT_CERT_CONFIG, ...certTemplate }); }, [certTemplate]);
+
+  const handleSave = async () => {
+    setSaving(true); setSaveMsg('');
+    try {
+      await onSave(form);
+      setSaveMsg('✓ Configuración guardada');
+      setTimeout(() => setSaveMsg(''), 3000);
+    } catch (e) { setSaveMsg('Error: ' + e.message); }
+    setSaving(false);
+  };
+
+  const handleImageUpload = async (field, file) => {
+    if (!file) return;
+    setUploading(field);
+    try {
+      const url = await uploadCertAsset(file, field);
+      if (url) {
+        const next = { ...form, [field]: url };
+        setForm(next);
+        await onSave(next);
+        setSaveMsg('✓ Imagen subida y guardada');
+        setTimeout(() => setSaveMsg(''), 3000);
+      }
+    } catch (e) { setSaveMsg('Error subiendo imagen: ' + e.message); }
+    setUploading('');
+  };
+
+  const ImageUploadField = ({ label, field, hint }) => (
+    <div className="bg-black/30 border border-gray-800 rounded-xl p-4">
+      <label className="block text-sm text-gray-400 mb-2 font-semibold">{label}</label>
+      {form[field] ? (
+        <div className="flex items-center gap-3 mb-2">
+          <img src={form[field]} alt={label} className="w-20 h-20 object-contain bg-white/10 rounded-lg border border-gray-700 p-1" />
+          <div className="flex-1">
+            <p className="text-xs text-green-400 mb-1">✓ Imagen cargada</p>
+            <button onClick={() => { const next = { ...form, [field]: '' }; setForm(next); onSave(next); }} className="text-xs text-red-400 hover:text-red-300 transition">Eliminar imagen</button>
+          </div>
+        </div>
+      ) : (
+        <p className="text-xs text-gray-600 mb-2">Sin imagen cargada</p>
+      )}
+      <label className="flex items-center gap-2 bg-gray-800 hover:bg-gray-700 border border-gray-600 px-3 py-2 rounded-lg cursor-pointer transition text-sm text-gray-300 hover:text-white w-fit">
+        {uploading === field ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+        {uploading === field ? 'Subiendo...' : 'Subir imagen'}
+        <input type="file" accept="image/*" className="hidden" onChange={e => handleImageUpload(field, e.target.files?.[0])} disabled={!!uploading} />
+      </label>
+      {hint && <p className="text-[11px] text-gray-600 mt-1.5">{hint}</p>}
+    </div>
+  );
+
+  const TextField = ({ label, field, multiline }) => (
+    <div>
+      <label className="block text-sm text-gray-400 mb-1">{label}</label>
+      {multiline ? (
+        <textarea value={form[field]} onChange={e => setForm({ ...form, [field]: e.target.value })} className="w-full bg-black border border-gray-700 rounded-lg p-2.5 text-white text-sm focus:border-blue-500 outline-none h-16" />
+      ) : (
+        <input type="text" value={form[field]} onChange={e => setForm({ ...form, [field]: e.target.value })} className="w-full bg-black border border-gray-700 rounded-lg p-2.5 text-white text-sm focus:border-blue-500 outline-none" />
+      )}
+    </div>
+  );
+
+  return (
+    <div className="p-6 space-y-6">
+      {/* Mensaje de estado */}
+      {saveMsg && (
+        <div className={`rounded-lg px-4 py-2 text-sm font-semibold ${saveMsg.startsWith('✓') ? 'bg-green-900/30 border border-green-700/40 text-green-300' : 'bg-red-900/30 border border-red-500/40 text-red-300'}`}>
+          {saveMsg}
+        </div>
+      )}
+
+      {/* ── IMÁGENES ── */}
+      <div>
+        <h3 className="text-white font-bold text-lg mb-3 flex items-center gap-2"><Image size={18} className="text-blue-400" /> Imágenes del certificado</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          <ImageUploadField label="Logo CPG (arriba izquierda)" field="logoCpgUrl" hint="Logo del Colegio de Psicólogos. Recomendado: PNG transparente, 400x200px" />
+          <ImageUploadField label="Logo CAEDUC (arriba derecha)" field="logoCaeducUrl" hint="Logo de CAEDUC. Recomendado: PNG transparente, 400x200px" />
+          <ImageUploadField label="Firma del coordinador/a" field="signatureUrl" hint="Firma digital del coordinador. Recomendado: PNG transparente" />
+          <ImageUploadField label="Sello institucional" field="sealUrl" hint="Sello del CPG o CAEDUC. Recomendado: PNG transparente, 200x200px" />
+          <ImageUploadField label="Imagen de fondo (opcional)" field="backgroundUrl" hint="Si subes un fondo personalizado, reemplaza las barras de color. Recomendado: 1056x816px" />
+        </div>
+      </div>
+
+      {/* ── TEXTOS ── */}
+      <div>
+        <h3 className="text-white font-bold text-lg mb-3 flex items-center gap-2"><Type size={18} className="text-purple-400" /> Textos del certificado</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <TextField label="Encabezado línea 1" field="headerLine1" />
+          <TextField label="Encabezado línea 2" field="headerLine2" />
+          <TextField label="Texto de diploma" field="diplomaText" />
+          <TextField label="Texto de Junta Directiva" field="boardText" />
+          <TextField label='Texto "Con colegiado"' field="collegiateText" />
+          <TextField label='Texto "número:"' field="numberText" />
+          <TextField label="Texto del curso" field="courseText" />
+          <TextField label="Prefijo de horas" field="hoursPrefix" />
+          <TextField label="Sufijo de horas" field="hoursSuffix" />
+          <TextField label="Lema" field="motto" />
+        </div>
+      </div>
+
+      {/* ── COORDINADOR ── */}
+      <div>
+        <h3 className="text-white font-bold text-lg mb-3 flex items-center gap-2"><UserCheck size={18} className="text-yellow-400" /> Datos del coordinador/a</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <TextField label="Nombre del coordinador/a" field="coordinatorName" />
+          <TextField label="Cargo" field="coordinatorTitle" />
+        </div>
+      </div>
+
+      {/* ── BOTONES ── */}
+      <div className="flex flex-wrap gap-3 pt-2 border-t border-gray-800">
+        <button onClick={handleSave} disabled={saving} className="bg-green-600 hover:bg-green-700 disabled:bg-green-800 text-white font-bold px-6 py-2.5 rounded-lg transition flex items-center gap-2">
+          {saving ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle size={16} />}
+          Guardar configuración
+        </button>
+        <button onClick={() => setPreviewOpen(p => !p)} className="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-5 py-2.5 rounded-lg transition flex items-center gap-2">
+          <Eye size={16} /> {previewOpen ? 'Ocultar vista previa' : 'Vista previa'}
+        </button>
+        <button onClick={() => { if (confirm('¿Restaurar todos los textos a los valores originales?')) { setForm({ ...DEFAULT_CERT_CONFIG, logoCpgUrl: form.logoCpgUrl, logoCaeducUrl: form.logoCaeducUrl, signatureUrl: form.signatureUrl, sealUrl: form.sealUrl, backgroundUrl: form.backgroundUrl }); } }} className="bg-gray-700 hover:bg-gray-600 text-gray-300 px-4 py-2.5 rounded-lg transition text-sm">
+          Restaurar textos por defecto
+        </button>
+      </div>
+
+      {/* ── VISTA PREVIA ── */}
+      {previewOpen && (
+        <div className="border border-gray-700 rounded-2xl overflow-hidden bg-gray-900 p-4">
+          <p className="text-xs text-gray-500 mb-3 text-center">Vista previa con datos de ejemplo — así se verá el certificado generado</p>
+          <CertScaledPreview certRef={previewRef} imageLoaded={true}>
+            <CertificateCanvas
+              certRef={previewRef} tpl={form} onImageLoaded={() => {}}
+              recipientName="Juan José Ejemplo López"
+              statusText="ACTIVO" collegiateNumber="4661"
+              videoTitle="Curso de Ejemplo — Psicología Clínica Avanzada"
+              videoDuration="3" dateFormatted="22 de marzo de 2026"
+              certificateCode="CPG-20260322-4661"
+              qrUrl={getCertQrUrl('CPG-20260322-4661')}
+            />
+          </CertScaledPreview>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── ADMIN DASHBOARD ───────────────────────────────
-function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSession, onSaveLiveSession, onVideosChange, onActivitiesChange, onGenerateCertificate }) {
+function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSession, onSaveLiveSession, onVideosChange, onActivitiesChange, onGenerateCertificate, certTemplate, onSaveCertConfig }) {
   const [editingVideo, setEditingVideo] = useState(null);
   const [manualCertVideo, setManualCertVideo] = useState(null);
   const [manualProfile, setManualProfile] = useState({ name: '', collegiateNumber: '', status: '' });
@@ -1870,6 +2149,7 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
   const [showLiveSection, setShowLiveSection] = useState(false);
   const [showActivitiesSection, setShowActivitiesSection] = useState(false);
   const [showCertsSection, setShowCertsSection] = useState(false);
+  const [showCertTemplateSection, setShowCertTemplateSection] = useState(false);
   const [certsData, setCertsData] = useState([]);
   const [certsLoading, setCertsLoading] = useState(false);
   const [certsLoaded, setCertsLoaded] = useState(false);
@@ -2075,6 +2355,21 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
           <span className="text-gray-400 text-lg">{showLiveSection ? '▲' : '▼'}</span>
         </button>
         {showLiveSection && <div className="border-t border-gray-800"><LiveAdminPanel liveSession={liveSession} onSave={onSaveLiveSession} /></div>}
+      </div>
+
+      {/* ── PLANTILLA DE CERTIFICADO (colapsable) ── */}
+      <div className="bg-[#1b1b1b] border border-gray-800 rounded-2xl mb-6 overflow-hidden">
+        <button type="button" onClick={() => setShowCertTemplateSection(v => !v)} className="w-full flex items-center justify-between px-6 py-4 hover:bg-white/5 transition">
+          <div className="flex items-center gap-3">
+            <div className="bg-pink-600 p-2 rounded-lg"><Settings size={18} className="text-white" /></div>
+            <div className="text-left">
+              <h2 className="text-xl font-bold text-white">Plantilla de certificado</h2>
+              <p className="text-xs text-gray-400">Personaliza textos, logos, firma, sello y fondo</p>
+            </div>
+          </div>
+          <span className="text-gray-400 text-lg">{showCertTemplateSection ? '▲' : '▼'}</span>
+        </button>
+        {showCertTemplateSection && <div className="border-t border-gray-800"><CertTemplateAdmin certTemplate={certTemplate} onSave={onSaveCertConfig} /></div>}
       </div>
 
       {/* ── ACTIVIDADES (colapsable) ── */}
