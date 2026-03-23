@@ -1816,7 +1816,6 @@ function CertScaledPreview({ certRef, imageLoaded, children }) {
       }
     };
     updateScale();
-    // Retry after a short delay to catch late mobile layout
     const t1 = setTimeout(updateScale, 100);
     const t2 = setTimeout(updateScale, 500);
     window.addEventListener('resize', updateScale);
@@ -1824,18 +1823,18 @@ function CertScaledPreview({ certRef, imageLoaded, children }) {
   }, []);
 
   return (
-    <div ref={wrapperRef} className="w-full overflow-hidden">
-      {/* Offscreen render for html2canvas — absolute inside a clipped container */}
-      <div style={{ position: 'absolute', left: '-99999px', top: '-99999px', width: '1056px', height: '816px', overflow: 'hidden', pointerEvents: 'none', opacity: 0 }}>
-        {children}
-      </div>
-      {/* Scaled visual preview */}
+    <div ref={wrapperRef} className="w-full overflow-hidden" style={{ position: 'relative' }}>
+      {/* 1. Scaled visual preview — rendered FIRST (decorative only, user sees this) */}
       <div className="w-full flex justify-center overflow-hidden">
         <div style={{ width: Math.floor(1056 * scale) + 'px', height: Math.floor(816 * scale) + 'px', position: 'relative', overflow: 'hidden', flexShrink: 0 }}>
           <div style={{ transform: 'scale(' + scale + ')', transformOrigin: 'top left', width: '1056px', height: '816px', position: 'absolute', top: 0, left: 0, pointerEvents: 'none' }}>
             {children}
           </div>
         </div>
+      </div>
+      {/* 2. Offscreen full-size render — rendered LAST so certRef attaches HERE (html2canvas captures this) */}
+      <div style={{ position: 'absolute', left: '-99999px', top: '-99999px', width: '1056px', height: '816px', overflow: 'hidden', pointerEvents: 'none', opacity: 0 }}>
+        {children}
       </div>
     </div>
   );
