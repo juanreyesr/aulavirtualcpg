@@ -1012,7 +1012,6 @@ function CertificateCanvas({ certRef, onImageLoaded, tpl, recipientName, statusT
 
   return (
     <div ref={certRef} className="relative" style={{ width: '1056px', height: '816px', fontFamily: "'Georgia', 'Times New Roman', serif", background: '#f0ede8', overflow: 'hidden' }}>
-      {/* Fondo personalizado o barras de color por defecto */}
       {tpl.backgroundUrl ? (
         <img src={tpl.backgroundUrl} alt="Fondo" className="absolute inset-0 w-full h-full object-fill" crossOrigin="anonymous" onLoad={handleImgLoad} onError={(e) => { e.target.style.display='none'; handleImgLoad(); }} />
       ) : (
@@ -1031,33 +1030,33 @@ function CertificateCanvas({ certRef, onImageLoaded, tpl, recipientName, statusT
 
       <div className="absolute inset-0" style={{ fontFamily: "'Georgia', 'Times New Roman', serif" }}>
 
-        {/* ── FILA SUPERIOR: Logo CPG | Junta Directiva | Logo CAEDUC ── */}
-        <div className="absolute flex items-center justify-between" style={{ top: '25px', left: '50px', right: '45px', height: '110px' }}>
-          <div style={{ width: '220px', height: '110px', display: 'flex', alignItems: 'center' }}>
-            {tpl.logoCpgUrl && <img src={tpl.logoCpgUrl} alt="Logo CPG" crossOrigin="anonymous" style={{ maxWidth: '220px', maxHeight: '110px', objectFit: 'contain' }} onLoad={handleImgLoad} onError={(e) => { e.target.style.display='none'; handleImgLoad(); }} />}
+        {/* Logo CPG | Junta Directiva | Logo CAEDUC */}
+        <div className="absolute flex items-center justify-between" style={{ top: '18px', left: '45px', right: '40px', height: '130px' }}>
+          <div style={{ width: '280px', height: '130px', display: 'flex', alignItems: 'center' }}>
+            {tpl.logoCpgUrl && <img src={tpl.logoCpgUrl} alt="Logo CPG" crossOrigin="anonymous" style={{ maxWidth: '280px', maxHeight: '130px', objectFit: 'contain' }} onLoad={handleImgLoad} onError={(e) => { e.target.style.display='none'; handleImgLoad(); }} />}
           </div>
           <div style={{ textAlign: 'center', flex: 1 }}>
-            <p style={{ fontSize: '20px', fontWeight: 'bold', fontStyle: 'italic', color: '#c2185b' }}>{tpl.boardText}</p>
+            <p style={{ fontSize: '26px', fontWeight: 'bold', fontStyle: 'italic', color: '#c2185b' }}>{tpl.boardText}</p>
           </div>
-          <div style={{ width: '220px', height: '110px', display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
-            {tpl.logoCaeducUrl && <img src={tpl.logoCaeducUrl} alt="Logo CAEDUC" crossOrigin="anonymous" style={{ maxWidth: '220px', maxHeight: '110px', objectFit: 'contain' }} onLoad={handleImgLoad} onError={(e) => { e.target.style.display='none'; handleImgLoad(); }} />}
+          <div style={{ width: '240px', height: '130px', display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
+            {tpl.logoCaeducUrl && <img src={tpl.logoCaeducUrl} alt="Logo CAEDUC" crossOrigin="anonymous" style={{ maxWidth: '240px', maxHeight: '120px', objectFit: 'contain' }} onLoad={handleImgLoad} onError={(e) => { e.target.style.display='none'; handleImgLoad(); }} />}
           </div>
         </div>
 
-        {/* ── ENCABEZADOS ── */}
-        <div className="absolute text-center" style={{ top: '165px', left: '80px', right: '80px' }}>
+        {/* Encabezados */}
+        <div className="absolute text-center" style={{ top: '175px', left: '80px', right: '80px' }}>
           <p style={{ fontSize: '23px', fontWeight: 'bold', color: '#1a1a2e', lineHeight: '1.45' }}>{tpl.headerLine1}</p>
           <p style={{ fontSize: '23px', fontWeight: 'bold', color: '#1a1a2e', lineHeight: '1.45' }}>{tpl.headerLine2}</p>
           <p style={{ fontSize: '17px', color: '#444', marginTop: '10px', fontStyle: 'italic' }}>{tpl.diplomaText}</p>
         </div>
 
-        {/* ── NOMBRE DEL PROFESIONAL ── */}
-        <div className="absolute text-center" style={{ top: '305px', left: '50%', transform: 'translateX(-50%)', width: '700px' }}>
+        {/* Nombre del profesional */}
+        <div className="absolute text-center" style={{ top: '310px', left: '50%', transform: 'translateX(-50%)', width: '700px' }}>
           <p style={{ fontSize: '38px', fontWeight: 'bold', color: '#1a1a2e', letterSpacing: '0.3px', lineHeight: '1.15' }}>{recipientName}</p>
         </div>
 
-        {/* ── COLEGIADO + ESTADO + NÚMERO ── */}
-        <div className="absolute text-center" style={{ top: '380px', left: '50%', transform: 'translateX(-50%)', width: '600px' }}>
+        {/* Colegiado + Estado + Numero */}
+        <div className="absolute text-center" style={{ top: '385px', left: '50%', transform: 'translateX(-50%)', width: '600px' }}>
           <p style={{ fontSize: '16px', color: '#444' }}>
             {tpl.collegiateText}{'  '}
             {showStatus && <span style={{ fontWeight: 'bold', color: statusColor, textDecoration: 'underline', margin: '0 10px', fontSize: '17px' }}>{statusLabel}</span>}
@@ -1066,58 +1065,61 @@ function CertificateCanvas({ certRef, onImageLoaded, tpl, recipientName, statusT
           </p>
         </div>
 
-        {/* ── TEXTO DEL CURSO ── */}
-        <div className="absolute text-center" style={{ top: '420px', left: '50%', transform: 'translateX(-50%)', width: '640px' }}>
+        {/* Texto del curso */}
+        <div className="absolute text-center" style={{ top: '422px', left: '50%', transform: 'translateX(-50%)', width: '640px' }}>
           <p style={{ fontSize: '15px', color: '#444' }}>{tpl.courseText}</p>
         </div>
 
-        {/* ── TÍTULO DEL CURSO ── */}
+        {/* Titulo del curso */}
         <div className="absolute text-center" style={{ top: '455px', left: '50%', transform: 'translateX(-50%)', width: '750px' }}>
           <p style={{ fontSize: titleSize, fontWeight: 'bold', color: '#1a1a2e', textTransform: 'uppercase', lineHeight: '1.3', wordBreak: 'break-word', letterSpacing: '0.5px' }}>{videoTitle}</p>
         </div>
 
-        {/* ── HORAS ── */}
+        {/* Horas */}
         <div className="absolute text-center" style={{ top: '530px', left: '50%', transform: 'translateX(-50%)', width: '640px' }}>
           <p style={{ fontSize: '15px', color: '#444' }}>
             {tpl.hoursPrefix} <span style={{ fontWeight: 'bold', fontSize: '18px', color: '#1a1a2e' }}>{videoDuration}</span> {tpl.hoursSuffix}
           </p>
         </div>
 
-        {/* ── LEMA ── */}
-        <div className="absolute text-center" style={{ top: '572px', left: '50%', transform: 'translateX(-50%)', width: '640px' }}>
+        {/* Lema */}
+        <div className="absolute text-center" style={{ top: '568px', left: '50%', transform: 'translateX(-50%)', width: '640px' }}>
           <p style={{ fontSize: '17px', color: '#c2185b', fontStyle: 'italic', letterSpacing: '1px' }}>{tpl.motto}</p>
         </div>
 
-        {/* ── FECHA centrada debajo del lema ── */}
-        <div className="absolute text-center" style={{ top: '606px', left: '50%', transform: 'translateX(-50%)', width: '400px' }}>
+        {/* Fecha centrada debajo del lema */}
+        <div className="absolute text-center" style={{ top: '600px', left: '50%', transform: 'translateX(-50%)', width: '400px' }}>
           <p style={{ fontSize: '13px', color: '#333' }}>{dateFormatted}</p>
         </div>
 
-        {/* ── FILA INFERIOR: Firma | Sello | QR ── */}
-        <div className="absolute flex items-end justify-between" style={{ bottom: '32px', left: '55px', right: '55px' }}>
-          {/* Firma + Coordinador */}
-          <div style={{ textAlign: 'center', width: '260px' }}>
-            {tpl.signatureUrl && (
-              <img src={tpl.signatureUrl} alt="Firma" crossOrigin="anonymous" style={{ maxWidth: '200px', maxHeight: '70px', objectFit: 'contain', margin: '0 auto 5px' }} onLoad={handleImgLoad} onError={(e) => { e.target.style.display='none'; handleImgLoad(); }} />
-            )}
-            <div style={{ borderTop: '1.5px solid #444', paddingTop: '6px', width: '210px', margin: '0 auto' }}>
-              <p style={{ fontSize: '14px', fontWeight: 'bold', color: '#1a1a2e' }}>{tpl.coordinatorName}</p>
-              <p style={{ fontSize: '12px', color: '#555' }}>{tpl.coordinatorTitle}</p>
+        {/* Fila inferior: Firma+Coordinador (centro-izq) | Sello (centro) | QR (derecha) */}
+        <div className="absolute" style={{ bottom: '25px', left: '0px', right: '0px' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'center', gap: '60px' }}>
+
+            {/* Firma + Coordinador */}
+            <div style={{ textAlign: 'center', width: '280px' }}>
+              {tpl.signatureUrl && (
+                <img src={tpl.signatureUrl} alt="Firma" crossOrigin="anonymous" style={{ maxWidth: '240px', maxHeight: '80px', objectFit: 'contain', margin: '0 auto 6px' }} onLoad={handleImgLoad} onError={(e) => { e.target.style.display='none'; handleImgLoad(); }} />
+              )}
+              <div style={{ borderTop: '1.5px solid #444', paddingTop: '6px', width: '240px', margin: '0 auto' }}>
+                <p style={{ fontSize: '16px', fontWeight: 'bold', color: '#1a1a2e' }}>{tpl.coordinatorName}</p>
+                <p style={{ fontSize: '13px', color: '#555' }}>{tpl.coordinatorTitle}</p>
+              </div>
             </div>
-          </div>
 
-          {/* Sello */}
-          <div style={{ textAlign: 'center', width: '160px' }}>
-            {tpl.sealUrl && (
-              <img src={tpl.sealUrl} alt="Sello" crossOrigin="anonymous" style={{ width: '130px', height: '130px', objectFit: 'contain', margin: '0 auto', opacity: 0.85 }} onLoad={handleImgLoad} onError={(e) => { e.target.style.display='none'; handleImgLoad(); }} />
-            )}
-          </div>
+            {/* Sello */}
+            <div style={{ textAlign: 'center', width: '150px' }}>
+              {tpl.sealUrl && (
+                <img src={tpl.sealUrl} alt="Sello" crossOrigin="anonymous" style={{ width: '130px', height: '130px', objectFit: 'contain', margin: '0 auto', opacity: 0.85 }} onLoad={handleImgLoad} onError={(e) => { e.target.style.display='none'; handleImgLoad(); }} />
+              )}
+            </div>
 
-          {/* QR + Código */}
-          <div style={{ textAlign: 'center', width: '180px' }}>
-            <img src={qrUrl} alt="QR" crossOrigin="anonymous" style={{ width: '110px', height: '110px', display: 'block', margin: '0 auto' }} />
-            <p style={{ fontSize: '10px', color: '#555', marginTop: '5px', fontFamily: "'Courier New', monospace", letterSpacing: '0.4px', fontWeight: 'bold' }}>{certificateCode}</p>
-            <p style={{ fontSize: '8px', color: '#999', marginTop: '2px' }}>Escanea para verificar</p>
+            {/* QR + Codigo */}
+            <div style={{ textAlign: 'center', width: '170px' }}>
+              <img src={qrUrl} alt="QR" crossOrigin="anonymous" style={{ width: '110px', height: '110px', display: 'block', margin: '0 auto' }} />
+              <p style={{ fontSize: '10px', color: '#555', marginTop: '5px', fontFamily: "'Courier New', monospace", letterSpacing: '0.4px', fontWeight: 'bold' }}>{certificateCode}</p>
+              <p style={{ fontSize: '8px', color: '#999', marginTop: '2px' }}>Escanea para verificar</p>
+            </div>
           </div>
         </div>
       </div>
