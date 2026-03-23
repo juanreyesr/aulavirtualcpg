@@ -1003,123 +1003,121 @@ function CertificateCanvas({ certRef, onImageLoaded, tpl, recipientName, statusT
   const totalImages = [tpl.logoCpgUrl, tpl.logoCaeducUrl, tpl.signatureUrl, tpl.sealUrl, tpl.backgroundUrl].filter(Boolean).length;
   const handleImgLoad = () => { setImagesReady(p => p + 1); };
   useEffect(() => { if (imagesReady >= totalImages) onImageLoaded?.(); }, [imagesReady, totalImages]);
-  // Si no hay imágenes, marcar listo inmediatamente
   useEffect(() => { if (totalImages === 0) onImageLoaded?.(); }, []);
 
   const statusColor = statusText?.includes('ACTIVO') ? '#166534' : '#991b1b';
   const statusLabel = statusText?.includes('ACTIVO') ? 'ACTIVO' : statusText?.includes('INACTIVO') ? 'INACTIVO' : statusText;
   const showStatus = statusText && statusText !== 'DESCONOCIDO' && statusText !== 'INVITADO' && statusText.length > 0;
-  const titleSize = videoTitle.length > 60 ? '17px' : videoTitle.length > 40 ? '20px' : '24px';
+  const titleSize = videoTitle.length > 60 ? '18px' : videoTitle.length > 40 ? '21px' : '25px';
 
   return (
-    <div ref={certRef} className="relative" style={{ width: '1056px', height: '816px', fontFamily: "'Georgia', 'Times New Roman', serif", background: '#f5f5f0', overflow: 'hidden' }}>
+    <div ref={certRef} className="relative" style={{ width: '1056px', height: '816px', fontFamily: "'Georgia', 'Times New Roman', serif", background: '#f0ede8', overflow: 'hidden' }}>
       {/* Fondo personalizado o barras de color por defecto */}
       {tpl.backgroundUrl ? (
         <img src={tpl.backgroundUrl} alt="Fondo" className="absolute inset-0 w-full h-full object-fill" crossOrigin="anonymous" onLoad={handleImgLoad} onError={(e) => { e.target.style.display='none'; handleImgLoad(); }} />
       ) : (
         <>
-          {/* Barras laterales decorativas (como en la plantilla original) */}
-          <div className="absolute left-0 top-0 bottom-0" style={{ width: '28px' }}>
-            <div style={{ height: '20%', background: '#e8c03a' }}></div>
-            <div style={{ height: '20%', background: '#1e5c8b' }}></div>
-            <div style={{ height: '20%', background: '#d63384' }}></div>
-            <div style={{ height: '20%', background: '#e8c03a' }}></div>
-            <div style={{ height: '20%', background: '#5bb363' }}></div>
+          <div className="absolute left-0 top-0 bottom-0" style={{ width: '30px' }}>
+            <div style={{ height: '18%', background: '#e8c03a' }}></div>
+            <div style={{ height: '18%', background: '#1e5c8b' }}></div>
+            <div style={{ height: '18%', background: '#d63384' }}></div>
+            <div style={{ height: '18%', background: '#e8c03a' }}></div>
+            <div style={{ height: '18%', background: '#5bb363' }}></div>
+            <div style={{ height: '10%', background: '#d63384' }}></div>
           </div>
-          {/* Textura sutil de fondo */}
-          <div className="absolute inset-0" style={{ background: 'radial-gradient(circle at 80% 80%, rgba(200,200,200,0.15) 0%, transparent 60%)' }}></div>
+          <div className="absolute inset-0" style={{ background: 'radial-gradient(ellipse at 75% 75%, rgba(200,195,185,0.2) 0%, transparent 55%)' }}></div>
         </>
       )}
 
-      {/* Contenido sobre el fondo */}
       <div className="absolute inset-0" style={{ fontFamily: "'Georgia', 'Times New Roman', serif" }}>
 
         {/* ── FILA SUPERIOR: Logo CPG | Junta Directiva | Logo CAEDUC ── */}
-        <div className="absolute flex items-center justify-between" style={{ top: '30px', left: '50px', right: '50px', height: '100px' }}>
-          {/* Logo CPG */}
-          <div style={{ width: '200px', height: '100px', display: 'flex', alignItems: 'center' }}>
-            {tpl.logoCpgUrl && <img src={tpl.logoCpgUrl} alt="Logo CPG" crossOrigin="anonymous" style={{ maxWidth: '200px', maxHeight: '100px', objectFit: 'contain' }} onLoad={handleImgLoad} onError={(e) => { e.target.style.display='none'; handleImgLoad(); }} />}
+        <div className="absolute flex items-center justify-between" style={{ top: '25px', left: '50px', right: '45px', height: '110px' }}>
+          <div style={{ width: '220px', height: '110px', display: 'flex', alignItems: 'center' }}>
+            {tpl.logoCpgUrl && <img src={tpl.logoCpgUrl} alt="Logo CPG" crossOrigin="anonymous" style={{ maxWidth: '220px', maxHeight: '110px', objectFit: 'contain' }} onLoad={handleImgLoad} onError={(e) => { e.target.style.display='none'; handleImgLoad(); }} />}
           </div>
-          {/* Texto central */}
           <div style={{ textAlign: 'center', flex: 1 }}>
-            <p style={{ fontSize: '18px', fontWeight: 'bold', fontStyle: 'italic', color: '#c2185b' }}>{tpl.boardText}</p>
+            <p style={{ fontSize: '20px', fontWeight: 'bold', fontStyle: 'italic', color: '#c2185b' }}>{tpl.boardText}</p>
           </div>
-          {/* Logo CAEDUC */}
-          <div style={{ width: '200px', height: '100px', display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
-            {tpl.logoCaeducUrl && <img src={tpl.logoCaeducUrl} alt="Logo CAEDUC" crossOrigin="anonymous" style={{ maxWidth: '200px', maxHeight: '100px', objectFit: 'contain' }} onLoad={handleImgLoad} onError={(e) => { e.target.style.display='none'; handleImgLoad(); }} />}
+          <div style={{ width: '220px', height: '110px', display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
+            {tpl.logoCaeducUrl && <img src={tpl.logoCaeducUrl} alt="Logo CAEDUC" crossOrigin="anonymous" style={{ maxWidth: '220px', maxHeight: '110px', objectFit: 'contain' }} onLoad={handleImgLoad} onError={(e) => { e.target.style.display='none'; handleImgLoad(); }} />}
           </div>
         </div>
 
         {/* ── ENCABEZADOS ── */}
-        <div className="absolute text-center" style={{ top: '155px', left: '50px', right: '50px' }}>
-          <p style={{ fontSize: '22px', fontWeight: 'bold', color: '#1a1a2e', lineHeight: '1.4' }}>{tpl.headerLine1}</p>
-          <p style={{ fontSize: '22px', fontWeight: 'bold', color: '#1a1a2e', lineHeight: '1.4' }}>{tpl.headerLine2}</p>
-          <p style={{ fontSize: '17px', color: '#333', marginTop: '8px', fontStyle: 'italic' }}>{tpl.diplomaText}</p>
+        <div className="absolute text-center" style={{ top: '165px', left: '80px', right: '80px' }}>
+          <p style={{ fontSize: '23px', fontWeight: 'bold', color: '#1a1a2e', lineHeight: '1.45' }}>{tpl.headerLine1}</p>
+          <p style={{ fontSize: '23px', fontWeight: 'bold', color: '#1a1a2e', lineHeight: '1.45' }}>{tpl.headerLine2}</p>
+          <p style={{ fontSize: '17px', color: '#444', marginTop: '10px', fontStyle: 'italic' }}>{tpl.diplomaText}</p>
         </div>
 
         {/* ── NOMBRE DEL PROFESIONAL ── */}
-        <div className="absolute text-center" style={{ top: '295px', left: '53%', transform: 'translateX(-50%)', width: '600px' }}>
-          <p style={{ fontSize: '34px', fontWeight: 'bold', color: '#1a1a2e', letterSpacing: '0.3px', lineHeight: '1.2' }}>{recipientName}</p>
+        <div className="absolute text-center" style={{ top: '305px', left: '50%', transform: 'translateX(-50%)', width: '700px' }}>
+          <p style={{ fontSize: '38px', fontWeight: 'bold', color: '#1a1a2e', letterSpacing: '0.3px', lineHeight: '1.15' }}>{recipientName}</p>
         </div>
 
         {/* ── COLEGIADO + ESTADO + NÚMERO ── */}
-        <div className="absolute text-center" style={{ top: '365px', left: '53%', transform: 'translateX(-50%)', width: '600px' }}>
-          <p style={{ fontSize: '16px', color: '#333' }}>
-            {tpl.collegiateText}{' '}
-            {showStatus && <span style={{ fontWeight: 'bold', color: statusColor, margin: '0 12px' }}>{statusLabel}</span>}
-            {tpl.numberText}{' '}
+        <div className="absolute text-center" style={{ top: '380px', left: '50%', transform: 'translateX(-50%)', width: '600px' }}>
+          <p style={{ fontSize: '16px', color: '#444' }}>
+            {tpl.collegiateText}{'  '}
+            {showStatus && <span style={{ fontWeight: 'bold', color: statusColor, textDecoration: 'underline', margin: '0 10px', fontSize: '17px' }}>{statusLabel}</span>}
+            {'  '}{tpl.numberText}{' '}
             <span style={{ fontWeight: 'bold', fontSize: '18px', color: '#1a1a2e' }}>{collegiateNumber}</span>
           </p>
         </div>
 
         {/* ── TEXTO DEL CURSO ── */}
-        <div className="absolute text-center" style={{ top: '410px', left: '53%', transform: 'translateX(-50%)', width: '640px' }}>
+        <div className="absolute text-center" style={{ top: '420px', left: '50%', transform: 'translateX(-50%)', width: '640px' }}>
           <p style={{ fontSize: '15px', color: '#444' }}>{tpl.courseText}</p>
         </div>
 
         {/* ── TÍTULO DEL CURSO ── */}
-        <div className="absolute text-center" style={{ top: '450px', left: '53%', transform: 'translateX(-50%)', width: '680px' }}>
-          <p style={{ fontSize: titleSize, fontWeight: 'bold', color: '#1a1a2e', textTransform: 'uppercase', lineHeight: '1.35', wordBreak: 'break-word' }}>{videoTitle}</p>
+        <div className="absolute text-center" style={{ top: '455px', left: '50%', transform: 'translateX(-50%)', width: '750px' }}>
+          <p style={{ fontSize: titleSize, fontWeight: 'bold', color: '#1a1a2e', textTransform: 'uppercase', lineHeight: '1.3', wordBreak: 'break-word', letterSpacing: '0.5px' }}>{videoTitle}</p>
         </div>
 
         {/* ── HORAS ── */}
-        <div className="absolute text-center" style={{ top: '525px', left: '53%', transform: 'translateX(-50%)', width: '640px' }}>
+        <div className="absolute text-center" style={{ top: '530px', left: '50%', transform: 'translateX(-50%)', width: '640px' }}>
           <p style={{ fontSize: '15px', color: '#444' }}>
             {tpl.hoursPrefix} <span style={{ fontWeight: 'bold', fontSize: '18px', color: '#1a1a2e' }}>{videoDuration}</span> {tpl.hoursSuffix}
           </p>
         </div>
 
         {/* ── LEMA ── */}
-        <div className="absolute text-center" style={{ top: '570px', left: '53%', transform: 'translateX(-50%)', width: '640px' }}>
-          <p style={{ fontSize: '16px', color: '#c2185b', fontStyle: 'italic', letterSpacing: '1px' }}>{tpl.motto}</p>
+        <div className="absolute text-center" style={{ top: '572px', left: '50%', transform: 'translateX(-50%)', width: '640px' }}>
+          <p style={{ fontSize: '17px', color: '#c2185b', fontStyle: 'italic', letterSpacing: '1px' }}>{tpl.motto}</p>
+        </div>
+
+        {/* ── FECHA centrada debajo del lema ── */}
+        <div className="absolute text-center" style={{ top: '606px', left: '50%', transform: 'translateX(-50%)', width: '400px' }}>
+          <p style={{ fontSize: '13px', color: '#333' }}>{dateFormatted}</p>
         </div>
 
         {/* ── FILA INFERIOR: Firma | Sello | QR ── */}
-        <div className="absolute flex items-end justify-between" style={{ bottom: '40px', left: '60px', right: '60px', height: '150px' }}>
+        <div className="absolute flex items-end justify-between" style={{ bottom: '32px', left: '55px', right: '55px' }}>
           {/* Firma + Coordinador */}
-          <div style={{ textAlign: 'center', width: '250px' }}>
+          <div style={{ textAlign: 'center', width: '260px' }}>
             {tpl.signatureUrl && (
-              <img src={tpl.signatureUrl} alt="Firma" crossOrigin="anonymous" style={{ maxWidth: '180px', maxHeight: '60px', objectFit: 'contain', margin: '0 auto 4px' }} onLoad={handleImgLoad} onError={(e) => { e.target.style.display='none'; handleImgLoad(); }} />
+              <img src={tpl.signatureUrl} alt="Firma" crossOrigin="anonymous" style={{ maxWidth: '200px', maxHeight: '70px', objectFit: 'contain', margin: '0 auto 5px' }} onLoad={handleImgLoad} onError={(e) => { e.target.style.display='none'; handleImgLoad(); }} />
             )}
-            <div style={{ borderTop: '1.5px solid #333', paddingTop: '4px', width: '200px', margin: '0 auto' }}>
-              <p style={{ fontSize: '13px', fontWeight: 'bold', color: '#1a1a2e' }}>{tpl.coordinatorName}</p>
-              <p style={{ fontSize: '11px', color: '#555' }}>{tpl.coordinatorTitle}</p>
+            <div style={{ borderTop: '1.5px solid #444', paddingTop: '6px', width: '210px', margin: '0 auto' }}>
+              <p style={{ fontSize: '14px', fontWeight: 'bold', color: '#1a1a2e' }}>{tpl.coordinatorName}</p>
+              <p style={{ fontSize: '12px', color: '#555' }}>{tpl.coordinatorTitle}</p>
             </div>
           </div>
 
           {/* Sello */}
-          <div style={{ textAlign: 'center', width: '140px' }}>
+          <div style={{ textAlign: 'center', width: '160px' }}>
             {tpl.sealUrl && (
-              <img src={tpl.sealUrl} alt="Sello" crossOrigin="anonymous" style={{ width: '110px', height: '110px', objectFit: 'contain', margin: '0 auto', opacity: 0.85 }} onLoad={handleImgLoad} onError={(e) => { e.target.style.display='none'; handleImgLoad(); }} />
+              <img src={tpl.sealUrl} alt="Sello" crossOrigin="anonymous" style={{ width: '130px', height: '130px', objectFit: 'contain', margin: '0 auto', opacity: 0.85 }} onLoad={handleImgLoad} onError={(e) => { e.target.style.display='none'; handleImgLoad(); }} />
             )}
           </div>
 
-          {/* QR + Código + Fecha */}
-          <div style={{ textAlign: 'center', width: '160px' }}>
-            <p style={{ fontSize: '12px', color: '#333', marginBottom: '4px' }}>{dateFormatted}</p>
-            <img src={qrUrl} alt="QR" crossOrigin="anonymous" style={{ width: '80px', height: '80px', display: 'block', margin: '0 auto' }} />
-            <p style={{ fontSize: '8px', color: '#888', marginTop: '3px', fontFamily: 'monospace', letterSpacing: '0.3px' }}>{certificateCode}</p>
-            <p style={{ fontSize: '7px', color: '#aaa', marginTop: '1px' }}>Escanea para verificar</p>
+          {/* QR + Código */}
+          <div style={{ textAlign: 'center', width: '180px' }}>
+            <img src={qrUrl} alt="QR" crossOrigin="anonymous" style={{ width: '110px', height: '110px', display: 'block', margin: '0 auto' }} />
+            <p style={{ fontSize: '10px', color: '#555', marginTop: '5px', fontFamily: "'Courier New', monospace", letterSpacing: '0.4px', fontWeight: 'bold' }}>{certificateCode}</p>
+            <p style={{ fontSize: '8px', color: '#999', marginTop: '2px' }}>Escanea para verificar</p>
           </div>
         </div>
       </div>
@@ -2024,43 +2022,32 @@ function CertTemplateAdmin({ certTemplate, onSave }) {
     setUploading('');
   };
 
-  const ImageUploadField = ({ label, field, hint }) => (
-    <div className="bg-black/30 border border-gray-800 rounded-xl p-4">
-      <label className="block text-sm text-gray-400 mb-2 font-semibold">{label}</label>
-      {form[field] ? (
-        <div className="flex items-center gap-3 mb-2">
-          <img src={form[field]} alt={label} className="w-20 h-20 object-contain bg-white/10 rounded-lg border border-gray-700 p-1" />
-          <div className="flex-1">
-            <p className="text-xs text-green-400 mb-1">✓ Imagen cargada</p>
-            <button onClick={() => { const next = { ...form, [field]: '' }; setForm(next); onSave(next); }} className="text-xs text-red-400 hover:text-red-300 transition">Eliminar imagen</button>
-          </div>
-        </div>
-      ) : (
-        <p className="text-xs text-gray-600 mb-2">Sin imagen cargada</p>
-      )}
-      <label className="flex items-center gap-2 bg-gray-800 hover:bg-gray-700 border border-gray-600 px-3 py-2 rounded-lg cursor-pointer transition text-sm text-gray-300 hover:text-white w-fit">
-        {uploading === field ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
-        {uploading === field ? 'Subiendo...' : 'Subir imagen'}
-        <input type="file" accept="image/*" className="hidden" onChange={e => handleImageUpload(field, e.target.files?.[0])} disabled={!!uploading} />
-      </label>
-      {hint && <p className="text-[11px] text-gray-600 mt-1.5">{hint}</p>}
-    </div>
-  );
+  const updateField = (field, value) => setForm(prev => ({ ...prev, [field]: value }));
 
-  const TextField = ({ label, field, multiline }) => (
-    <div>
-      <label className="block text-sm text-gray-400 mb-1">{label}</label>
-      {multiline ? (
-        <textarea value={form[field]} onChange={e => setForm({ ...form, [field]: e.target.value })} className="w-full bg-black border border-gray-700 rounded-lg p-2.5 text-white text-sm focus:border-blue-500 outline-none h-16" />
-      ) : (
-        <input type="text" value={form[field]} onChange={e => setForm({ ...form, [field]: e.target.value })} className="w-full bg-black border border-gray-700 rounded-lg p-2.5 text-white text-sm focus:border-blue-500 outline-none" />
-      )}
-    </div>
-  );
+  // Datos de campos de texto para renderizar en loop sin crear sub-componentes
+  const textFields = [
+    { label: 'Encabezado línea 1', field: 'headerLine1' },
+    { label: 'Encabezado línea 2', field: 'headerLine2' },
+    { label: 'Texto de diploma', field: 'diplomaText' },
+    { label: 'Texto de Junta Directiva', field: 'boardText' },
+    { label: 'Texto "Con colegiado"', field: 'collegiateText' },
+    { label: 'Texto "número:"', field: 'numberText' },
+    { label: 'Texto del curso', field: 'courseText' },
+    { label: 'Prefijo de horas', field: 'hoursPrefix' },
+    { label: 'Sufijo de horas', field: 'hoursSuffix' },
+    { label: 'Lema', field: 'motto' },
+  ];
+
+  const imageFields = [
+    { label: 'Logo CPG (arriba izquierda)', field: 'logoCpgUrl', hint: 'PNG transparente, 400x200px' },
+    { label: 'Logo CAEDUC (arriba derecha)', field: 'logoCaeducUrl', hint: 'PNG transparente, 400x200px' },
+    { label: 'Firma del coordinador/a', field: 'signatureUrl', hint: 'PNG transparente' },
+    { label: 'Sello institucional', field: 'sealUrl', hint: 'PNG transparente, 200x200px' },
+    { label: 'Imagen de fondo (opcional)', field: 'backgroundUrl', hint: 'Reemplaza las barras de color. 1056x816px' },
+  ];
 
   return (
     <div className="p-6 space-y-6">
-      {/* Mensaje de estado */}
       {saveMsg && (
         <div className={`rounded-lg px-4 py-2 text-sm font-semibold ${saveMsg.startsWith('✓') ? 'bg-green-900/30 border border-green-700/40 text-green-300' : 'bg-red-900/30 border border-red-500/40 text-red-300'}`}>
           {saveMsg}
@@ -2071,28 +2058,46 @@ function CertTemplateAdmin({ certTemplate, onSave }) {
       <div>
         <h3 className="text-white font-bold text-lg mb-3 flex items-center gap-2"><Image size={18} className="text-blue-400" /> Imágenes del certificado</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          <ImageUploadField label="Logo CPG (arriba izquierda)" field="logoCpgUrl" hint="Logo del Colegio de Psicólogos. Recomendado: PNG transparente, 400x200px" />
-          <ImageUploadField label="Logo CAEDUC (arriba derecha)" field="logoCaeducUrl" hint="Logo de CAEDUC. Recomendado: PNG transparente, 400x200px" />
-          <ImageUploadField label="Firma del coordinador/a" field="signatureUrl" hint="Firma digital del coordinador. Recomendado: PNG transparente" />
-          <ImageUploadField label="Sello institucional" field="sealUrl" hint="Sello del CPG o CAEDUC. Recomendado: PNG transparente, 200x200px" />
-          <ImageUploadField label="Imagen de fondo (opcional)" field="backgroundUrl" hint="Si subes un fondo personalizado, reemplaza las barras de color. Recomendado: 1056x816px" />
+          {imageFields.map(({ label, field, hint }) => (
+            <div key={field} className="bg-black/30 border border-gray-800 rounded-xl p-4">
+              <p className="text-sm text-gray-400 mb-2 font-semibold">{label}</p>
+              {form[field] ? (
+                <div className="flex items-center gap-3 mb-2">
+                  <img src={form[field]} alt={label} className="w-20 h-20 object-contain bg-white/10 rounded-lg border border-gray-700 p-1" />
+                  <div className="flex-1">
+                    <p className="text-xs text-green-400 mb-1">✓ Imagen cargada</p>
+                    <button onClick={() => { const next = { ...form, [field]: '' }; setForm(next); onSave(next); }} className="text-xs text-red-400 hover:text-red-300 transition">Eliminar imagen</button>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-xs text-gray-600 mb-2">Sin imagen cargada</p>
+              )}
+              <label className="flex items-center gap-2 bg-gray-800 hover:bg-gray-700 border border-gray-600 px-3 py-2 rounded-lg cursor-pointer transition text-sm text-gray-300 hover:text-white w-fit">
+                {uploading === field ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+                {uploading === field ? 'Subiendo...' : 'Subir imagen'}
+                <input type="file" accept="image/*" className="hidden" onChange={e => handleImageUpload(field, e.target.files?.[0])} disabled={!!uploading} />
+              </label>
+              <p className="text-[11px] text-gray-600 mt-1.5">{hint}</p>
+            </div>
+          ))}
         </div>
       </div>
 
-      {/* ── TEXTOS ── */}
+      {/* ── TEXTOS — renderizados como inputs directos, NO como sub-componentes ── */}
       <div>
         <h3 className="text-white font-bold text-lg mb-3 flex items-center gap-2"><Type size={18} className="text-purple-400" /> Textos del certificado</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <TextField label="Encabezado línea 1" field="headerLine1" />
-          <TextField label="Encabezado línea 2" field="headerLine2" />
-          <TextField label="Texto de diploma" field="diplomaText" />
-          <TextField label="Texto de Junta Directiva" field="boardText" />
-          <TextField label='Texto "Con colegiado"' field="collegiateText" />
-          <TextField label='Texto "número:"' field="numberText" />
-          <TextField label="Texto del curso" field="courseText" />
-          <TextField label="Prefijo de horas" field="hoursPrefix" />
-          <TextField label="Sufijo de horas" field="hoursSuffix" />
-          <TextField label="Lema" field="motto" />
+          {textFields.map(({ label, field }) => (
+            <div key={field}>
+              <label className="block text-sm text-gray-400 mb-1">{label}</label>
+              <input
+                type="text"
+                value={form[field] || ''}
+                onChange={e => updateField(field, e.target.value)}
+                className="w-full bg-black border border-gray-700 rounded-lg p-2.5 text-white text-sm focus:border-blue-500 outline-none"
+              />
+            </div>
+          ))}
         </div>
       </div>
 
@@ -2100,8 +2105,14 @@ function CertTemplateAdmin({ certTemplate, onSave }) {
       <div>
         <h3 className="text-white font-bold text-lg mb-3 flex items-center gap-2"><UserCheck size={18} className="text-yellow-400" /> Datos del coordinador/a</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <TextField label="Nombre del coordinador/a" field="coordinatorName" />
-          <TextField label="Cargo" field="coordinatorTitle" />
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">Nombre del coordinador/a</label>
+            <input type="text" value={form.coordinatorName || ''} onChange={e => updateField('coordinatorName', e.target.value)} className="w-full bg-black border border-gray-700 rounded-lg p-2.5 text-white text-sm focus:border-blue-500 outline-none" />
+          </div>
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">Cargo</label>
+            <input type="text" value={form.coordinatorTitle || ''} onChange={e => updateField('coordinatorTitle', e.target.value)} className="w-full bg-black border border-gray-700 rounded-lg p-2.5 text-white text-sm focus:border-blue-500 outline-none" />
+          </div>
         </div>
       </div>
 
@@ -2114,7 +2125,7 @@ function CertTemplateAdmin({ certTemplate, onSave }) {
         <button onClick={() => setPreviewOpen(p => !p)} className="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-5 py-2.5 rounded-lg transition flex items-center gap-2">
           <Eye size={16} /> {previewOpen ? 'Ocultar vista previa' : 'Vista previa'}
         </button>
-        <button onClick={() => { if (confirm('¿Restaurar todos los textos a los valores originales?')) { setForm({ ...DEFAULT_CERT_CONFIG, logoCpgUrl: form.logoCpgUrl, logoCaeducUrl: form.logoCaeducUrl, signatureUrl: form.signatureUrl, sealUrl: form.sealUrl, backgroundUrl: form.backgroundUrl }); } }} className="bg-gray-700 hover:bg-gray-600 text-gray-300 px-4 py-2.5 rounded-lg transition text-sm">
+        <button onClick={() => { if (confirm('¿Restaurar todos los textos a los valores originales?')) { setForm(prev => ({ ...DEFAULT_CERT_CONFIG, logoCpgUrl: prev.logoCpgUrl, logoCaeducUrl: prev.logoCaeducUrl, signatureUrl: prev.signatureUrl, sealUrl: prev.sealUrl, backgroundUrl: prev.backgroundUrl })); } }} className="bg-gray-700 hover:bg-gray-600 text-gray-300 px-4 py-2.5 rounded-lg transition text-sm">
           Restaurar textos por defecto
         </button>
       </div>
