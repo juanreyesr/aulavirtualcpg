@@ -500,6 +500,20 @@ function LoginColModal({ onSession }) {
                     <button onClick={handleEmailAuth} disabled={loading} className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 disabled:cursor-not-allowed text-white font-bold py-3 rounded-lg transition flex items-center justify-center gap-2 mb-3">
                       {loading ? <><Loader2 size={18} className="animate-spin" /> Verificando...</> : <><Mail size={18} /> Ingresar</>}
                     </button>
+
+                    {/* Separador visual */}
+                    <div className="flex items-center gap-3 my-3">
+                      <div className="flex-1 h-px bg-gray-700" />
+                      <span className="text-xs text-gray-500">o</span>
+                      <div className="flex-1 h-px bg-gray-700" />
+                    </div>
+
+                    {/* Google OAuth */}
+                    <button onClick={handleGoogle} disabled={loading} className="w-full bg-white hover:bg-gray-100 text-gray-800 font-semibold py-3 rounded-lg transition flex items-center justify-center gap-2 mb-3 text-sm">
+                      <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.14 0 5.95 1.08 8.17 2.84l6.1-6.1C34.46 3.19 29.5 1 24 1 14.82 1 7.07 6.48 3.64 14.24l7.1 5.52C12.5 13.37 17.77 9.5 24 9.5z"/><path fill="#4285F4" d="M46.52 24.5c0-1.64-.15-3.22-.42-4.75H24v9h12.67c-.55 2.97-2.2 5.48-4.67 7.17l7.18 5.57C43.32 37.3 46.52 31.36 46.52 24.5z"/><path fill="#FBBC05" d="M10.74 28.24A14.54 14.54 0 0 1 9.5 24c0-1.48.26-2.91.7-4.24l-7.1-5.52A23.94 23.94 0 0 0 0 24c0 3.87.93 7.52 2.57 10.74l8.17-6.5z"/><path fill="#34A853" d="M24 47c5.5 0 10.12-1.82 13.49-4.94l-7.18-5.57C28.6 37.84 26.42 38.5 24 38.5c-6.23 0-11.5-3.87-13.26-9.26l-8.17 6.5C6.07 43.52 14.82 47 24 47z"/></svg>
+                      Ingresar con Google
+                    </button>
+
                     <button onClick={handlePasswordReset} disabled={loading} className="w-full bg-gray-800 hover:bg-gray-700 border border-gray-600 text-gray-300 hover:text-white font-medium py-3 rounded-lg transition flex items-center justify-center gap-2 text-sm mb-3">
                       {loading ? <Loader2 size={16} className="animate-spin" /> : <><KeyRound size={16} /> Olvidé mi contraseña — enviar correo de recuperación</>}
                     </button>
@@ -727,9 +741,11 @@ export default function App() {
 
   const handleLogin = async (email, password) => {
     setAuthError('');
-    if (email === ADMIN_CREDENTIALS.email && password === ADMIN_CREDENTIALS.password) {
+    const trimEmail = email.trim().toLowerCase();
+    const trimPass = password.trim();
+    if (trimEmail === ADMIN_CREDENTIALS.email && trimPass === ADMIN_CREDENTIALS.password) {
       if (!supabase) { setAuthError('No se encontró la configuración de Supabase.'); return; }
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      const { error } = await supabase.auth.signInWithPassword({ email: trimEmail, password: trimPass });
       if (error) { setAuthError('No se pudo iniciar sesión: ' + error.message); return; }
       setIsAdmin(true); setView('admin');
     } else { setAuthError('Credenciales incorrectas'); }
