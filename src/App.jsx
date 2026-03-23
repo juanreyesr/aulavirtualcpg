@@ -1031,9 +1031,9 @@ function CertificateCanvas({ certRef, onImageLoaded, tpl, recipientName, statusT
       <div className="absolute inset-0" style={{ fontFamily: "'Georgia', 'Times New Roman', serif" }}>
 
         {/* Logo CPG | Junta Directiva | Logo CAEDUC */}
-        <div className="absolute flex items-center justify-between" style={{ top: '18px', left: '45px', right: '40px', height: '130px' }}>
-          <div style={{ width: '280px', height: '130px', display: 'flex', alignItems: 'center' }}>
-            {tpl.logoCpgUrl && <img src={tpl.logoCpgUrl} alt="Logo CPG" crossOrigin="anonymous" style={{ maxWidth: '280px', maxHeight: '130px', objectFit: 'contain' }} onLoad={handleImgLoad} onError={(e) => { e.target.style.display='none'; handleImgLoad(); }} />}
+        <div className="absolute flex items-center justify-between" style={{ top: '12px', left: '42px', right: '40px', height: '150px' }}>
+          <div style={{ width: '350px', height: '150px', display: 'flex', alignItems: 'center' }}>
+            {tpl.logoCpgUrl && <img src={tpl.logoCpgUrl} alt="Logo CPG" crossOrigin="anonymous" style={{ maxWidth: '350px', maxHeight: '150px', objectFit: 'contain' }} onLoad={handleImgLoad} onError={(e) => { e.target.style.display='none'; handleImgLoad(); }} />}
           </div>
           <div style={{ textAlign: 'center', flex: 1 }}>
             <p style={{ fontSize: '26px', fontWeight: 'bold', fontStyle: 'italic', color: '#c2185b' }}>{tpl.boardText}</p>
@@ -1097,11 +1097,11 @@ function CertificateCanvas({ certRef, onImageLoaded, tpl, recipientName, statusT
           <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'center', gap: '60px' }}>
 
             {/* Firma + Coordinador */}
-            <div style={{ textAlign: 'center', width: '280px' }}>
+            <div style={{ textAlign: 'center', width: '320px' }}>
               {tpl.signatureUrl && (
-                <img src={tpl.signatureUrl} alt="Firma" crossOrigin="anonymous" style={{ maxWidth: '240px', maxHeight: '80px', objectFit: 'contain', margin: '0 auto 6px' }} onLoad={handleImgLoad} onError={(e) => { e.target.style.display='none'; handleImgLoad(); }} />
+                <img src={tpl.signatureUrl} alt="Firma" crossOrigin="anonymous" style={{ maxWidth: '300px', maxHeight: '100px', objectFit: 'contain', margin: '0 auto 6px' }} onLoad={handleImgLoad} onError={(e) => { e.target.style.display='none'; handleImgLoad(); }} />
               )}
-              <div style={{ borderTop: '1.5px solid #444', paddingTop: '6px', width: '240px', margin: '0 auto' }}>
+              <div style={{ borderTop: '1.5px solid #444', paddingTop: '6px', width: '270px', margin: '0 auto' }}>
                 <p style={{ fontSize: '16px', fontWeight: 'bold', color: '#1a1a2e' }}>{tpl.coordinatorName}</p>
                 <p style={{ fontSize: '13px', color: '#555' }}>{tpl.coordinatorTitle}</p>
               </div>
