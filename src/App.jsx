@@ -1195,9 +1195,9 @@ function CertificateReprintView({ cert, onBack, certTemplate }) {
   };
 
   return (
-    <div className="flex flex-col items-center gap-6">
-      <div className="flex gap-4 print:hidden">
-        <button onClick={onBack} className="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded">← Mis certificados</button>
+    <div className="flex flex-col items-center gap-6 w-full overflow-hidden">
+      <div className="flex flex-wrap gap-3 print:hidden justify-center">
+        <button onClick={onBack} className="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded text-sm">← Mis certificados</button>
         <button onClick={handleDownloadPDF} disabled={isGenerating || !imageLoaded} className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 disabled:cursor-not-allowed text-white px-6 py-2 rounded font-bold flex items-center gap-2">
           {isGenerating ? <><Loader2 size={18} className="animate-spin" /> Generando PDF...</> : <><Download size={18} /> Descargar PDF</>}
         </button>
@@ -1207,15 +1207,17 @@ function CertificateReprintView({ cert, onBack, certTemplate }) {
         <span className="font-mono">{cert.certificate_code}</span>
       </div>
       {!imageLoaded && <div className="text-yellow-400 text-sm flex items-center gap-2"><Loader2 size={16} className="animate-spin" /> Cargando plantilla...</div>}
-      <CertScaledPreview certRef={certRef} imageLoaded={imageLoaded}>
-        <CertificateCanvas
-          certRef={certRef} tpl={tpl} onImageLoaded={() => setImageLoaded(true)}
-          recipientName={cert.recipient_name} statusText={statusText}
+      <div className="w-full overflow-hidden">
+        <CertScaledPreview certRef={certRef} imageLoaded={imageLoaded}>
+          <CertificateCanvas
+            certRef={certRef} tpl={tpl} onImageLoaded={() => setImageLoaded(true)}
+            recipientName={cert.recipient_name} statusText={statusText}
           collegiateNumber={cert.collegiate_number} videoTitle={cert.video_title}
           videoDuration={cert.video_duration || ''} dateFormatted={dateFormatted}
           certificateCode={cert.certificate_code} qrUrl={qrUrl}
-        />
-      </CertScaledPreview>
+          />
+        </CertScaledPreview>
+      </div>
     </div>
   );
 }
@@ -1711,7 +1713,8 @@ function CertificateView({ video, userProfile, sessionUser, onBack, certTemplate
   const tpl = { ...DEFAULT_CERT_CONFIG, ...certTemplate };
   const currentDate = new Date();
   const fmt = (d) => d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
-  const certificateCode = 'CPG-' + fmt(currentDate) + '-' + (userProfile.collegiateNumber || sessionUser?.collegiateNumber || '0000');
+  const collegiateNum = userProfile.collegiateNumber || sessionUser?.collegiateNumber || '0000';
+  const certificateCode = 'CPG-' + fmt(currentDate) + '-' + collegiateNum + '-' + video.id;
   const dateFormatted = currentDate.toLocaleDateString('es-GT', { year: 'numeric', month: 'long', day: 'numeric' });
   const qrUrl = getCertQrUrl(certificateCode);
 
@@ -1739,7 +1742,6 @@ function CertificateView({ video, userProfile, sessionUser, onBack, certTemplate
 
   useEffect(() => {
     if (!supabase || saved || !resolvedStatus) return;
-    const collegiateNum = userProfile.collegiateNumber || sessionUser?.collegiateNumber;
     if (!collegiateNum || collegiateNum === '0000') return;
     setSaved(true);
     supabase.from('cpg_certificates').upsert({
@@ -1774,59 +1776,63 @@ function CertificateView({ video, userProfile, sessionUser, onBack, certTemplate
   };
 
   return (
-    <div className="flex flex-col items-center gap-6">
-      <div className="flex gap-4 print:hidden">
-        <button onClick={onBack} className="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded">Cerrar</button>
-        <button onClick={handleDownloadPDF} disabled={isGenerating || !imageLoaded} className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 disabled:cursor-not-allowed text-white px-6 py-2 rounded font-bold flex items-center gap-2">
-          {isGenerating ? <><Loader2 size={18} className="animate-spin" /> Generando PDF...</> : <><Download size={18} /> Descargar PDF</>}
+    <div className="flex flex-col items-center gap-6 w-full overflow-hidden">
+      <div className="flex flex-wrap gap-3 print:hidden justify-center">
+        <button onClick={onBack} className="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded text-sm">Cerrar</button>
+        <button onClick={handleDownloadPDF} disabled={isGenerating || !imageLoaded} className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 disabled:cursor-not-allowed text-white px-4 py-2 rounded font-bold flex items-center gap-2 text-sm">
+          {isGenerating ? <><Loader2 size={16} className="animate-spin" /> Generando...</> : <><Download size={16} /> Descargar PDF</>}
         </button>
       </div>
-      <div className="flex items-center gap-2 bg-gray-800/60 border border-gray-700 rounded-full px-4 py-1.5 text-xs text-gray-400 print:hidden">
-        <Shield size={12} className="text-green-400" />
-        <span className="font-mono">{certificateCode}</span>
-        <span className="text-gray-600">·</span>
-        <span>Verificable mediante QR</span>
+      <div className="flex items-center gap-2 bg-gray-800/60 border border-gray-700 rounded-full px-3 py-1 text-[11px] text-gray-400 print:hidden overflow-hidden max-w-full">
+        <Shield size={10} className="text-green-400 shrink-0" />
+        <span className="font-mono truncate">{certificateCode}</span>
       </div>
       {!imageLoaded && <div className="text-yellow-400 text-sm flex items-center gap-2"><Loader2 size={16} className="animate-spin" /> Cargando plantilla...</div>}
-      <CertScaledPreview certRef={certRef} imageLoaded={imageLoaded}>
-        <CertificateCanvas
-          certRef={certRef} tpl={tpl} onImageLoaded={() => setImageLoaded(true)}
-          recipientName={userProfile.name} statusText={resolvedStatus}
-          collegiateNumber={userProfile.collegiateNumber} videoTitle={video.title}
-          videoDuration={String(video.duration || '')} dateFormatted={dateFormatted}
-          certificateCode={certificateCode} qrUrl={qrUrl}
-        />
-      </CertScaledPreview>
+      <div className="w-full overflow-hidden">
+        <CertScaledPreview certRef={certRef} imageLoaded={imageLoaded}>
+          <CertificateCanvas
+            certRef={certRef} tpl={tpl} onImageLoaded={() => setImageLoaded(true)}
+            recipientName={userProfile.name} statusText={resolvedStatus}
+            collegiateNumber={userProfile.collegiateNumber} videoTitle={video.title}
+            videoDuration={String(video.duration || '')} dateFormatted={dateFormatted}
+            certificateCode={certificateCode} qrUrl={qrUrl}
+          />
+        </CertScaledPreview>
+      </div>
     </div>
   );
 }
 
 // ── CERT SCALED PREVIEW ──
 function CertScaledPreview({ certRef, imageLoaded, children }) {
-  const [scale, setScale] = React.useState(1);
+  const [scale, setScale] = React.useState(() => Math.min(1, (typeof window !== 'undefined' ? window.innerWidth - 32 : 1056) / 1056));
   const wrapperRef = React.useRef(null);
 
   React.useEffect(() => {
     const updateScale = () => {
       if (wrapperRef.current) {
-        const available = wrapperRef.current.offsetWidth;
-        const newScale = Math.min(1, available / 1056);
-        setScale(newScale);
+        const available = wrapperRef.current.parentElement?.offsetWidth || wrapperRef.current.offsetWidth || window.innerWidth - 32;
+        setScale(Math.min(1, available / 1056));
       }
     };
     updateScale();
+    // Retry after a short delay to catch late mobile layout
+    const t1 = setTimeout(updateScale, 100);
+    const t2 = setTimeout(updateScale, 500);
     window.addEventListener('resize', updateScale);
-    return () => window.removeEventListener('resize', updateScale);
+    return () => { clearTimeout(t1); clearTimeout(t2); window.removeEventListener('resize', updateScale); };
   }, []);
 
   return (
-    <div ref={wrapperRef} className="w-full">
-      <div style={{ position: 'fixed', top: '-9999px', left: '-9999px', width: '1056px', height: '816px', zIndex: -1, pointerEvents: 'none' }}>
+    <div ref={wrapperRef} className="w-full overflow-hidden">
+      {/* Offscreen render for html2canvas — absolute inside a clipped container */}
+      <div style={{ position: 'absolute', left: '-99999px', top: '-99999px', width: '1056px', height: '816px', overflow: 'hidden', pointerEvents: 'none', opacity: 0 }}>
         {children}
       </div>
-      <div className="w-full flex justify-center">
-        <div style={{ width: `${1056 * scale}px`, height: `${816 * scale}px`, position: 'relative', overflow: 'hidden' }}>
-          <div style={{ transform: `scale(${scale})`, transformOrigin: 'top left', width: '1056px', height: '816px', position: 'absolute', top: 0, left: 0, pointerEvents: 'none' }}>
+      {/* Scaled visual preview */}
+      <div className="w-full flex justify-center overflow-hidden">
+        <div style={{ width: Math.floor(1056 * scale) + 'px', height: Math.floor(816 * scale) + 'px', position: 'relative', overflow: 'hidden', flexShrink: 0 }}>
+          <div style={{ transform: 'scale(' + scale + ')', transformOrigin: 'top left', width: '1056px', height: '816px', position: 'absolute', top: 0, left: 0, pointerEvents: 'none' }}>
             {children}
           </div>
         </div>
