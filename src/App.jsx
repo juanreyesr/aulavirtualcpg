@@ -17,6 +17,14 @@ const ADMIN_CREDENTIALS = {
 const EDGE_URL = 'https://dvzgxmzzqzaapqfutaty.supabase.co/functions/v1/consultar-colegiado';
 const APP_URL = 'https://aulacpg.vercel.app';
 
+const DEFAULT_SITE_LOGOS = {
+  navLogoCpg: '/logo-cpg-grande.png',
+  navLogoCaeduc: '/logo-caeduc.png',
+  footerLogoCpg: '/logo-cpg-grande.png',
+  footerLogoCaeduc: '/logo-caeduc.png',
+  loginLogoCpg: '/logo-cpg-grande.png',
+};
+
 const GUATEMALA_DEPARTMENTS = [
   'Guatemala', 'El Progreso', 'Sacatepéquez', 'Chimaltenango', 'Escuintla',
   'Santa Rosa', 'Sololá', 'Totonicapán', 'Quetzaltenango', 'Suchitepéquez',
@@ -655,6 +663,7 @@ export default function App() {
   const [liveSession, setLiveSession] = useState(null);
   const [reprintCert, setReprintCert] = useState(null);
   const [certTemplate, setCertTemplate] = useState(DEFAULT_CERT_CONFIG);
+  const [siteLogos, setSiteLogos] = useState(DEFAULT_SITE_LOGOS);
 
   const certCodeFromUrl = new URLSearchParams(window.location.search).get('cert');
 
@@ -750,6 +759,21 @@ export default function App() {
     } catch {}
   };
 
+  const loadSiteLogos = async () => {
+    if (!supabase) return;
+    try {
+      const { data } = await supabase.from('cpg_site_config').select('config').eq('id', 1).single();
+      if (data?.config) setSiteLogos(prev => ({ ...DEFAULT_SITE_LOGOS, ...prev, ...data.config }));
+    } catch {}
+  };
+
+  const saveSiteLogos = async (newLogos) => {
+    const merged = { ...siteLogos, ...newLogos };
+    setSiteLogos(merged);
+    if (!supabase) return;
+    await supabase.from('cpg_site_config').upsert({ id: 1, config: merged, updated_at: new Date().toISOString() }, { onConflict: 'id' });
+  };
+
   const saveCertConfig = async (newConfig) => {
     const merged = { ...certTemplate, ...newConfig };
     setCertTemplate(merged);
@@ -770,7 +794,7 @@ export default function App() {
           if (!error) {
             if (data?.videos?.length) { setVideos(data.videos); localStorage.setItem('cpg_videos', JSON.stringify(data.videos)); }
             if (data?.activities?.length) { setActivities(data.activities); localStorage.setItem('cpg_activities', JSON.stringify(data.activities)); }
-            if (data?.videos?.length || data?.activities?.length) { await loadViewCounts(); await loadLiveSession(); await loadCertConfig(); return; }
+            if (data?.videos?.length || data?.activities?.length) { await loadViewCounts(); await loadLiveSession(); await loadCertConfig(); await loadSiteLogos(); return; }
           }
         } catch {}
       }
@@ -781,6 +805,7 @@ export default function App() {
       await loadViewCounts();
       await loadLiveSession();
       await loadCertConfig();
+      await loadSiteLogos();
     };
     loadContent();
   }, []);
@@ -857,12 +882,12 @@ export default function App() {
     <div className="min-h-screen bg-[#141414] text-white font-sans selection:bg-blue-600 selection:text-white overflow-x-hidden">
       <nav className="fixed top-0 w-full z-50 bg-[#0e0e0e] border-b border-gray-800 px-4 py-3 flex justify-between items-center shadow-lg">
         <div className="flex items-center gap-3 cursor-pointer" onClick={() => { setView('home'); setSearchQuery(''); }}>
-          <img src="/logo-cpg-grande.png" alt="Logo CPG" className="w-11 h-11 object-contain filter drop-shadow-lg" onError={(e) => { e.target.style.display = 'none'; }} />
+          <img src={siteLogos.navLogoCpg} alt="Logo CPG" className="w-11 h-11 object-contain filter drop-shadow-lg" onError={(e) => { e.target.style.display = 'none'; }} />
           <div className="hidden md:block">
             <h1 className="text-base font-bold leading-tight text-gray-100">Colegio de Psicólogos de Guatemala</h1>
             <p className="text-xs text-blue-400 tracking-widest uppercase">Aula Virtual</p>
           </div>
-          <img src="/logo-caeduc.png" alt="Logo CAEDUC" className="w-11 h-11 object-contain filter drop-shadow-lg" onError={(e) => { e.target.style.display = 'none'; }} />
+          <img src={siteLogos.navLogoCaeduc} alt="Logo CAEDUC" className="w-11 h-11 object-contain filter drop-shadow-lg" onError={(e) => { e.target.style.display = 'none'; }} />
           {totalViews > 0 && (
             <div className="hidden sm:flex items-center gap-1.5 bg-blue-900/30 border border-blue-700/50 text-blue-300 text-xs font-semibold px-3 py-1.5 rounded-full">
               <Eye size={12} />{totalViews.toLocaleString()} reproducciones
@@ -931,7 +956,7 @@ export default function App() {
         {view === 'live' && <LiveSessionView session={liveSession} onBack={() => setView('home')} sessionUser={sessionUser} onRegisterAttendance={registerAttendance} />}
         {view === 'player' && selectedVideo && <PlayerView video={selectedVideo} viewCounts={viewCounts} onBack={() => setView('home')} sessionUser={sessionUser} userProfile={userProfile} setUserProfile={setUserProfile} isCompleted={completedVideos.has(selectedVideo.id)} onMarkCompleted={() => markVideoCompleted(selectedVideo.id)} certTemplate={certTemplate} />}
         {view === 'login' && <LoginView onLogin={handleLogin} onBack={() => setView('home')} authError={authError} />}
-        {view === 'admin' && isAdmin && <AdminDashboard videos={videos} viewCounts={viewCounts} totalViews={totalViews} activities={activities} liveSession={liveSession} onSaveLiveSession={saveLiveSession} onVideosChange={persistVideos} onActivitiesChange={persistActivities} onGenerateCertificate={handleManualCertificate} certTemplate={certTemplate} onSaveCertConfig={saveCertConfig} />}
+        {view === 'admin' && isAdmin && <AdminDashboard videos={videos} viewCounts={viewCounts} totalViews={totalViews} activities={activities} liveSession={liveSession} onSaveLiveSession={saveLiveSession} onVideosChange={persistVideos} onActivitiesChange={persistActivities} onGenerateCertificate={handleManualCertificate} certTemplate={certTemplate} onSaveCertConfig={saveCertConfig} siteLogos={siteLogos} onSaveSiteLogos={saveSiteLogos} />}
         {view === 'certificate' && manualCertificate && <div className="min-h-screen bg-[#141414] pt-20 px-4 md:px-16 pb-12"><CertificateView video={manualCertificate.video} userProfile={manualCertificate.profile} onBack={handleCloseManualCertificate} certTemplate={certTemplate} /></div>}
         {view === 'history' && !sessionUser.isGuest && !reprintCert && <HistoryView sessionUser={sessionUser} onBack={() => setView('home')} onReprintCert={(cert) => setReprintCert(cert)} />}
         {view === 'history' && reprintCert && <div className="min-h-screen bg-[#141414] pt-20 px-4 md:px-16 pb-12"><CertificateReprintView cert={reprintCert} onBack={() => setReprintCert(null)} certTemplate={certTemplate} /></div>}
@@ -941,8 +966,8 @@ export default function App() {
         <div className="max-w-6xl mx-auto flex flex-col md:flex-row justify-between items-center gap-6">
           <div className="text-center md:text-left">
             <div className="flex items-center justify-center md:justify-start gap-4 mb-4">
-              <img src="/logo-cpg-grande.png" alt="Logo CPG" className="w-14 h-14 object-contain filter drop-shadow-lg" onError={(e) => { e.target.style.display = 'none'; }} />
-              <img src="/logo-caeduc.png" alt="Logo CAEDUC" className="w-14 h-14 object-contain filter drop-shadow-lg" onError={(e) => { e.target.style.display = 'none'; }} />
+              <img src={siteLogos.footerLogoCpg} alt="Logo CPG" className="w-14 h-14 object-contain filter drop-shadow-lg" onError={(e) => { e.target.style.display = 'none'; }} />
+              <img src={siteLogos.footerLogoCaeduc} alt="Logo CAEDUC" className="w-14 h-14 object-contain filter drop-shadow-lg" onError={(e) => { e.target.style.display = 'none'; }} />
             </div>
             <h3 className="text-white font-serif font-bold mb-2">Colegio de Psicólogos de Guatemala</h3>
             <p>Formación continua y excelencia profesional.</p>
@@ -2495,8 +2520,88 @@ function CertTemplateAdmin({ certTemplate, onSave }) {
   );
 }
 
+// ── GESTOR DE LOGOS DEL SITIO ──────────────────
+function LogoManagerModal({ siteLogos, onSave, onClose }) {
+  const [logos, setLogos] = useState({ ...DEFAULT_SITE_LOGOS, ...siteLogos });
+  const [uploading, setUploading] = useState('');
+  const [msg, setMsg] = useState('');
+
+  const handleUpload = async (field, file) => {
+    if (!file) return;
+    setUploading(field);
+    try {
+      const url = await uploadCertAsset(file, 'site-' + field);
+      if (url) {
+        const next = { ...logos, [field]: url };
+        setLogos(next);
+        await onSave(next);
+        setMsg('Logo actualizado');
+        setTimeout(() => setMsg(''), 3000);
+      }
+    } catch (e) { setMsg('Error: ' + e.message); }
+    setUploading('');
+  };
+
+  const handleReset = async (field, defaultVal) => {
+    const next = { ...logos, [field]: defaultVal };
+    setLogos(next);
+    await onSave(next);
+    setMsg('Logo restaurado al original');
+    setTimeout(() => setMsg(''), 3000);
+  };
+
+  const fields = [
+    { label: 'Logo CPG — Barra de navegación', field: 'navLogoCpg', default: '/logo-cpg-grande.png', desc: 'Se muestra arriba a la izquierda en todas las páginas' },
+    { label: 'Logo CAEDUC — Barra de navegación', field: 'navLogoCaeduc', default: '/logo-caeduc.png', desc: 'Se muestra junto al logo CPG en la barra superior' },
+    { label: 'Logo CPG — Pie de página', field: 'footerLogoCpg', default: '/logo-cpg-grande.png', desc: 'Se muestra en el footer del sitio' },
+    { label: 'Logo CAEDUC — Pie de página', field: 'footerLogoCaeduc', default: '/logo-caeduc.png', desc: 'Se muestra en el footer junto al logo CPG' },
+    { label: 'Logo CPG — Pantalla de inicio de sesión', field: 'loginLogoCpg', default: '/logo-cpg-grande.png', desc: 'Logo grande en la pantalla de login' },
+  ];
+
+  return (
+    <div className="fixed inset-0 bg-black/70 z-[70] flex items-center justify-center px-4 py-10">
+      <div className="bg-[#141414] border border-gray-800 rounded-2xl shadow-2xl w-full max-w-3xl max-h-[85vh] overflow-hidden">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-800">
+          <div>
+            <h3 className="text-xl font-bold text-white flex items-center gap-2"><Image size={20} className="text-pink-400" /> Logos del sitio</h3>
+            <p className="text-sm text-gray-400">Sube o cambia los logos que se muestran en la barra de navegación y el pie de página.</p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-white"><X size={18} /></button>
+        </div>
+        <div className="px-6 py-6 overflow-y-auto max-h-[65vh] space-y-5">
+          {msg && <div className="rounded-lg px-4 py-2 text-sm font-semibold bg-green-900/30 border border-green-700/40 text-green-300">{msg}</div>}
+          {fields.map(({ label, field, desc, default: def }) => (
+            <div key={field} className="bg-black/30 border border-gray-800 rounded-xl p-4">
+              <div className="flex flex-col md:flex-row md:items-center gap-4">
+                <div className="flex-1">
+                  <p className="text-sm text-white font-semibold">{label}</p>
+                  <p className="text-xs text-gray-500 mt-0.5">{desc}</p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <img src={logos[field]} alt={label} className="w-16 h-16 object-contain bg-white/10 rounded-lg border border-gray-700 p-1" onError={e => { e.target.src = def; }} />
+                  <div className="flex flex-col gap-1.5">
+                    <label className="flex items-center gap-2 bg-gray-800 hover:bg-gray-700 border border-gray-600 px-3 py-1.5 rounded-lg cursor-pointer transition text-xs text-gray-300 hover:text-white">
+                      {uploading === field ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />}
+                      {uploading === field ? 'Subiendo...' : 'Cambiar'}
+                      <input type="file" accept="image/*" className="hidden" onChange={e => handleUpload(field, e.target.files?.[0])} disabled={!!uploading} />
+                    </label>
+                    <button onClick={() => handleReset(field, def)} className="text-[10px] text-gray-600 hover:text-gray-400 transition">Restaurar original</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="flex justify-end px-6 py-4 border-t border-gray-800">
+          <button onClick={onClose} className="bg-gray-700 hover:bg-gray-600 text-white px-5 py-2 rounded-lg font-semibold text-sm">Cerrar</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── ADMIN DASHBOARD ───────────────────────────────
-function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSession, onSaveLiveSession, onVideosChange, onActivitiesChange, onGenerateCertificate, certTemplate, onSaveCertConfig }) {
+function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSession, onSaveLiveSession, onVideosChange, onActivitiesChange, onGenerateCertificate, certTemplate, onSaveCertConfig, siteLogos, onSaveSiteLogos }) {
   const [editingVideo, setEditingVideo] = useState(null);
   const [manualCertVideo, setManualCertVideo] = useState(null);
   const [manualProfile, setManualProfile] = useState({ name: '', collegiateNumber: '', status: '' });
@@ -2505,6 +2610,7 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
   const [showActivitiesSection, setShowActivitiesSection] = useState(false);
   const [showCertsSection, setShowCertsSection] = useState(false);
   const [showCertTemplateSection, setShowCertTemplateSection] = useState(false);
+  const [showLogoManager, setShowLogoManager] = useState(false);
   const [certsData, setCertsData] = useState([]);
   const [certsLoading, setCertsLoading] = useState(false);
   const [certsLoaded, setCertsLoaded] = useState(false);
@@ -2685,6 +2791,7 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
         <div className="flex flex-wrap gap-2">
           <button onClick={handleCreate} className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded font-bold flex items-center gap-2"><Plus size={20} /> Nuevo Video</button>
           <button onClick={() => { setEditingActivity({ id: Date.now() }); setActivityForm(EMPTY_ACTIVITY_FORM); }} className="bg-indigo-600 hover:bg-indigo-700 px-4 py-2 rounded font-bold flex items-center gap-2"><CalendarDays size={18} /> Nueva actividad</button>
+          <button onClick={() => setShowLogoManager(true)} className="bg-pink-600 hover:bg-pink-700 px-4 py-2 rounded font-bold flex items-center gap-2"><Image size={18} /> Logos del sitio</button>
         </div>
       </div>
 
@@ -2974,6 +3081,8 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
           </div>
         ))}
       </div>
+
+      {showLogoManager && <LogoManagerModal siteLogos={siteLogos} onSave={onSaveSiteLogos} onClose={() => setShowLogoManager(false)} />}
 
       {manualCertVideo && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 px-4">
