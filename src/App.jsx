@@ -15,6 +15,7 @@ const ADMIN_CREDENTIALS = {
 };
 
 const EDGE_URL = 'https://dvzgxmzzqzaapqfutaty.supabase.co/functions/v1/consultar-colegiado';
+const ADMIN_EDGE_URL = 'https://dvzgxmzzqzaapqfutaty.supabase.co/functions/v1/manage-admin-user';
 const APP_URL = 'https://aulavirtualcpg.vercel.app';
 
 const DEFAULT_SITE_LOGOS = {
@@ -888,6 +889,7 @@ export default function App() {
   const [totalViews, setTotalViews] = useState(0);
   const [selectedVideo, setSelectedVideo] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [adminRole, setAdminRole] = useState('');
   const [manualCertificate, setManualCertificate] = useState(null);
   const [authError, setAuthError] = useState('');
   const [activities, setActivities] = useState([]);
@@ -1116,15 +1118,22 @@ export default function App() {
     setAuthError('');
     const trimEmail = email.trim().toLowerCase();
     const trimPass = password.trim();
-    if (trimEmail === ADMIN_CREDENTIALS.email && trimPass === ADMIN_CREDENTIALS.password) {
-      if (!supabase) { setAuthError('No se encontró la configuración de Supabase.'); return; }
-      const { error } = await supabase.auth.signInWithPassword({ email: trimEmail, password: trimPass });
-      if (error) { setAuthError('No se pudo iniciar sesión: ' + error.message); return; }
-      setIsAdmin(true); setView('admin');
-    } else { setAuthError('Credenciales incorrectas'); }
+    if (!supabase) { setAuthError('No se encontró la configuración de Supabase.'); return; }
+    // Verificar que el email esté en la tabla de admins y esté activo
+    const { data: adminRecord } = await supabase
+      .from('cpg_admin_users')
+      .select('role, active')
+      .eq('email', trimEmail)
+      .eq('active', true)
+      .maybeSingle();
+    if (!adminRecord) { setAuthError('Este correo no tiene permisos de administrador.'); return; }
+    const { error } = await supabase.auth.signInWithPassword({ email: trimEmail, password: trimPass });
+    if (error) { setAuthError('Contraseña incorrecta: ' + error.message); return; }
+    setAdminRole(adminRecord.role);
+    setIsAdmin(true); setView('admin');
   };
 
-  const handleLogout = async () => { if (supabase) await supabase.auth.signOut(); localStorage.removeItem('cpg_session'); setIsAdmin(false); setSessionUser(null); setView('home'); };
+  const handleLogout = async () => { if (supabase) await supabase.auth.signOut(); localStorage.removeItem('cpg_session'); setIsAdmin(false); setAdminRole(''); setSessionUser(null); setView('home'); };
   const handleManualCertificate = (video, profile) => { setManualCertificate({ video, profile }); setView('certificate'); };
   const handleCloseManualCertificate = () => { setManualCertificate(null); setView('admin'); };
 
@@ -1223,7 +1232,7 @@ export default function App() {
         {view === 'live' && <LiveSessionView session={liveSession} onBack={() => setView('home')} sessionUser={sessionUser} onRegisterAttendance={registerAttendance} />}
         {view === 'player' && selectedVideo && <PlayerView video={selectedVideo} viewCounts={viewCounts} onBack={() => setView('home')} sessionUser={sessionUser} userProfile={userProfile} setUserProfile={setUserProfile} isCompleted={completedVideos.has(selectedVideo.id)} onMarkCompleted={() => markVideoCompleted(selectedVideo.id)} certTemplate={certTemplate} />}
         {view === 'login' && <LoginView onLogin={handleLogin} onBack={() => setView('home')} authError={authError} />}
-        {view === 'admin' && isAdmin && <AdminDashboard videos={videos} viewCounts={viewCounts} totalViews={totalViews} activities={activities} liveSession={liveSession} onSaveLiveSession={saveLiveSession} onVideosChange={persistVideos} onActivitiesChange={persistActivities} onGenerateCertificate={handleManualCertificate} certTemplate={certTemplate} onSaveCertConfig={saveCertConfig} siteLogos={siteLogos} onSaveSiteLogos={saveSiteLogos} />}
+        {view === 'admin' && isAdmin && <AdminDashboard videos={videos} viewCounts={viewCounts} totalViews={totalViews} activities={activities} liveSession={liveSession} onSaveLiveSession={saveLiveSession} onVideosChange={persistVideos} onActivitiesChange={persistActivities} onGenerateCertificate={handleManualCertificate} certTemplate={certTemplate} onSaveCertConfig={saveCertConfig} siteLogos={siteLogos} onSaveSiteLogos={saveSiteLogos} adminRole={adminRole} />}
         {view === 'certificate' && manualCertificate && <div className="min-h-screen bg-[#141414] pt-20 px-4 md:px-16 pb-12"><CertificateView video={manualCertificate.video} userProfile={manualCertificate.profile} onBack={handleCloseManualCertificate} certTemplate={certTemplate} /></div>}
         {view === 'history' && !sessionUser.isGuest && !reprintCert && <HistoryView sessionUser={sessionUser} onBack={() => setView('home')} onReprintCert={(cert) => setReprintCert(cert)} />}
         {view === 'history' && reprintCert && <div className="min-h-screen bg-[#141414] pt-20 px-4 md:px-16 pb-12"><CertificateReprintView cert={reprintCert} onBack={() => setReprintCert(null)} certTemplate={certTemplate} /></div>}
@@ -2867,8 +2876,256 @@ function LogoManagerModal({ siteLogos, onSave, onClose }) {
   );
 }
 
+
+// ══════════════════════════════════════════════════════════════
+// ██ GESTIÓN DE USUARIOS ADMINISTRATIVOS                      ██
+// ══════════════════════════════════════════════════════════════
+function AdminUsersManager({ currentAdminRole }) {
+  const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [editingUser, setEditingUser] = useState(null);
+  const [form, setForm] = useState({ email: '', name: '', password: '', role: 'admin' });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [successMsg, setSuccessMsg] = useState('');
+  const [showResetPw, setShowResetPw] = useState(null);
+  const [newPw, setNewPw] = useState('');
+
+  const isSuperAdmin = currentAdminRole === 'super_admin';
+
+  const loadUsers = async () => {
+    if (!supabase) return;
+    setLoading(true);
+    try {
+      const { data } = await supabase.from('cpg_admin_users').select('*').order('created_at', { ascending: true });
+      setUsers(data || []);
+    } catch {}
+    setLoading(false);
+  };
+
+  useEffect(() => { loadUsers(); }, []);
+
+  const getAuthToken = async () => {
+    if (!supabase) return null;
+    const { data: { session } } = await supabase.auth.getSession();
+    return session?.access_token || null;
+  };
+
+  const callEdge = async (body) => {
+    const token = await getAuthToken();
+    if (!token) throw new Error('No hay sesión activa');
+    const res = await fetch(ADMIN_EDGE_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) throw new Error(data.error || 'Error del servidor');
+    return data;
+  };
+
+  const handleCreate = async () => {
+    if (!form.email.trim()) { setError('El correo es obligatorio.'); return; }
+    if (!form.password || form.password.length < 6) { setError('La contraseña debe tener al menos 6 caracteres.'); return; }
+    setSaving(true); setError('');
+    try {
+      await callEdge({ action: 'create', email: form.email.trim(), password: form.password, name: form.name.trim(), role: form.role });
+      setSuccessMsg('Administrador creado exitosamente');
+      setTimeout(() => setSuccessMsg(''), 4000);
+      setShowForm(false); setForm({ email: '', name: '', password: '', role: 'admin' });
+      await loadUsers();
+    } catch (e) { setError(e.message); }
+    setSaving(false);
+  };
+
+  const handleUpdate = async () => {
+    if (!editingUser) return;
+    setSaving(true); setError('');
+    try {
+      await callEdge({ action: 'update', id: editingUser.id, name: form.name.trim(), role: form.role, active: editingUser.active });
+      setSuccessMsg('Administrador actualizado');
+      setTimeout(() => setSuccessMsg(''), 4000);
+      setEditingUser(null); setForm({ email: '', name: '', password: '', role: 'admin' });
+      await loadUsers();
+    } catch (e) { setError(e.message); }
+    setSaving(false);
+  };
+
+  const handleToggleActive = async (user) => {
+    if (!confirm(user.active ? '¿Desactivar este administrador? No podrá iniciar sesión.' : '¿Reactivar este administrador?')) return;
+    try {
+      await callEdge({ action: 'update', id: user.id, active: !user.active });
+      await loadUsers();
+    } catch (e) { setError(e.message); }
+  };
+
+  const handleDelete = async (user) => {
+    if (!confirm(`¿Eliminar a "${user.name || user.email}" como administrador? Esta acción no se puede deshacer.`)) return;
+    try {
+      await callEdge({ action: 'delete', id: user.id });
+      setSuccessMsg('Administrador eliminado');
+      setTimeout(() => setSuccessMsg(''), 4000);
+      await loadUsers();
+    } catch (e) { setError(e.message); }
+  };
+
+  const handleResetPassword = async () => {
+    if (!showResetPw || !newPw || newPw.length < 6) { setError('La contraseña debe tener al menos 6 caracteres.'); return; }
+    setSaving(true); setError('');
+    try {
+      await callEdge({ action: 'reset_password', email: showResetPw.email, new_password: newPw });
+      setSuccessMsg('Contraseña actualizada para ' + showResetPw.email);
+      setTimeout(() => setSuccessMsg(''), 4000);
+      setShowResetPw(null); setNewPw('');
+    } catch (e) { setError(e.message); }
+    setSaving(false);
+  };
+
+  const startEdit = (user) => {
+    setEditingUser(user);
+    setForm({ email: user.email, name: user.name, password: '', role: user.role });
+    setShowForm(false);
+    setError('');
+  };
+
+  if (!isSuperAdmin) {
+    return (
+      <div className="p-6 text-center">
+        <Lock size={40} className="text-gray-600 mx-auto mb-3" />
+        <p className="text-gray-400">Solo los administradores con rol <span className="text-white font-bold">Super Admin</span> pueden gestionar usuarios.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-6">
+      {error && <div className="mb-4 bg-red-500/10 border border-red-500/30 rounded-lg px-4 py-3 text-sm text-red-300 flex items-start gap-2"><XCircle size={16} className="mt-0.5 flex-shrink-0" />{error}<button onClick={() => setError('')} className="ml-auto text-red-400 hover:text-white"><X size={14} /></button></div>}
+      {successMsg && <div className="mb-4 bg-green-500/10 border border-green-500/30 rounded-lg px-4 py-3 text-sm text-green-300 flex items-center gap-2"><CheckCircle size={16} />{successMsg}</div>}
+
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+        <div>
+          <p className="text-sm text-gray-400">{users.filter(u => u.active).length} activos de {users.length} registrados</p>
+        </div>
+        <button onClick={() => { setShowForm(true); setEditingUser(null); setForm({ email: '', name: '', password: '', role: 'admin' }); setError(''); }} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg text-sm font-bold transition">
+          <Plus size={16} /> Nuevo administrador
+        </button>
+      </div>
+
+      {/* ── Formulario crear/editar ── */}
+      {(showForm || editingUser) && (
+        <div className="bg-black/40 border border-gray-800 rounded-xl p-5 mb-6">
+          <h3 className="text-white font-bold text-lg mb-4">{editingUser ? 'Editar administrador' : 'Nuevo administrador'}</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm text-gray-400 mb-1">Correo electrónico</label>
+              <input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} disabled={!!editingUser} className={`w-full bg-black border border-gray-700 rounded-lg p-2.5 text-white text-sm focus:border-blue-500 outline-none ${editingUser ? 'opacity-60 cursor-not-allowed' : ''}`} placeholder="correo@ejemplo.com" />
+            </div>
+            <div>
+              <label className="block text-sm text-gray-400 mb-1">Nombre completo</label>
+              <input type="text" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} className="w-full bg-black border border-gray-700 rounded-lg p-2.5 text-white text-sm focus:border-blue-500 outline-none" placeholder="Nombre del administrador" />
+            </div>
+            {!editingUser && (
+              <div>
+                <label className="block text-sm text-gray-400 mb-1">Contraseña inicial</label>
+                <input type="password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} className="w-full bg-black border border-gray-700 rounded-lg p-2.5 text-white text-sm focus:border-blue-500 outline-none" placeholder="Mínimo 6 caracteres" />
+              </div>
+            )}
+            <div>
+              <label className="block text-sm text-gray-400 mb-1">Rol</label>
+              <select value={form.role} onChange={e => setForm({ ...form, role: e.target.value })} className="w-full bg-black border border-gray-700 rounded-lg p-2.5 text-white text-sm focus:border-blue-500 outline-none">
+                <option value="admin">Administrador</option>
+                <option value="super_admin">Super Administrador</option>
+              </select>
+              <p className="text-xs text-gray-600 mt-1">{form.role === 'super_admin' ? 'Puede gestionar otros administradores' : 'Acceso completo al panel, sin gestión de usuarios'}</p>
+            </div>
+          </div>
+          <div className="flex gap-2 mt-4">
+            <button onClick={editingUser ? handleUpdate : handleCreate} disabled={saving} className="bg-green-600 hover:bg-green-700 disabled:bg-green-800 text-white font-bold px-5 py-2 rounded-lg transition flex items-center gap-2 text-sm">
+              {saving ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle size={14} />}
+              {editingUser ? 'Guardar cambios' : 'Crear administrador'}
+            </button>
+            <button onClick={() => { setShowForm(false); setEditingUser(null); setError(''); }} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm transition">Cancelar</button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal cambiar contraseña ── */}
+      {showResetPw && (
+        <div className="fixed inset-0 bg-black/70 z-[70] flex items-center justify-center px-4">
+          <div className="bg-[#141414] border border-gray-800 rounded-2xl p-6 w-full max-w-md">
+            <h3 className="text-white font-bold text-lg mb-2">Cambiar contraseña</h3>
+            <p className="text-gray-400 text-sm mb-4">Para: <span className="text-white font-mono">{showResetPw.email}</span></p>
+            <div className="mb-4">
+              <label className="block text-sm text-gray-400 mb-1">Nueva contraseña</label>
+              <input type="password" value={newPw} onChange={e => { setNewPw(e.target.value); setError(''); }} className="w-full bg-black border border-gray-700 rounded-lg p-2.5 text-white text-sm focus:border-blue-500 outline-none" placeholder="Mínimo 6 caracteres" />
+            </div>
+            <div className="flex gap-2">
+              <button onClick={handleResetPassword} disabled={saving} className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 text-white font-bold px-5 py-2 rounded-lg transition flex items-center gap-2 text-sm">{saving ? <Loader2 size={14} className="animate-spin" /> : <KeyRound size={14} />} Cambiar contraseña</button>
+              <button onClick={() => { setShowResetPw(null); setNewPw(''); setError(''); }} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm">Cancelar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Tabla de admins ── */}
+      {loading && <div className="text-center py-10"><Loader2 size={28} className="animate-spin text-blue-400 mx-auto mb-3" /><p className="text-gray-400 text-sm">Cargando administradores...</p></div>}
+      {!loading && users.length === 0 && <div className="text-center py-10 text-gray-500"><Users size={40} className="mx-auto mb-3 opacity-30" /><p>No hay administradores registrados.</p></div>}
+      {!loading && users.length > 0 && (
+        <div className="overflow-x-auto rounded-xl border border-gray-800">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-900 text-gray-400 uppercase text-xs">
+              <tr>
+                <th className="text-left px-4 py-3">Nombre</th>
+                <th className="text-left px-4 py-3">Correo</th>
+                <th className="text-left px-4 py-3">Rol</th>
+                <th className="text-left px-4 py-3">Estado</th>
+                <th className="text-left px-4 py-3">Creado</th>
+                <th className="px-4 py-3">Acciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              {users.map(u => (
+                <tr key={u.id} className={`border-t border-gray-800 hover:bg-gray-900/40 ${!u.active ? 'opacity-50' : ''}`}>
+                  <td className="px-4 py-3 text-white font-medium">{u.name || '—'}</td>
+                  <td className="px-4 py-3 text-gray-300 font-mono text-xs">{u.email}</td>
+                  <td className="px-4 py-3">
+                    <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${u.role === 'super_admin' ? 'bg-purple-900/40 text-purple-300 border border-purple-700/50' : 'bg-blue-900/40 text-blue-300 border border-blue-700/50'}`}>
+                      {u.role === 'super_admin' ? 'Super Admin' : 'Admin'}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${u.active ? 'bg-green-900/40 text-green-400' : 'bg-red-900/40 text-red-400'}`}>
+                      {u.active ? 'Activo' : 'Inactivo'}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">{new Date(u.created_at).toLocaleDateString('es-GT')}</td>
+                  <td className="px-4 py-3">
+                    <div className="flex gap-1 justify-center">
+                      <button onClick={() => startEdit(u)} className="p-1.5 bg-blue-900/40 hover:bg-blue-900/70 text-blue-300 rounded" title="Editar"><Edit2 size={13} /></button>
+                      <button onClick={() => { setShowResetPw(u); setNewPw(''); setError(''); }} className="p-1.5 bg-yellow-900/40 hover:bg-yellow-900/70 text-yellow-300 rounded" title="Cambiar contraseña"><KeyRound size={13} /></button>
+                      <button onClick={() => handleToggleActive(u)} className={`p-1.5 rounded ${u.active ? 'bg-orange-900/40 hover:bg-orange-900/70 text-orange-300' : 'bg-green-900/40 hover:bg-green-900/70 text-green-300'}`} title={u.active ? 'Desactivar' : 'Activar'}>
+                        {u.active ? <XCircle size={13} /> : <CheckCircle size={13} />}
+                      </button>
+                      <button onClick={() => handleDelete(u)} className="p-1.5 bg-red-900/40 hover:bg-red-900/70 text-red-300 rounded" title="Eliminar"><Trash2 size={13} /></button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <div className="mt-4 bg-gray-900/40 border border-gray-800 rounded-lg px-4 py-3">
+        <p className="text-xs text-gray-500"><span className="text-purple-400 font-bold">Super Admin</span>: acceso completo + gestión de administradores. <span className="text-blue-400 font-bold">Admin</span>: acceso completo al panel sin gestión de usuarios.</p>
+      </div>
+    </div>
+  );
+}
+
 // ── ADMIN DASHBOARD ───────────────────────────────
-function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSession, onSaveLiveSession, onVideosChange, onActivitiesChange, onGenerateCertificate, certTemplate, onSaveCertConfig, siteLogos, onSaveSiteLogos }) {
+function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSession, onSaveLiveSession, onVideosChange, onActivitiesChange, onGenerateCertificate, certTemplate, onSaveCertConfig, siteLogos, onSaveSiteLogos, adminRole }) {
   const [editingVideo, setEditingVideo] = useState(null);
   const [manualCertVideo, setManualCertVideo] = useState(null);
   const [manualProfile, setManualProfile] = useState({ name: '', collegiateNumber: '', status: '' });
@@ -2878,6 +3135,7 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
   const [showCertsSection, setShowCertsSection] = useState(false);
   const [showCertTemplateSection, setShowCertTemplateSection] = useState(false);
   const [showLogoManager, setShowLogoManager] = useState(false);
+  const [showAdminUsersSection, setShowAdminUsersSection] = useState(false);
   const [showBulkCert, setShowBulkCert] = useState(false);
   const [certsData, setCertsData] = useState([]);
   const [certsLoading, setCertsLoading] = useState(false);
@@ -3328,6 +3586,22 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
             })()}
           </div>
         )}
+      </div>
+
+
+      {/* ── GESTIÓN DE ADMINISTRADORES (colapsable) ── */}
+      <div className="bg-[#1b1b1b] border border-gray-800 rounded-2xl mb-6 overflow-hidden">
+        <button type="button" onClick={() => setShowAdminUsersSection(v => !v)} className="w-full flex items-center justify-between px-6 py-4 hover:bg-white/5 transition">
+          <div className="flex items-center gap-3">
+            <div className="bg-purple-600 p-2 rounded-lg"><Users size={18} className="text-white" /></div>
+            <div className="text-left">
+              <h2 className="text-xl font-bold text-white">Gestión de administradores</h2>
+              <p className="text-xs text-gray-400">{adminRole === 'super_admin' ? 'Agregar, editar y eliminar usuarios admin' : 'Solo visible para Super Admin'}</p>
+            </div>
+          </div>
+          <span className="text-gray-400 text-lg">{showAdminUsersSection ? '▲' : '▼'}</span>
+        </button>
+        {showAdminUsersSection && <div className="border-t border-gray-800"><AdminUsersManager currentAdminRole={adminRole} /></div>}
       </div>
 
       <h2 className="text-xl font-bold mb-4">Cursos</h2>
