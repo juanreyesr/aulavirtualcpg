@@ -184,6 +184,22 @@ async function consultarColegiado(id) {
   return data;
 }
 
+
+// ── LOG DE AUDITORÍA ─────────────────────────────
+const logAudit = async (adminEmail, adminName, action, resourceType, resourceId = '', details = {}) => {
+  if (!supabase) return;
+  try {
+    await supabase.from('cpg_audit_log').insert({
+      admin_email: adminEmail || '',
+      admin_name: adminName || '',
+      action,
+      resource_type: resourceType,
+      resource_id: String(resourceId),
+      details,
+    });
+  } catch (e) { console.warn('[Audit] Error:', e.message); }
+};
+
 // ── QR CODE URL ──────────────────────────────────
 const getCertQrUrl = (code) => {
   const verifyUrl = `${APP_URL}/?cert=${code}`;
@@ -1131,9 +1147,14 @@ export default function App() {
     if (error) { setAuthError('Contraseña incorrecta: ' + error.message); return; }
     setAdminRole(adminRecord.role);
     setIsAdmin(true); setView('admin');
+    logAudit(trimEmail, '', 'login', 'session', '', { role: adminRecord.role });
   };
 
-  const handleLogout = async () => { if (supabase) await supabase.auth.signOut(); localStorage.removeItem('cpg_session'); setIsAdmin(false); setAdminRole(''); setSessionUser(null); setView('home'); };
+  const handleLogout = async () => {
+    const em = sessionUser?.email || '';
+    await logAudit(em, '', 'logout', 'session');
+    if (supabase) await supabase.auth.signOut(); localStorage.removeItem('cpg_session'); setIsAdmin(false); setAdminRole(''); setSessionUser(null); setView('home');
+  };
   const handleManualCertificate = (video, profile) => { setManualCertificate({ video, profile }); setView('certificate'); };
   const handleCloseManualCertificate = () => { setManualCertificate(null); setView('admin'); };
 
@@ -3124,6 +3145,186 @@ function AdminUsersManager({ currentAdminRole }) {
   );
 }
 
+
+// ══════════════════════════════════════════════════════════════
+// ██ VISOR DE LOG DE AUDITORÍA                                ██
+// ══════════════════════════════════════════════════════════════
+function AuditLogViewer() {
+  const [logs, setLogs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [filterAdmin, setFilterAdmin] = useState('');
+  const [filterAction, setFilterAction] = useState('');
+  const [filterDate, setFilterDate] = useState('');
+  const [limit, setLimit] = useState(50);
+
+  const loadLogs = async () => {
+    if (!supabase) return;
+    setLoading(true);
+    try {
+      let query = supabase.from('cpg_audit_log').select('*').order('created_at', { ascending: false }).limit(limit);
+      if (filterAdmin) query = query.ilike('admin_email', '%' + filterAdmin + '%');
+      if (filterAction) query = query.eq('action', filterAction);
+      if (filterDate) {
+        query = query.gte('created_at', filterDate + 'T00:00:00').lte('created_at', filterDate + 'T23:59:59');
+      }
+      const { data } = await query;
+      setLogs(data || []);
+    } catch {}
+    setLoading(false);
+  };
+
+  useEffect(() => { loadLogs(); }, [filterAdmin, filterAction, filterDate, limit]);
+
+  const actionLabels = {
+    login: '🔑 Inicio de sesión',
+    logout: '🚪 Cierre de sesión',
+    video_created: '🎬 Video creado',
+    video_updated: '✏️ Video editado',
+    video_deleted: '🗑️ Video eliminado',
+    activity_created: '📅 Actividad creada',
+    activity_updated: '✏️ Actividad editada',
+    activity_deleted: '🗑️ Actividad eliminada',
+    live_started: '🔴 Transmisión iniciada',
+    live_ended: '⏹️ Transmisión finalizada',
+    live_updated: '📡 Transmisión actualizada',
+    cert_emitted: '📜 Certificado emitido',
+    cert_bulk_emitted: '📜 Certificados masivos',
+    cert_deleted: '🗑️ Certificado eliminado',
+    cert_template_saved: '🎨 Plantilla editada',
+    site_logos_saved: '🖼️ Logos actualizados',
+    admin_created: '👤 Admin creado',
+    admin_updated: '✏️ Admin editado',
+    admin_toggled: '🔄 Admin activado/desactivado',
+    admin_deleted: '🗑️ Admin eliminado',
+    admin_password_reset: '🔐 Contraseña cambiada',
+    sistema_inicializado: '⚙️ Sistema inicializado',
+  };
+  const uniqueActions = [...new Set(logs.map(l => l.action))];
+
+  const actionColor = (action) => {
+    if (action.includes('delete') || action.includes('deleted')) return 'text-red-400';
+    if (action.includes('create') || action.includes('created') || action.includes('emitted')) return 'text-green-400';
+    if (action.includes('login')) return 'text-blue-400';
+    if (action.includes('live')) return 'text-red-300';
+    return 'text-gray-300';
+  };
+
+  const exportCSV = () => {
+    if (!logs.length) return;
+    const esc = v => { const s = String(v || ''); return s.includes(',') || s.includes('"') ? '"' + s.replace(/"/g, '""') + '"' : s; };
+    const rows = [
+      ['Fecha/Hora', 'Admin', 'Email Admin', 'Acción', 'Recurso', 'ID Recurso', 'Detalles'],
+      ...logs.map(l => [
+        new Date(l.created_at).toLocaleString('es-GT'),
+        l.admin_name,
+        l.admin_email,
+        actionLabels[l.action] || l.action,
+        l.resource_type,
+        l.resource_id,
+        JSON.stringify(l.details || {}),
+      ])
+    ];
+    const csv = rows.map(r => r.map(esc).join(',')).join('\n');
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'audit-log-' + new Date().toISOString().slice(0, 10) + '.csv';
+    document.body.appendChild(link); link.click(); document.body.removeChild(link); URL.revokeObjectURL(url);
+  };
+
+  return (
+    <div className="p-6">
+      {/* Filtros */}
+      <div className="flex flex-wrap gap-3 mb-5">
+        <div className="relative flex-1 min-w-[180px] max-w-xs">
+          <Search size={14} className="absolute left-3 top-2.5 text-gray-500 pointer-events-none" />
+          <input type="text" value={filterAdmin} onChange={e => setFilterAdmin(e.target.value)} placeholder="Filtrar por admin..." className="w-full bg-black border border-gray-700 rounded-lg pl-8 pr-4 py-2 text-sm text-white focus:border-blue-500 outline-none" />
+        </div>
+        <select value={filterAction} onChange={e => setFilterAction(e.target.value)} className="bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-blue-500 outline-none">
+          <option value="">Todas las acciones</option>
+          {uniqueActions.map(a => <option key={a} value={a}>{actionLabels[a] || a}</option>)}
+        </select>
+        <input type="date" value={filterDate} onChange={e => setFilterDate(e.target.value)} className="bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-blue-500 outline-none" />
+        <select value={limit} onChange={e => setLimit(Number(e.target.value))} className="bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-blue-500 outline-none">
+          <option value={50}>50 registros</option>
+          <option value={100}>100 registros</option>
+          <option value={200}>200 registros</option>
+          <option value={500}>500 registros</option>
+        </select>
+        <button onClick={() => { setFilterAdmin(''); setFilterAction(''); setFilterDate(''); }} className="px-3 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg text-xs text-gray-300 transition">Limpiar</button>
+        <button onClick={loadLogs} className="px-3 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg text-xs text-gray-300 transition flex items-center gap-1"><Loader2 size={12} className={loading ? 'animate-spin' : ''} /> Actualizar</button>
+        {logs.length > 0 && <button onClick={exportCSV} className="flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 px-3 py-2 rounded-lg text-xs font-semibold transition"><Download size={12} /> CSV</button>}
+      </div>
+
+      {/* Stats rápidos */}
+      {logs.length > 0 && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+          <div className="bg-blue-900/20 border border-blue-700/30 rounded-xl p-3 text-center">
+            <p className="text-xl font-bold text-blue-400">{logs.length}</p>
+            <p className="text-xs text-gray-400">Eventos mostrados</p>
+          </div>
+          <div className="bg-green-900/20 border border-green-700/30 rounded-xl p-3 text-center">
+            <p className="text-xl font-bold text-green-400">{new Set(logs.map(l => l.admin_email)).size}</p>
+            <p className="text-xs text-gray-400">Admins activos</p>
+          </div>
+          <div className="bg-yellow-900/20 border border-yellow-700/30 rounded-xl p-3 text-center">
+            <p className="text-xl font-bold text-yellow-400">{logs.filter(l => l.action === 'login').length}</p>
+            <p className="text-xs text-gray-400">Sesiones</p>
+          </div>
+          <div className="bg-purple-900/20 border border-purple-700/30 rounded-xl p-3 text-center">
+            <p className="text-xl font-bold text-purple-400">{logs.filter(l => l.action.includes('cert')).length}</p>
+            <p className="text-xs text-gray-400">Acciones de certs.</p>
+          </div>
+        </div>
+      )}
+
+      {/* Tabla */}
+      {loading && <div className="text-center py-10"><Loader2 size={28} className="animate-spin text-blue-400 mx-auto mb-3" /><p className="text-gray-400 text-sm">Cargando log...</p></div>}
+      {!loading && logs.length === 0 && <div className="text-center py-10 text-gray-500"><History size={40} className="mx-auto mb-3 opacity-30" /><p>No hay eventos registrados{filterAdmin || filterAction || filterDate ? ' con estos filtros' : ''}.</p></div>}
+      {!loading && logs.length > 0 && (
+        <div className="overflow-x-auto rounded-xl border border-gray-800 max-h-[60vh] overflow-y-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-900 text-gray-400 uppercase text-xs sticky top-0 z-10">
+              <tr>
+                <th className="text-left px-4 py-3">Fecha/Hora</th>
+                <th className="text-left px-4 py-3">Administrador</th>
+                <th className="text-left px-4 py-3">Acción</th>
+                <th className="text-left px-4 py-3">Recurso</th>
+                <th className="text-left px-4 py-3">Detalles</th>
+              </tr>
+            </thead>
+            <tbody>
+              {logs.map(l => (
+                <tr key={l.id} className="border-t border-gray-800 hover:bg-gray-900/40">
+                  <td className="px-4 py-2.5 text-gray-500 text-xs whitespace-nowrap">{new Date(l.created_at).toLocaleString('es-GT', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}</td>
+                  <td className="px-4 py-2.5">
+                    <div className="text-white text-xs font-medium">{l.admin_name || '—'}</div>
+                    <div className="text-gray-500 text-[10px] font-mono">{l.admin_email}</div>
+                  </td>
+                  <td className="px-4 py-2.5">
+                    <span className={`text-xs font-semibold ${actionColor(l.action)}`}>
+                      {actionLabels[l.action] || l.action}
+                    </span>
+                  </td>
+                  <td className="px-4 py-2.5 text-gray-400 text-xs">
+                    {l.resource_type}{l.resource_id ? ` #${l.resource_id}` : ''}
+                  </td>
+                  <td className="px-4 py-2.5 text-gray-500 text-xs max-w-xs truncate" title={JSON.stringify(l.details)}>
+                    {l.details && Object.keys(l.details).length > 0
+                      ? Object.entries(l.details).map(([k, v]) => `${k}: ${v}`).join(', ')
+                      : '—'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── ADMIN DASHBOARD ───────────────────────────────
 function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSession, onSaveLiveSession, onVideosChange, onActivitiesChange, onGenerateCertificate, certTemplate, onSaveCertConfig, siteLogos, onSaveSiteLogos, adminRole }) {
   const [editingVideo, setEditingVideo] = useState(null);
@@ -3136,6 +3337,7 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
   const [showCertTemplateSection, setShowCertTemplateSection] = useState(false);
   const [showLogoManager, setShowLogoManager] = useState(false);
   const [showAdminUsersSection, setShowAdminUsersSection] = useState(false);
+  const [showAuditLogSection, setShowAuditLogSection] = useState(false);
   const [showBulkCert, setShowBulkCert] = useState(false);
   const [certsData, setCertsData] = useState([]);
   const [certsLoading, setCertsLoading] = useState(false);
@@ -3588,6 +3790,22 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
         )}
       </div>
 
+
+
+      {/* ── LOG DE AUDITORÍA (colapsable) ── */}
+      <div className="bg-[#1b1b1b] border border-gray-800 rounded-2xl mb-6 overflow-hidden">
+        <button type="button" onClick={() => setShowAuditLogSection(v => !v)} className="w-full flex items-center justify-between px-6 py-4 hover:bg-white/5 transition">
+          <div className="flex items-center gap-3">
+            <div className="bg-emerald-600 p-2 rounded-lg"><History size={18} className="text-white" /></div>
+            <div className="text-left">
+              <h2 className="text-xl font-bold text-white">Log de auditoría</h2>
+              <p className="text-xs text-gray-400">Registro de todas las acciones administrativas</p>
+            </div>
+          </div>
+          <span className="text-gray-400 text-lg">{showAuditLogSection ? '▲' : '▼'}</span>
+        </button>
+        {showAuditLogSection && <div className="border-t border-gray-800"><AuditLogViewer /></div>}
+      </div>
 
       {/* ── GESTIÓN DE ADMINISTRADORES (colapsable) ── */}
       <div className="bg-[#1b1b1b] border border-gray-800 rounded-2xl mb-6 overflow-hidden">
