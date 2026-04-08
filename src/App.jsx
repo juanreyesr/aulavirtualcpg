@@ -14,8 +14,8 @@ const ADMIN_CREDENTIALS = {
   password: 'CAEDUC2025',
 };
 
-const EDGE_URL = 'https://dvzgxmzzqzaapqfutaty.supabase.co/functions/v1/consultar-colegiado';
-const ADMIN_EDGE_URL = 'https://dvzgxmzzqzaapqfutaty.supabase.co/functions/v1/manage-admin-user';
+const EDGE_URL = 'https://ilyospunwucdojrnfgti.supabase.co/functions/v1/consultar-colegiado';
+const ADMIN_EDGE_URL = 'https://ilyospunwucdojrnfgti.supabase.co/functions/v1/manage-admin-user';
 const APP_URL = 'https://aulavirtualcpg.vercel.app';
 
 const DEFAULT_SITE_LOGOS = {
