@@ -920,6 +920,11 @@ export default function App() {
 
   const certCodeFromUrl = new URLSearchParams(window.location.search).get('cert');
 
+  // ── Scroll automático al tope en cada cambio de vista ──
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [view]);
+
 
   // ══════════════════════════════════════════════════
   // ██ FIX #2: Detectar callback de recovery de Supabase
@@ -1561,6 +1566,8 @@ function HomeView({ videos, viewCounts, recentVideos, categories, upcomingVideos
   const [activeCategory, setActiveCategory] = useState(null);
   const [showCalendar, setShowCalendar] = useState(false);
   const [showPast, setShowPast] = useState(false);
+  const [showSyncModal, setShowSyncModal] = useState(false);
+  const [showEmbedCalendar, setShowEmbedCalendar] = useState(false);
   const isGuest = sessionUser?.isGuest;
 
   const searchResults = searchQuery.trim()
@@ -1708,7 +1715,16 @@ function HomeView({ videos, viewCounts, recentVideos, categories, upcomingVideos
             <h2 className="text-xl md:text-2xl font-bold text-white mt-1">Actividades programadas</h2>
             <p className="text-gray-400 mt-1 max-w-2xl text-sm">Consulta las fechas, organizadores y enlaces de inscripción.</p>
           </div>
-          <button type="button" onClick={() => setShowCalendar(true)} className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl font-semibold flex items-center gap-2 text-sm"><CalendarDays size={18} /> Ver calendario</button>
+          <div className="flex flex-col sm:flex-row gap-2 shrink-0">
+            <button type="button" onClick={() => setShowCalendar(true)}
+              className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl font-semibold flex items-center gap-2 text-sm">
+              <CalendarDays size={18} /> Ver calendario
+            </button>
+            <button type="button" onClick={() => setShowSyncModal(true)}
+              className="bg-emerald-700 hover:bg-emerald-600 border border-emerald-600/60 text-white px-5 py-2.5 rounded-xl font-semibold flex items-center gap-2 text-sm">
+              <CalendarDays size={16} /> Agregar a mi calendario
+            </button>
+          </div>
         </div>
       </div>
 
@@ -1762,6 +1778,107 @@ function HomeView({ videos, viewCounts, recentVideos, categories, upcomingVideos
         </div>
       )}
 
+
+      {/* ── Modal: Agregar a mi calendario ── */}
+      {showSyncModal && (
+        <div className="fixed inset-0 bg-black/70 z-[65] flex items-center justify-center px-4 py-10">
+          <div className="bg-[#141414] border border-gray-800 rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-800">
+              <div>
+                <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                  <CalendarDays size={20} className="text-emerald-400" /> Agregar a mi calendario
+                </h3>
+                <p className="text-sm text-gray-400">Sincroniza las actividades CAEDUC con tu app favorita</p>
+              </div>
+              <button type="button" onClick={() => setShowSyncModal(false)} className="text-gray-400 hover:text-white"><X size={18} /></button>
+            </div>
+            <div className="px-6 py-6 space-y-3">
+
+              {/* Opción 1: Google Calendar */}
+              <a href="https://calendar.google.com/calendar/u/0?cid=ZDQ0YTAxNDZhMTRhNmU1N2VhODgzM2VkMjY1MzA1YzY3ODUzNGM0OWE4NWMyMmFlMmVlZWZhNmMwNmU5Mjk5YkBncm91cC5jYWxlbmRhci5nb29nbGUuY29t" target="_blank" rel="noreferrer"
+                className="flex items-center gap-4 bg-[#1a1a1a] border border-gray-800 hover:border-blue-500 rounded-xl p-4 transition-all group cursor-pointer">
+                <div className="w-11 h-11 rounded-xl bg-white flex items-center justify-center shrink-0 shadow">
+                  <svg width="22" height="22" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.14 0 5.95 1.08 8.17 2.84l6.1-6.1C34.46 3.19 29.5 1 24 1 14.82 1 7.07 6.48 3.64 14.24l7.1 5.52C12.5 13.37 17.77 9.5 24 9.5z"/><path fill="#4285F4" d="M46.52 24.5c0-1.64-.15-3.22-.42-4.75H24v9h12.67c-.55 2.97-2.2 5.48-4.67 7.17l7.18 5.57C43.32 37.3 46.52 31.36 46.52 24.5z"/><path fill="#FBBC05" d="M10.74 28.24A14.54 14.54 0 0 1 9.5 24c0-1.48.26-2.91.7-4.24l-7.1-5.52A23.94 23.94 0 0 0 0 24c0 3.87.93 7.52 2.57 10.74l8.17-6.5z"/><path fill="#34A853" d="M24 47c5.5 0 10.12-1.82 13.49-4.94l-7.18-5.57C28.6 37.84 26.42 38.5 24 38.5c-6.23 0-11.5-3.87-13.26-9.26l-8.17 6.5C6.07 43.52 14.82 47 24 47z"/></svg>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-bold text-white group-hover:text-blue-300 transition">Google Calendar</p>
+                  <p className="text-xs text-gray-400 mt-0.5">Suscríbete si usas Google Calendar — se actualiza automáticamente</p>
+                </div>
+                <ExternalLink size={16} className="text-gray-600 group-hover:text-blue-400 transition shrink-0" />
+              </a>
+
+              {/* Opción 2: ICS / Outlook / Apple */}
+              <a href="https://calendar.google.com/calendar/ical/d44a0146a14a6e57ea8833ed265305c678534c49a85c22ae2eeefa6c06e9299b%40group.calendar.google.com/public/basic.ics" target="_blank" rel="noreferrer"
+                className="flex items-center gap-4 bg-[#1a1a1a] border border-gray-800 hover:border-indigo-500 rounded-xl p-4 transition-all group cursor-pointer">
+                <div className="w-11 h-11 rounded-xl bg-indigo-900/60 border border-indigo-700/40 flex items-center justify-center shrink-0">
+                  <CalendarDays size={22} className="text-indigo-300" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-bold text-white group-hover:text-indigo-300 transition">Outlook / Apple / Otros</p>
+                  <p className="text-xs text-gray-400 mt-0.5">Descarga el archivo .ics para importar en cualquier app de calendario</p>
+                </div>
+                <Download size={16} className="text-gray-600 group-hover:text-indigo-400 transition shrink-0" />
+              </a>
+
+              {/* Opción 3: Ver embebido */}
+              <button type="button"
+                onClick={() => { setShowSyncModal(false); setShowEmbedCalendar(true); }}
+                className="w-full flex items-center gap-4 bg-[#1a1a1a] border border-gray-800 hover:border-emerald-600 rounded-xl p-4 transition-all group text-left">
+                <div className="w-11 h-11 rounded-xl bg-emerald-900/40 border border-emerald-700/40 flex items-center justify-center shrink-0">
+                  <Eye size={20} className="text-emerald-300" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-bold text-white group-hover:text-emerald-300 transition">Ver sin sincronizar</p>
+                  <p className="text-xs text-gray-400 mt-0.5">Consulta el calendario de Google directamente desde el Aula Virtual</p>
+                </div>
+                <ChevronLeft size={16} className="rotate-180 text-gray-600 group-hover:text-emerald-400 transition shrink-0" />
+              </button>
+
+              <div className="bg-gray-900/50 border border-gray-800 rounded-xl px-4 py-3 mt-1">
+                <p className="text-xs text-gray-500">
+                  <span className="text-gray-400 font-semibold">Consejo:</span> Usa <span className="text-blue-400">Google Calendar</span> para sincronización automática.
+                  El calendario se actualiza en tiempo real cuando CAEDUC añade nuevas actividades.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal: Calendario embebido de Google ── */}
+      {showEmbedCalendar && (
+        <div className="fixed inset-0 bg-black/70 z-[65] flex items-center justify-center px-4 py-8">
+          <div className="bg-[#141414] border border-gray-800 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-800 shrink-0">
+              <div>
+                <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                  <CalendarDays size={18} className="text-emerald-400" /> Calendario CAEDUC
+                </h3>
+                <p className="text-xs text-gray-400">Vista de Google Calendar — solo lectura</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <a href="https://calendar.google.com/calendar/u/0?cid=ZDQ0YTAxNDZhMTRhNmU1N2VhODgzM2VkMjY1MzA1YzY3ODUzNGM0OWE4NWMyMmFlMmVlZWZhNmMwNmU5Mjk5YkBncm91cC5jYWxlbmRhci5nb29nbGUuY29t" target="_blank" rel="noreferrer"
+                  className="flex items-center gap-1.5 text-xs bg-blue-700 hover:bg-blue-600 text-white px-3 py-1.5 rounded-lg font-semibold transition">
+                  <CalendarDays size={12} /> Agregar a Google Calendar
+                </a>
+                <button type="button" onClick={() => setShowEmbedCalendar(false)} className="text-gray-400 hover:text-white ml-1"><X size={18} /></button>
+              </div>
+            </div>
+            <div className="flex-1 overflow-hidden p-2">
+              <iframe
+                src="https://calendar.google.com/calendar/embed?height=600&wkst=1&ctz=America%2FGuatemala&showPrint=0&src=ZDQ0YTAxNDZhMTRhNmU1N2VhODgzM2VkMjY1MzA1YzY3ODUzNGM0OWE4NWMyMmFlMmVlZWZhNmMwNmU5Mjk5YkBncm91cC5jYWxlbmRhci5nb29nbGUuY29t&src=ZXMuZ3QjaG9saWRheUBncm91cC52LmNhbGVuZGFyLmdvb2dsZS5jb20&color=%23a79b8e&color=%230b8043"
+                style={{ border: 'none' }}
+                width="100%"
+                height="100%"
+                className="rounded-xl min-h-[500px]"
+                frameBorder="0"
+                scrolling="no"
+                title="Calendario CAEDUC"
+              />
+            </div>
+          </div>
+        </div>
+      )}
       {!activeCategory && (
         <div className="pl-8 md:pl-16 mt-8 md:mt-10">
           <h2 className="text-xl md:text-2xl font-bold mb-4 text-white">Recién Añadidos</h2>
@@ -1840,6 +1957,11 @@ function PlayerView({ video, viewCounts, onBack, sessionUser, userProfile, setUs
   const [showCert, setShowCert] = useState(false);
   const [lookingUpStatus, setLookingUpStatus] = useState(false);
   const viewCount = viewCounts[video.id] || 0;
+
+  // ── Scroll al tope al abrir quiz o certificado ──
+  useEffect(() => {
+    if (showQuiz || showCert) window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [showQuiz, showCert]);
 
   if (sessionUser.isGuest) {
     return (
