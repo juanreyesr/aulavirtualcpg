@@ -925,6 +925,11 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, [view]);
 
+  // ── Scroll al tope al abrir un certificado desde el historial ──
+  useEffect(() => {
+    if (reprintCert) window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [reprintCert]);
+
 
   // ══════════════════════════════════════════════════
   // ██ FIX #2: Detectar callback de recovery de Supabase
