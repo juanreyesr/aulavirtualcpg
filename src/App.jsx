@@ -8,6 +8,8 @@ import {
 import { supabase } from './supabaseClient';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
+import CommissionsManager from './components/CommissionsManager';
+import AttendanceReportView from './components/AttendanceReportView';
 
 const ADMIN_CREDENTIALS = {
   email: 'gestor.caeduc@colegiodepsicologos.org.gt',
@@ -743,7 +745,7 @@ function LoginColModal({ onSession }) {
 // ══════════════════════════════════════════════════
 // ██ FIX #4: EMISIÓN MASIVA DE CERTIFICADOS        ██
 // ══════════════════════════════════════════════════
-function BulkCertificateEmitter({ videos, activities, onClose, onCertsCreated }) {
+function BulkCertificateEmitter({ videos, activities, commissions = [], onClose, onCertsCreated }) {
   const [mode, setMode] = useState('existing');
   const [selectedVideoId, setSelectedVideoId] = useState('');
   const [customTitle, setCustomTitle] = useState('');
@@ -791,9 +793,33 @@ function BulkCertificateEmitter({ videos, activities, onClose, onCertsCreated })
     const currentDate = new Date();
     const fmt = (d) => d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
 
+    // Precalcular snapshot de comisiones del curso/actividad seleccionado
+    let selectedCommissionIds = [];
+    if (mode === 'existing') {
+      const sel = allItems.find(i => i.id === selectedVideoId);
+      if (sel?.type === 'video') {
+        const v = videos.find(x => x.id === sel.videoId);
+        if (v?.hasCommissions) selectedCommissionIds = v.commissions || [];
+      } else if (sel?.type === 'activity') {
+        const a = activities.find(x => x.id === sel.videoId);
+        if (a?.hasCommissions) selectedCommissionIds = a.commissions || [];
+      }
+    }
+    const commissionsSnapshot = commissions
+      .filter(c => selectedCommissionIds.includes(c.id))
+      .map(c => ({ id: c.id, commission_name: c.commission_name, signer_name: c.signer_name, signer_title: c.signer_title, signature_url: c.signature_url }));
+
     for (const num of numbers) {
       try {
         const data = await consultarColegiado(num);
+        // Anti-duplicado: ¿ya tiene cert para este videoId?
+        if (supabase) {
+          const { data: existing } = await supabase.from('cpg_certificates').select('certificate_code').eq('collegiate_number', num).eq('video_id', certVideoId).maybeSingle();
+          if (existing) {
+            resultsList.push({ num, name: data.name, cpgStatus: data.status, status: 'duplicate', msg: 'Ya existía: ' + existing.certificate_code });
+            continue;
+          }
+        }
         const certCode = 'CPG-' + fmt(currentDate) + '-' + num + '-' + certVideoId;
         const certRecord = {
           certificate_code: certCode, collegiate_number: num,
@@ -801,11 +827,16 @@ function BulkCertificateEmitter({ videos, activities, onClose, onCertsCreated })
           video_id: certVideoId, video_title: certTitle,
           video_duration: String(certDuration || ''), issued_at: currentDate.toISOString(),
           verify_url: APP_URL + '/?cert=' + certCode,
+          commissions_snapshot: commissionsSnapshot,
         };
         if (supabase) {
-          const { error: insertErr } = await supabase.from('cpg_certificates').upsert(certRecord, { onConflict: 'certificate_code' });
-          if (insertErr) resultsList.push({ num, name: data.name, status: 'error', msg: insertErr.message });
-          else resultsList.push({ num, name: data.name, cpgStatus: data.status, status: 'ok', code: certCode });
+          const { error: insertErr } = await supabase.from('cpg_certificates').insert(certRecord);
+          if (insertErr) {
+            if (insertErr.code === '23505') resultsList.push({ num, name: data.name, cpgStatus: data.status, status: 'duplicate', msg: 'Ya contaba con el certificado' });
+            else resultsList.push({ num, name: data.name, status: 'error', msg: insertErr.message });
+          } else {
+            resultsList.push({ num, name: data.name, cpgStatus: data.status, status: 'ok', code: certCode });
+          }
         }
       } catch (e) {
         resultsList.push({ num, name: '', status: 'error', msg: e.message || 'Colegiado no encontrado' });
@@ -816,6 +847,7 @@ function BulkCertificateEmitter({ videos, activities, onClose, onCertsCreated })
   };
 
   const successCount = results ? results.filter(r => r.status === 'ok').length : 0;
+  const dupCount = results ? results.filter(r => r.status === 'duplicate').length : 0;
   const errorCount = results ? results.filter(r => r.status === 'error').length : 0;
 
   return (
@@ -872,13 +904,14 @@ function BulkCertificateEmitter({ videos, activities, onClose, onCertsCreated })
           {!results && <button onClick={handleProcess} disabled={processing} className="w-full bg-yellow-600 hover:bg-yellow-700 disabled:bg-yellow-800 text-white font-bold py-3.5 rounded-lg transition flex items-center justify-center gap-2 text-lg">{processing ? <><Loader2 size={20} className="animate-spin" /> Procesando...</> : <><Award size={20} /> Generar certificados</>}</button>}
           {results && (
             <div>
-              <div className="grid grid-cols-2 gap-3 mb-4">
+              <div className="grid grid-cols-3 gap-3 mb-4">
                 <div className="bg-green-900/20 border border-green-700/30 rounded-xl p-3 text-center"><p className="text-2xl font-bold text-green-400">{successCount}</p><p className="text-xs text-gray-400">Emitidos</p></div>
+                <div className="bg-amber-900/20 border border-amber-700/30 rounded-xl p-3 text-center"><p className="text-2xl font-bold text-amber-400">{dupCount}</p><p className="text-xs text-gray-400">Ya existían</p></div>
                 <div className="bg-red-900/20 border border-red-700/30 rounded-xl p-3 text-center"><p className="text-2xl font-bold text-red-400">{errorCount}</p><p className="text-xs text-gray-400">Errores</p></div>
               </div>
               <div className="overflow-x-auto rounded-xl border border-gray-800 max-h-60 overflow-y-auto">
                 <table className="w-full text-sm"><thead className="bg-gray-900 text-gray-400 uppercase text-xs sticky top-0"><tr><th className="text-left px-3 py-2">Colegiado</th><th className="text-left px-3 py-2">Nombre</th><th className="text-left px-3 py-2">Estado</th><th className="text-left px-3 py-2">Resultado</th></tr></thead>
-                <tbody>{results.map((r, i) => (<tr key={i} className="border-t border-gray-800"><td className="px-3 py-2 text-white font-mono">{r.num}</td><td className="px-3 py-2 text-gray-300">{r.name || '—'}</td><td className="px-3 py-2"><span className={`text-xs font-bold ${r.cpgStatus === 'ACTIVO' ? 'text-green-400' : 'text-gray-500'}`}>{r.cpgStatus || '—'}</span></td><td className="px-3 py-2">{r.status === 'ok' ? <span className="text-xs text-green-400 flex items-center gap-1"><CheckCircle size={12} /> Emitido</span> : <span className="text-xs text-red-400 flex items-center gap-1"><XCircle size={12} /> {r.msg}</span>}</td></tr>))}</tbody></table>
+                <tbody>{results.map((r, i) => (<tr key={i} className="border-t border-gray-800"><td className="px-3 py-2 text-white font-mono">{r.num}</td><td className="px-3 py-2 text-gray-300">{r.name || '—'}</td><td className="px-3 py-2"><span className={`text-xs font-bold ${r.cpgStatus === 'ACTIVO' ? 'text-green-400' : 'text-gray-500'}`}>{r.cpgStatus || '—'}</span></td><td className="px-3 py-2">{r.status === 'ok' ? <span className="text-xs text-green-400 flex items-center gap-1"><CheckCircle size={12} /> Emitido</span> : r.status === 'duplicate' ? <span className="text-xs text-amber-400 flex items-center gap-1"><Shield size={12} /> {r.msg}</span> : <span className="text-xs text-red-400 flex items-center gap-1"><XCircle size={12} /> {r.msg}</span>}</td></tr>))}</tbody></table>
               </div>
               <button onClick={() => { setResults(null); setColegiadosText(''); setCsvFile(null); }} className="mt-4 bg-blue-600 hover:bg-blue-700 text-white font-semibold px-5 py-2 rounded-lg text-sm transition">Emitir otro lote</button>
             </div>
@@ -917,6 +950,8 @@ export default function App() {
   const [siteLogos, setSiteLogos] = useState(DEFAULT_SITE_LOGOS);
   // ── FIX #2: estado para recovery mode ──
   const [showPasswordReset, setShowPasswordReset] = useState(false);
+  // ── Entrega 2: estados para comisiones y asistencia ──
+  const [commissions, setCommissions] = useState([]);
 
   const certCodeFromUrl = new URLSearchParams(window.location.search).get('cert');
 
@@ -1051,6 +1086,14 @@ export default function App() {
     } catch {}
   };
 
+  const loadCommissions = async () => {
+    if (!supabase) return;
+    try {
+      const { data } = await supabase.from('cpg_commissions').select('*').eq('active', true).order('display_order', { ascending: true });
+      if (data) setCommissions(data);
+    } catch {}
+  };
+
   const loadSiteLogos = async () => {
     if (!supabase) return;
     try {
@@ -1086,7 +1129,7 @@ export default function App() {
           if (!error) {
             if (data?.videos?.length) { setVideos(data.videos); localStorage.setItem('cpg_videos', JSON.stringify(data.videos)); }
             if (data?.activities?.length) { setActivities(data.activities); localStorage.setItem('cpg_activities', JSON.stringify(data.activities)); }
-            if (data?.videos?.length || data?.activities?.length) { await loadViewCounts(); await loadLiveSession(); await loadCertConfig(); await loadSiteLogos(); return; }
+            if (data?.videos?.length || data?.activities?.length) { await loadViewCounts(); await loadLiveSession(); await loadCertConfig(); await loadSiteLogos(); await loadCommissions(); return; }
           }
         } catch {}
       }
@@ -1098,6 +1141,7 @@ export default function App() {
       await loadLiveSession();
       await loadCertConfig();
       await loadSiteLogos();
+      await loadCommissions();
     };
     loadContent();
   }, []);
@@ -1261,10 +1305,10 @@ export default function App() {
 
         {view === 'home' && <HomeView videos={videos} viewCounts={viewCounts} recentVideos={recentVideos} categories={categories} upcomingVideos={upcomingVideos} activities={activities} completedVideos={completedVideos} sessionUser={sessionUser} searchQuery={searchQuery} setSearchQuery={setSearchQuery} onVideoSelect={(v) => { if (!isVideoPublished(v)) return; setSelectedVideo(v); incrementViewCount(v.id); setView('player'); }} />}
         {view === 'live' && <LiveSessionView session={liveSession} onBack={() => setView('home')} sessionUser={sessionUser} onRegisterAttendance={registerAttendance} />}
-        {view === 'player' && selectedVideo && <PlayerView video={selectedVideo} viewCounts={viewCounts} onBack={() => setView('home')} sessionUser={sessionUser} userProfile={userProfile} setUserProfile={setUserProfile} isCompleted={completedVideos.has(selectedVideo.id)} onMarkCompleted={() => markVideoCompleted(selectedVideo.id)} certTemplate={certTemplate} />}
+        {view === 'player' && selectedVideo && <PlayerView video={selectedVideo} viewCounts={viewCounts} onBack={() => setView('home')} sessionUser={sessionUser} userProfile={userProfile} setUserProfile={setUserProfile} isCompleted={completedVideos.has(selectedVideo.id)} onMarkCompleted={() => markVideoCompleted(selectedVideo.id)} certTemplate={certTemplate} commissions={commissions} />}
         {view === 'login' && <LoginView onLogin={handleLogin} onBack={() => setView('home')} authError={authError} />}
-        {view === 'admin' && isAdmin && <AdminDashboard videos={videos} viewCounts={viewCounts} totalViews={totalViews} activities={activities} liveSession={liveSession} onSaveLiveSession={saveLiveSession} onVideosChange={persistVideos} onActivitiesChange={persistActivities} onGenerateCertificate={handleManualCertificate} certTemplate={certTemplate} onSaveCertConfig={saveCertConfig} siteLogos={siteLogos} onSaveSiteLogos={saveSiteLogos} adminRole={adminRole} />}
-        {view === 'certificate' && manualCertificate && <div className="min-h-screen bg-[#141414] pt-20 px-4 md:px-16 pb-12"><CertificateView video={manualCertificate.video} userProfile={manualCertificate.profile} onBack={handleCloseManualCertificate} certTemplate={certTemplate} /></div>}
+        {view === 'admin' && isAdmin && <AdminDashboard videos={videos} viewCounts={viewCounts} totalViews={totalViews} activities={activities} liveSession={liveSession} onSaveLiveSession={saveLiveSession} onVideosChange={persistVideos} onActivitiesChange={persistActivities} onGenerateCertificate={handleManualCertificate} certTemplate={certTemplate} onSaveCertConfig={saveCertConfig} siteLogos={siteLogos} onSaveSiteLogos={saveSiteLogos} adminRole={adminRole} commissions={commissions} />}
+        {view === 'certificate' && manualCertificate && <div className="min-h-screen bg-[#141414] pt-20 px-4 md:px-16 pb-12"><CertificateView video={manualCertificate.video} userProfile={manualCertificate.profile} onBack={handleCloseManualCertificate} certTemplate={certTemplate} commissions={commissions} /></div>}
         {view === 'history' && !sessionUser.isGuest && !reprintCert && <HistoryView sessionUser={sessionUser} onBack={() => setView('home')} onReprintCert={(cert) => setReprintCert(cert)} />}
         {view === 'history' && reprintCert && <div className="min-h-screen bg-[#141414] pt-20 px-4 md:px-16 pb-12"><CertificateReprintView cert={reprintCert} onBack={() => setReprintCert(null)} certTemplate={certTemplate} /></div>}
       </div>
@@ -1363,10 +1407,11 @@ function HistoryView({ sessionUser, onBack, onReprintCert }) {
   );
 }
 
-// ── CERTIFICADO CANVAS COMPARTIDO — renderiza el certificado completo ──
-function CertificateCanvas({ certRef, onImageLoaded, tpl, recipientName, statusText, collegiateNumber, videoTitle, videoDuration, dateFormatted, certificateCode, qrUrl }) {
+// ── CERTIFICADO CANVAS COMPARTIDO — v2 con firmas múltiples ──
+function CertificateCanvas({ certRef, onImageLoaded, tpl, recipientName, statusText, collegiateNumber, videoTitle, videoDuration, dateFormatted, certificateCode, qrUrl, commissionsSnapshot = [] }) {
   const [imagesReady, setImagesReady] = useState(0);
-  const totalImages = [tpl.logoCpgUrl, tpl.logoCaeducUrl, tpl.signatureUrl, tpl.sealUrl, tpl.backgroundUrl].filter(Boolean).length;
+  const commissionImages = commissionsSnapshot.filter(c => c.signature_url).length;
+  const totalImages = [tpl.logoCpgUrl, tpl.logoCaeducUrl, tpl.signatureUrl, tpl.sealUrl, tpl.backgroundUrl].filter(Boolean).length + commissionImages;
   const handleImgLoad = () => { setImagesReady(p => p + 1); };
   useEffect(() => { if (imagesReady >= totalImages) onImageLoaded?.(); }, [imagesReady, totalImages]);
   useEffect(() => { if (totalImages === 0) onImageLoaded?.(); }, []);
@@ -1386,6 +1431,41 @@ function CertificateCanvas({ certRef, onImageLoaded, tpl, recipientName, statusT
   const statusLabel = statusText?.includes('ACTIVO') ? 'ACTIVO' : statusText?.includes('INACTIVO') ? 'INACTIVO' : statusText;
   const showStatus = statusText && statusText !== 'DESCONOCIDO' && statusText !== 'INVITADO' && statusText.length > 0;
   const dynTitleSize = videoTitle.length > 60 ? Math.max(L.courseTitle.fontSize - 7, 14) : videoTitle.length > 40 ? Math.max(L.courseTitle.fontSize - 4, 16) : L.courseTitle.fontSize;
+
+  // ── Construir array de firmantes (Coordinador CAEDUC primero, luego comisiones) ──
+  const allSigners = [
+    {
+      isCoordinator: true,
+      commission_name: 'CAEDUC',
+      signer_name: tpl.coordinatorName || 'Coordinador CAEDUC',
+      signer_title: tpl.coordinatorTitle || 'Coordinador',
+      signature_url: tpl.signatureUrl || '',
+    },
+    ...commissionsSnapshot,
+  ];
+  const totalSigners = allSigners.length;
+
+  // Decidir layout: 1 fila si ≤3, 2 filas si ≥4
+  const useTwoRows = totalSigners >= 4;
+  const perRow = useTwoRows ? Math.ceil(totalSigners / 2) : totalSigners;
+  const rows = useTwoRows
+    ? [allSigners.slice(0, perRow), allSigners.slice(perRow)]
+    : [allSigners];
+
+  // Dimensiones dinámicas por firmante
+  const sigAreaLeft = 60;
+  const sigAreaWidth = 700;
+  const sigBlockGap = 10;
+  const maxSigWidth = useTwoRows ? 165 : 200;
+  const sigBlockW = Math.min(maxSigWidth, Math.floor((sigAreaWidth - sigBlockGap * (perRow - 1)) / perRow));
+  const sigBlockH = useTwoRows ? 90 : 115;
+
+  const bottomY = L.bottomY || 25;
+  const row1Y = useTwoRows ? bottomY + sigBlockH + 15 : bottomY;
+  const row2Y = bottomY;
+
+  const qrSize = useTwoRows ? 85 : (L.qr.w || 110);
+  const sealSize = useTwoRows ? 85 : (L.seal.w || 130);
 
   return (
     <div ref={certRef} className="relative" style={{ width: '1056px', height: '816px', fontFamily: "'Georgia', 'Times New Roman', serif", background: '#f0ede8', overflow: 'hidden' }}>
@@ -1436,7 +1516,7 @@ function CertificateCanvas({ certRef, onImageLoaded, tpl, recipientName, statusT
           </div>
         )}
 
-        {/* Nombre del profesional */}
+        {/* Nombre */}
         <div className="absolute text-center" style={{ top: L.name.top + 'px', left: '50%', transform: 'translateX(-50%)', width: '700px' }}>
           <p style={{ fontSize: L.name.fontSize + 'px', fontWeight: 'bold', color: '#1a1a2e', letterSpacing: '0.3px', lineHeight: '1.15' }}>{recipientName}</p>
         </div>
@@ -1478,36 +1558,82 @@ function CertificateCanvas({ certRef, onImageLoaded, tpl, recipientName, statusT
           <p style={{ fontSize: L.date.fontSize + 'px', color: '#333' }}>{dateFormatted}</p>
         </div>
 
-        {/* Fila inferior: Firma | Sello | QR */}
-        <div className="absolute" style={{ bottom: (L.bottomY || 25) + 'px', left: '0px', right: '0px' }}>
-          <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'center', gap: (L.bottomGap || 60) + 'px' }}>
-            <div style={{ textAlign: 'center', width: (L.signature.w + 40) + 'px' }}>
-              {tpl.signatureUrl && (
-                <div style={{ position: 'relative', left: (L.signature.x || 0) + 'px', top: (L.signature.y || 0) + 'px' }}>
-                  <img src={tpl.signatureUrl} alt="Firma" crossOrigin="anonymous" style={{ maxWidth: L.signature.w + 'px', maxHeight: L.signature.h + 'px', objectFit: 'contain', margin: '0 auto 6px', display: 'block' }} onLoad={handleImgLoad} onError={(e) => { e.target.style.display='none'; handleImgLoad(); }} />
-                </div>
-              )}
-              <div style={{ borderTop: '1.5px solid #444', paddingTop: '6px', width: (L.signature.w - 30) + 'px', margin: '0 auto', position: 'relative', left: (L.coordBlock?.x || 0) + 'px', top: (L.coordBlock?.y || 0) + 'px' }}>
-                <p style={{ fontSize: L.coordName.fontSize + 'px', fontWeight: 'bold', color: '#1a1a2e' }}>{tpl.coordinatorName}</p>
-                <p style={{ fontSize: L.coordTitle.fontSize + 'px', color: '#555' }}>{tpl.coordinatorTitle}</p>
+        {/* ── FIRMAS: layout dinámico 1 o 2 filas ── */}
+        {rows.map((rowSigners, rowIdx) => {
+          const rowY = useTwoRows ? (rowIdx === 0 ? row1Y : row2Y) : bottomY;
+          const rowWidth = rowSigners.length * sigBlockW + (rowSigners.length - 1) * sigBlockGap;
+          const startX = useTwoRows
+            ? Math.max(sigAreaLeft, Math.floor((1056 - 180 - rowWidth) / 2))
+            : Math.max(sigAreaLeft, Math.floor((1056 - rowWidth) / 2));
+
+          return (
+            <div key={rowIdx} className="absolute" style={{ bottom: rowY + 'px', left: startX + 'px' }}>
+              <div style={{ display: 'flex', alignItems: 'flex-end', gap: sigBlockGap + 'px' }}>
+                {rowSigners.map((signer, idx) => (
+                  <div key={idx} style={{ textAlign: 'center', width: sigBlockW + 'px' }}>
+                    {signer.signature_url ? (
+                      <img
+                        src={signer.signature_url}
+                        alt={`Firma ${signer.commission_name}`}
+                        crossOrigin="anonymous"
+                        style={{
+                          maxWidth: (sigBlockW - 10) + 'px',
+                          maxHeight: (useTwoRows ? 40 : 55) + 'px',
+                          objectFit: 'contain',
+                          margin: '0 auto 4px',
+                          display: 'block'
+                        }}
+                        onLoad={handleImgLoad}
+                        onError={(e) => { e.target.style.display='none'; handleImgLoad(); }}
+                      />
+                    ) : (
+                      <div style={{ height: (useTwoRows ? 40 : 55) + 'px' }} />
+                    )}
+                    <div style={{ borderTop: '1px solid #444', paddingTop: '4px', width: (sigBlockW - 20) + 'px', margin: '0 auto' }}>
+                      <p style={{ fontSize: (useTwoRows ? 11 : 13) + 'px', fontWeight: 'bold', color: '#1a1a2e', lineHeight: '1.15', margin: 0 }}>{signer.signer_name}</p>
+                      <p style={{ fontSize: (useTwoRows ? 9 : 11) + 'px', color: '#555', lineHeight: '1.1', margin: '1px 0 0' }}>{signer.signer_title}</p>
+                      <p style={{ fontSize: (useTwoRows ? 8 : 10) + 'px', color: '#888', fontStyle: 'italic', lineHeight: '1.1', margin: '1px 0 0' }}>{signer.commission_name}</p>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
-            <div style={{ textAlign: 'center', width: (L.seal.w + 20) + 'px', position: 'relative', left: (L.seal.x || 0) + 'px', top: (L.seal.y || 0) + 'px' }}>
+          );
+        })}
+
+        {/* ── SELLO y QR ── */}
+        {useTwoRows ? (
+          <div className="absolute" style={{ right: '40px', bottom: bottomY + 'px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
               {tpl.sealUrl && (
-                <img src={tpl.sealUrl} alt="Sello" crossOrigin="anonymous" style={{ width: L.seal.w + 'px', height: L.seal.w + 'px', objectFit: 'contain', margin: '0 auto', opacity: 0.85 }} onLoad={handleImgLoad} onError={(e) => { e.target.style.display='none'; handleImgLoad(); }} />
+                <img src={tpl.sealUrl} alt="Sello" crossOrigin="anonymous" style={{ width: sealSize + 'px', height: sealSize + 'px', objectFit: 'contain', opacity: 0.85 }} onLoad={handleImgLoad} onError={(e) => { e.target.style.display='none'; handleImgLoad(); }} />
               )}
-            </div>
-            <div style={{ textAlign: 'center', width: (L.qr.w + 60) + 'px' }}>
-              <img src={qrUrl} alt="QR" crossOrigin="anonymous" style={{ width: L.qr.w + 'px', height: L.qr.w + 'px', display: 'block', margin: '0 auto' }} />
-              <p style={{ fontSize: '10px', color: '#555', marginTop: '5px', fontFamily: "'Courier New', monospace", letterSpacing: '0.4px', fontWeight: 'bold' }}>{certificateCode}</p>
-              <p style={{ fontSize: '8px', color: '#999', marginTop: '2px' }}>Escanea para verificar</p>
+              <div style={{ textAlign: 'center' }}>
+                <img src={qrUrl} alt="QR" crossOrigin="anonymous" style={{ width: qrSize + 'px', height: qrSize + 'px', display: 'block', margin: '0 auto' }} />
+                <p style={{ fontSize: '8px', color: '#555', marginTop: '2px', fontFamily: "'Courier New', monospace", letterSpacing: '0.3px', fontWeight: 'bold' }}>{certificateCode}</p>
+                <p style={{ fontSize: '7px', color: '#999', marginTop: '1px' }}>Escanea para verificar</p>
+              </div>
             </div>
           </div>
-        </div>
+        ) : (
+          <div className="absolute" style={{ right: '40px', bottom: bottomY + 'px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}>
+              {tpl.sealUrl && (
+                <img src={tpl.sealUrl} alt="Sello" crossOrigin="anonymous" style={{ width: sealSize + 'px', height: sealSize + 'px', objectFit: 'contain', opacity: 0.85 }} onLoad={handleImgLoad} onError={(e) => { e.target.style.display='none'; handleImgLoad(); }} />
+              )}
+              <div style={{ textAlign: 'center' }}>
+                <img src={qrUrl} alt="QR" crossOrigin="anonymous" style={{ width: qrSize + 'px', height: qrSize + 'px', display: 'block', margin: '0 auto' }} />
+                <p style={{ fontSize: '9px', color: '#555', marginTop: '3px', fontFamily: "'Courier New', monospace", letterSpacing: '0.3px', fontWeight: 'bold' }}>{certificateCode}</p>
+                <p style={{ fontSize: '8px', color: '#999', marginTop: '1px' }}>Escanea para verificar</p>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
 }
+
 
 // ── REIMPRESIÓN DE CERTIFICADO DESDE HISTORIAL ────────────────
 function CertificateReprintView({ cert, onBack, certTemplate }) {
@@ -1558,6 +1684,7 @@ function CertificateReprintView({ cert, onBack, certTemplate }) {
           collegiateNumber={cert.collegiate_number} videoTitle={cert.video_title}
           videoDuration={cert.video_duration || ''} dateFormatted={dateFormatted}
           certificateCode={cert.certificate_code} qrUrl={qrUrl}
+          commissionsSnapshot={cert.commissions_snapshot || []}
           />
         </CertScaledPreview>
       </div>
@@ -1957,7 +2084,7 @@ function VideoCard({ video, viewCount = 0, onClick, isSmall, isPublished, isComp
 }
 
 // ── PLAYER VIEW ───────────────────────────────────
-function PlayerView({ video, viewCounts, onBack, sessionUser, userProfile, setUserProfile, isCompleted, onMarkCompleted, certTemplate }) {
+function PlayerView({ video, viewCounts, onBack, sessionUser, userProfile, setUserProfile, isCompleted, onMarkCompleted, certTemplate, commissions = [] }) {
   const [showQuiz, setShowQuiz] = useState(false);
   const [showCert, setShowCert] = useState(false);
   const [lookingUpStatus, setLookingUpStatus] = useState(false);
@@ -2014,7 +2141,7 @@ function PlayerView({ video, viewCounts, onBack, sessionUser, userProfile, setUs
     <div className="min-h-screen bg-[#141414] pt-20 px-4 md:px-16 pb-12">
       <button onClick={onBack} className="flex items-center gap-2 text-gray-400 hover:text-white mb-6 transition"><ChevronLeft /> Regresar</button>
       {showCert ? (
-        <CertificateView video={video} userProfile={userProfile} sessionUser={sessionUser} onBack={() => setShowCert(false)} certTemplate={certTemplate} />
+        <CertificateView video={video} userProfile={userProfile} sessionUser={sessionUser} onBack={() => setShowCert(false)} certTemplate={certTemplate} commissions={commissions} />
       ) : showQuiz ? (
         <QuizModal video={video} onCancel={() => setShowQuiz(false)} onPass={() => { onMarkCompleted(); setShowCert(true); }} sessionUser={sessionUser} userProfile={userProfile} setUserProfile={setUserProfile} />
       ) : (
@@ -2163,7 +2290,7 @@ function QuizModal({ video, onCancel, onPass, sessionUser, userProfile, setUserP
 }
 
 // ── CERTIFICATE VIEW ──────────────────────────────
-function CertificateView({ video, userProfile, sessionUser, onBack, certTemplate }) {
+function CertificateView({ video, userProfile, sessionUser, onBack, certTemplate, commissions = [] }) {
   const certRef = useRef(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [imageLoaded, setImageLoaded] = useState(false);
@@ -2204,18 +2331,33 @@ function CertificateView({ video, userProfile, sessionUser, onBack, certTemplate
     if (!supabase || saved || !resolvedStatus) return;
     if (!collegiateNum || collegiateNum === '0000') return;
     setSaved(true);
-    supabase.from('cpg_certificates').upsert({
-      certificate_code: certificateCode,
-      collegiate_number: collegiateNum,
-      recipient_name: userProfile.name,
-      status: resolvedStatus,
-      video_id: video.id,
-      video_title: video.title,
-      video_duration: String(video.duration || ''),
-      issued_at: currentDate.toISOString(),
-      verify_url: `${APP_URL}/?cert=${certificateCode}`,
-    }, { onConflict: 'certificate_code' }).then(({ error }) => {
-      if (error) console.warn('[CPG Cert] No se pudo guardar registro:', error.message);
+    // Construir snapshot de comisiones firmantes del curso (si tiene)
+    const certCommissions = (video.hasCommissions && video.commissions && commissions.length > 0)
+      ? commissions.filter(c => video.commissions.includes(c.id)).map(c => ({
+          id: c.id,
+          commission_name: c.commission_name,
+          signer_name: c.signer_name,
+          signer_title: c.signer_title,
+          signature_url: c.signature_url,
+        }))
+      : [];
+    // Chequear si ya existe certificado para este colegiado/curso (anti-duplicado)
+    supabase.from('cpg_certificates').select('certificate_code').eq('collegiate_number', collegiateNum).eq('video_id', video.id).maybeSingle().then(({ data: existing }) => {
+      if (existing) { console.log('[CPG Cert] Ya existía certificado para este colegiado/curso:', existing.certificate_code); return; }
+      supabase.from('cpg_certificates').insert({
+        certificate_code: certificateCode,
+        collegiate_number: collegiateNum,
+        recipient_name: userProfile.name,
+        status: resolvedStatus,
+        video_id: video.id,
+        video_title: video.title,
+        video_duration: String(video.duration || ''),
+        issued_at: currentDate.toISOString(),
+        verify_url: `${APP_URL}/?cert=${certificateCode}`,
+        commissions_snapshot: certCommissions,
+      }).then(({ error }) => {
+        if (error && error.code !== '23505') console.warn('[CPG Cert] No se pudo guardar registro:', error.message);
+      });
     });
   }, [resolvedStatus, saved]);
 
@@ -2256,6 +2398,7 @@ function CertificateView({ video, userProfile, sessionUser, onBack, certTemplate
             collegiateNumber={userProfile.collegiateNumber} videoTitle={video.title}
             videoDuration={String(video.duration || '')} dateFormatted={dateFormatted}
             certificateCode={certificateCode} qrUrl={qrUrl}
+            commissionsSnapshot={(video.hasCommissions && video.commissions && commissions.length > 0) ? commissions.filter(c => video.commissions.includes(c.id)) : []}
           />
         </CertScaledPreview>
       </div>
@@ -2337,7 +2480,7 @@ function QuestionEditor({ question, idx, onQuestionChange }) {
 }
 
 // ── LIVE ADMIN PANEL ──────────────────────────────
-function LiveAdminPanel({ liveSession, onSave }) {
+function LiveAdminPanel({ liveSession, onSave, onOpenAttendance }) {
   const PLATFORMS = [
     { id: 'youtube', label: 'YouTube Live', hint: 'Pega la URL del video en vivo', color: 'border-red-600 bg-red-900/20 text-red-300' },
     { id: 'zoom',    label: 'Zoom',         hint: 'Pega el enlace de invitación de Zoom', color: 'border-blue-600 bg-blue-900/20 text-blue-300' },
@@ -2429,7 +2572,7 @@ function LiveAdminPanel({ liveSession, onSave }) {
           <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${isActive ? 'bg-red-600/30 text-red-300' : 'bg-gray-700 text-gray-400'}`}>{isActive ? '● ACTIVA' : '○ INACTIVA'}</span>
         </div>
         <div className="flex gap-2 flex-wrap">
-          <button onClick={handleShowAttendees} className="flex items-center gap-2 bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded-lg text-sm font-semibold transition"><Users size={16} /> Asistentes</button>
+          <button onClick={() => onOpenAttendance && onOpenAttendance()} className="flex items-center gap-2 bg-indigo-700 hover:bg-indigo-600 px-4 py-2 rounded-lg text-sm font-semibold transition"><Users size={16} /> Asistencia por actividad</button>
           <button onClick={() => { setShowSessionsLog(p => !p); if (!showSessionsLog) loadSessionsLog(); }} className="flex items-center gap-2 bg-indigo-700 hover:bg-indigo-600 px-4 py-2 rounded-lg text-sm font-semibold transition"><History size={16} /> Informe sesiones</button>
           <button onClick={handleToggle} disabled={saving} className={`flex items-center gap-2 px-5 py-2 rounded-lg font-bold text-sm transition ${isActive ? 'bg-gray-600 hover:bg-gray-500 text-white' : 'bg-red-600 hover:bg-red-500 text-white'}`}>
             {saving ? <Loader2 size={16} className="animate-spin" /> : <Radio size={16} />}
@@ -3453,7 +3596,7 @@ function AuditLogViewer() {
 }
 
 // ── ADMIN DASHBOARD ───────────────────────────────
-function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSession, onSaveLiveSession, onVideosChange, onActivitiesChange, onGenerateCertificate, certTemplate, onSaveCertConfig, siteLogos, onSaveSiteLogos, adminRole }) {
+function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSession, onSaveLiveSession, onVideosChange, onActivitiesChange, onGenerateCertificate, certTemplate, onSaveCertConfig, siteLogos, onSaveSiteLogos, adminRole, commissions = [] }) {
   const [editingVideo, setEditingVideo] = useState(null);
   const [manualCertVideo, setManualCertVideo] = useState(null);
   const [manualProfile, setManualProfile] = useState({ name: '', collegiateNumber: '', status: '' });
@@ -3466,6 +3609,8 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
   const [showAdminUsersSection, setShowAdminUsersSection] = useState(false);
   const [showAuditLogSection, setShowAuditLogSection] = useState(false);
   const [showBulkCert, setShowBulkCert] = useState(false);
+  const [showAttendanceReport, setShowAttendanceReport] = useState(false);
+  const [showCommissionsSection, setShowCommissionsSection] = useState(false);
   const [certsData, setCertsData] = useState([]);
   const [certsLoading, setCertsLoading] = useState(false);
   const [certsLoaded, setCertsLoaded] = useState(false);
@@ -3499,9 +3644,9 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
   };
 
   // ── CAMBIO 5: handleEdit preserva platform ──
-  const handleEdit = (video) => { setSaveError(''); setEditingVideo(video); setFormData({ ...video, scheduledAt: video.scheduledAt || '', thumbnail: video.thumbnail || '', platform: video.platform || 'youtube' }); setQuestions((video.questions || []).map(q => ({ ...q, options: [...(q.options || [])] }))); };
+  const handleEdit = (video) => { setSaveError(''); setEditingVideo(video); setFormData({ ...video, scheduledAt: video.scheduledAt || '', thumbnail: video.thumbnail || '', platform: video.platform || 'youtube', hasCommissions: !!video.hasCommissions, commissions: video.commissions || [] }); setQuestions((video.questions || []).map(q => ({ ...q, options: [...(q.options || [])] }))); };
   // ── CAMBIO 5: handleCreate con platform default ──
-  const handleCreate = () => { setSaveError(''); const e = { id: Date.now(), title: '', category: '', youtubeId: '', duration: '', description: '', thumbnail: '', scheduledAt: '', quizEnabled: false, viewCount: 0, platform: 'youtube' }; setEditingVideo(e); setFormData(e); setQuestions(Array(10).fill(null).map((_, i) => ({ question: 'Pregunta ' + (i+1), options: ['Opción 1', 'Opción 2', 'Opción 3'], correctAnswer: 0 }))); };
+  const handleCreate = () => { setSaveError(''); const e = { id: Date.now(), title: '', category: '', youtubeId: '', duration: '', description: '', thumbnail: '', scheduledAt: '', quizEnabled: false, viewCount: 0, platform: 'youtube', hasCommissions: false, commissions: [] }; setEditingVideo(e); setFormData(e); setQuestions(Array(10).fill(null).map((_, i) => ({ question: 'Pregunta ' + (i+1), options: ['Opción 1', 'Opción 2', 'Opción 3'], correctAnswer: 0 }))); };
   const updateQuestion = useCallback((idx, updater) => { setQuestions(prev => prev.map((q, i) => i !== idx ? q : updater(q))); }, []);
   const handleSave = async () => { const nv = { ...formData, questions, viewCount: formData.viewCount || 0 }; setSaveError(''); try { if (videos.some(v => v.id === nv.id)) await onVideosChange(videos.map(v => v.id === nv.id ? nv : v)); else await onVideosChange([...videos, nv]); setEditingVideo(null); } catch (e) { setSaveError('No se pudieron guardar los cambios: ' + e.message); } };
   const handleDelete = async (id) => { if (confirm('¿Eliminar este video?')) { setSaveError(''); try { await onVideosChange(videos.filter(v => v.id !== id)); } catch (e) { setSaveError('No se pudo eliminar: ' + e.message); } } };
@@ -3634,6 +3779,38 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
             <div className="flex items-center gap-3 mb-4"><input type="checkbox" id="quizToggle" checked={formData.quizEnabled} onChange={e => setFormData({ ...formData, quizEnabled: e.target.checked })} className="w-5 h-5 text-blue-600 rounded" /><label htmlFor="quizToggle" className="font-bold text-lg cursor-pointer">Activar Evaluación para Certificado</label></div>
             {formData.quizEnabled && <div className="space-y-4"><p className="text-yellow-500 text-sm mb-4">Configura exactamente 10 preguntas. Marca la respuesta correcta en cada una.</p>{questions.map((q, idx) => <QuestionEditor key={idx} question={q} idx={idx} onQuestionChange={updateQuestion} />)}</div>}
           </div>
+          {/* ── Entrega 3: Comisiones firmantes del curso ── */}
+          <div className="bg-gray-900 p-6 rounded border border-gray-800 mt-4">
+            <div className="flex items-center gap-3 mb-2">
+              <input type="checkbox" id="commissionsToggle" checked={!!formData.hasCommissions} onChange={e => setFormData({ ...formData, hasCommissions: e.target.checked, commissions: e.target.checked ? (formData.commissions || []) : [] })} className="w-5 h-5 text-purple-600 rounded" />
+              <label htmlFor="commissionsToggle" className="font-bold text-lg cursor-pointer">¿Otra comisión involucrada?</label>
+            </div>
+            <p className="text-xs text-gray-500 mb-4">Además del Coordinador CAEDUC (firma siempre), marca qué comisiones firmarán los certificados de este curso.</p>
+            {formData.hasCommissions && (
+              <div>
+                {(!commissions || commissions.length === 0) ? (
+                  <p className="text-sm text-amber-400 bg-amber-900/20 border border-amber-700/30 rounded-lg px-3 py-2">No hay comisiones activas. Agrégalas en "Comisiones y firmantes" del panel principal.</p>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    {commissions.map(c => {
+                      const ids = formData.commissions || [];
+                      const checked = ids.includes(c.id);
+                      return (
+                        <label key={c.id} className={`flex items-center gap-2 p-2.5 rounded-lg border cursor-pointer transition ${checked ? 'border-purple-500 bg-purple-900/20' : 'border-gray-700 hover:border-gray-500'}`}>
+                          <input type="checkbox" checked={checked} onChange={() => { const next = checked ? ids.filter(x => x !== c.id) : [...ids, c.id]; setFormData({ ...formData, commissions: next }); }} className="w-4 h-4 accent-purple-500" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-white text-sm font-semibold truncate">{c.commission_name}</p>
+                            <p className="text-gray-500 text-xs truncate">{c.signer_name} · {c.signer_title}</p>
+                          </div>
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
+                <p className="text-xs text-gray-500 mt-2">{(formData.commissions || []).length} comisión{(formData.commissions || []).length !== 1 ? 'es' : ''} seleccionada{(formData.commissions || []).length !== 1 ? 's' : ''}</p>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     );
@@ -3671,7 +3848,7 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
           </div>
           <span className="text-gray-400 text-lg">{showLiveSection ? '▲' : '▼'}</span>
         </button>
-        {showLiveSection && <div className="border-t border-gray-800"><LiveAdminPanel liveSession={liveSession} onSave={onSaveLiveSession} /></div>}
+        {showLiveSection && <div className="border-t border-gray-800"><LiveAdminPanel liveSession={liveSession} onSave={onSaveLiveSession} onOpenAttendance={() => setShowAttendanceReport(true)} /></div>}
       </div>
 
       {/* ── PLANTILLA DE CERTIFICADO (colapsable) ── */}
@@ -3687,6 +3864,21 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
           <span className="text-gray-400 text-lg">{showCertTemplateSection ? '▲' : '▼'}</span>
         </button>
         {showCertTemplateSection && <div className="border-t border-gray-800"><CertTemplateAdmin certTemplate={certTemplate} onSave={onSaveCertConfig} /></div>}
+      </div>
+
+      {/* ── COMISIONES Y FIRMANTES (colapsable) ── */}
+      <div className="bg-[#1b1b1b] border border-gray-800 rounded-2xl mb-6 overflow-hidden">
+        <button type="button" onClick={() => setShowCommissionsSection(v => !v)} className="w-full flex items-center justify-between px-6 py-4 hover:bg-white/5 transition">
+          <div className="flex items-center gap-3">
+            <div className="bg-purple-600 p-2 rounded-lg"><Users size={18} className="text-white" /></div>
+            <div className="text-left">
+              <h2 className="text-xl font-bold text-white">Comisiones y firmantes</h2>
+              <p className="text-xs text-gray-400">Gestiona hasta 6 comisiones que pueden firmar certificados además del Coordinador CAEDUC</p>
+            </div>
+          </div>
+          <span className="text-gray-400 text-lg">{showCommissionsSection ? '▲' : '▼'}</span>
+        </button>
+        {showCommissionsSection && <div className="border-t border-gray-800"><CommissionsManager /></div>}
       </div>
 
       {/* ── ACTIVIDADES (colapsable) ── */}
@@ -3970,7 +4162,8 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
         ))}
       </div>
 
-      {showBulkCert && <BulkCertificateEmitter videos={videos} activities={activities} onClose={() => setShowBulkCert(false)} onCertsCreated={() => { setCertsLoaded(false); loadAdminCerts(); }} />}
+      {showBulkCert && <BulkCertificateEmitter videos={videos} activities={activities} commissions={commissions} onClose={() => setShowBulkCert(false)} onCertsCreated={() => { setCertsLoaded(false); loadAdminCerts(); }} />}
+      {showAttendanceReport && <AttendanceReportView videos={videos} activities={activities} commissions={commissions} onClose={() => { setShowAttendanceReport(false); setCertsLoaded(false); }} />}
       {showLogoManager && <LogoManagerModal siteLogos={siteLogos} onSave={onSaveSiteLogos} onClose={() => setShowLogoManager(false)} />}
 
       {manualCertVideo && (
