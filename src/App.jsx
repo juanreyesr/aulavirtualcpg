@@ -1360,15 +1360,6 @@ export default function App() {
 function HistoryView({ sessionUser, onBack, onReprintCert }) {
   const [certs, setCerts] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [expanded, setExpanded] = useState(false);
-  const [filterMode, setFilterMode] = useState('month'); // 'month' | 'range'
-  const [filterMonth, setFilterMonth] = useState(() => {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-  });
-  const [filterStart, setFilterStart] = useState('');
-  const [filterEnd, setFilterEnd] = useState('');
-
   useEffect(() => {
     const load = async () => {
       if (!supabase) { setLoading(false); return; }
@@ -1387,23 +1378,10 @@ function HistoryView({ sessionUser, onBack, onReprintCert }) {
 
   const fmt = (iso) => new Date(iso).toLocaleDateString('es-GT', { year: 'numeric', month: 'long', day: 'numeric' });
 
-  const filteredCerts = certs.filter(c => {
-    const d = new Date(c.issued_at);
-    if (filterMode === 'month' && filterMonth) {
-      const [y, m] = filterMonth.split('-').map(Number);
-      return d.getFullYear() === y && (d.getMonth() + 1) === m;
-    }
-    if (filterMode === 'range') {
-      if (filterStart && d < new Date(filterStart + 'T00:00:00')) return false;
-      if (filterEnd && d > new Date(filterEnd + 'T23:59:59')) return false;
-    }
-    return true;
-  });
-
   return (
     <div className="min-h-screen bg-[#141414] pt-24 px-4 md:px-16 pb-12">
       <button onClick={onBack} className="flex items-center gap-2 text-gray-400 hover:text-white mb-6 transition"><ChevronLeft /> Regresar</button>
-      <div className="mb-6">
+      <div className="mb-8">
         <h1 className="text-3xl font-bold text-white mb-1">Mis certificados</h1>
         <p className="text-gray-400 text-sm">Colegiado No. {sessionUser.collegiateNumber} · {certs.length} certificado{certs.length !== 1 ? 's' : ''} emitido{certs.length !== 1 ? 's' : ''}</p>
         <p className="text-gray-600 text-xs mt-1">Puedes descargar tus certificados las veces que necesites.</p>
@@ -1422,96 +1400,27 @@ function HistoryView({ sessionUser, onBack, onReprintCert }) {
       )}
 
       {!loading && certs.length > 0 && (
-        <div>
-          {/* Header colapsable con filtros */}
-          <div className="bg-[#1a1a1a] border border-gray-800 rounded-xl mb-5 overflow-hidden">
-            <button
-              onClick={() => setExpanded(v => !v)}
-              className="w-full flex items-center justify-between px-5 py-4 hover:bg-white/5 transition"
-            >
-              <div className="flex items-center gap-3">
-                <Award size={18} className="text-yellow-500" />
-                <span className="font-semibold text-white">
-                  {expanded ? `${filteredCerts.length} certificado${filteredCerts.length !== 1 ? 's' : ''} mostrado${filteredCerts.length !== 1 ? 's' : ''}` : 'Ver mis certificados'}
-                </span>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+          {certs.map(cert => (
+            <div key={cert.id} className="bg-[#1a1a1a] border border-gray-800 rounded-xl overflow-hidden hover:border-yellow-700/50 transition">
+              <div className="bg-gradient-to-r from-yellow-900/30 to-amber-900/10 border-b border-gray-800 px-4 py-3 flex items-center gap-2">
+                <Award size={16} className="text-yellow-500 shrink-0" />
+                <span className="text-xs font-bold text-yellow-400 uppercase tracking-wider">Certificado oficial</span>
+                <span className={`ml-auto text-xs font-bold px-2 py-0.5 rounded-full ${cert.status === 'ACTIVO' ? 'bg-green-900/40 text-green-400' : 'bg-red-900/40 text-red-400'}`}>{cert.status}</span>
               </div>
-              <span className="text-gray-400 text-sm">{expanded ? '▲ Ocultar' : '▼ Mostrar'}</span>
-            </button>
-
-            {expanded && (
-              <div className="border-t border-gray-800 px-5 py-4">
-                {/* Selector de modo de filtro */}
-                <div className="flex gap-2 mb-4 flex-wrap">
-                  <button
-                    onClick={() => setFilterMode('month')}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition ${filterMode === 'month' ? 'border-yellow-600 bg-yellow-900/30 text-yellow-300' : 'border-gray-700 text-gray-400 hover:border-gray-500'}`}
-                  >Por mes</button>
-                  <button
-                    onClick={() => setFilterMode('range')}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition ${filterMode === 'range' ? 'border-yellow-600 bg-yellow-900/30 text-yellow-300' : 'border-gray-700 text-gray-400 hover:border-gray-500'}`}
-                  >Por período</button>
-                  <button
-                    onClick={() => setFilterMode('all')}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition ${filterMode === 'all' ? 'border-yellow-600 bg-yellow-900/30 text-yellow-300' : 'border-gray-700 text-gray-400 hover:border-gray-500'}`}
-                  >Todos</button>
-                </div>
-
-                {filterMode === 'month' && (
-                  <div className="flex items-center gap-3">
-                    <label className="text-xs text-gray-400">Mes:</label>
-                    <input
-                      type="month"
-                      value={filterMonth}
-                      onChange={e => setFilterMonth(e.target.value)}
-                      className="bg-black border border-gray-700 rounded-lg px-3 py-1.5 text-white text-sm focus:border-yellow-600 outline-none"
-                    />
-                  </div>
-                )}
-
-                {filterMode === 'range' && (
-                  <div className="flex items-center gap-3 flex-wrap">
-                    <label className="text-xs text-gray-400">Desde:</label>
-                    <input type="date" value={filterStart} onChange={e => setFilterStart(e.target.value)} className="bg-black border border-gray-700 rounded-lg px-3 py-1.5 text-white text-sm focus:border-yellow-600 outline-none" />
-                    <label className="text-xs text-gray-400">Hasta:</label>
-                    <input type="date" value={filterEnd} onChange={e => setFilterEnd(e.target.value)} className="bg-black border border-gray-700 rounded-lg px-3 py-1.5 text-white text-sm focus:border-yellow-600 outline-none" />
-                  </div>
-                )}
+              <div className="p-4">
+                <h3 className="font-bold text-white text-sm mb-1 line-clamp-2">{cert.video_title}</h3>
+                <p className="text-xs text-gray-500 mb-3">{fmt(cert.issued_at)}</p>
+                <p className="text-xs font-mono text-gray-600 mb-4 truncate">{cert.certificate_code}</p>
+                <button
+                  onClick={() => onReprintCert(cert)}
+                  className="w-full bg-yellow-600/20 hover:bg-yellow-600/40 border border-yellow-700/50 text-yellow-300 hover:text-yellow-200 py-2 rounded-lg text-sm font-semibold transition flex items-center justify-center gap-2"
+                >
+                  <Download size={14} /> Descargar certificado
+                </button>
               </div>
-            )}
-          </div>
-
-          {/* Lista de certificados (solo visible si expanded) */}
-          {expanded && (
-            filteredCerts.length === 0 ? (
-              <div className="text-center py-12 text-gray-500">
-                <Award size={36} className="mx-auto mb-3 opacity-30" />
-                <p>No hay certificados en este período.</p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                {filteredCerts.map(cert => (
-                  <div key={cert.id} className="bg-[#1a1a1a] border border-gray-800 rounded-xl overflow-hidden hover:border-yellow-700/50 transition">
-                    <div className="bg-gradient-to-r from-yellow-900/30 to-amber-900/10 border-b border-gray-800 px-4 py-3 flex items-center gap-2">
-                      <Award size={16} className="text-yellow-500 shrink-0" />
-                      <span className="text-xs font-bold text-yellow-400 uppercase tracking-wider">Certificado oficial</span>
-                      <span className={`ml-auto text-xs font-bold px-2 py-0.5 rounded-full ${cert.status === 'ACTIVO' ? 'bg-green-900/40 text-green-400' : 'bg-red-900/40 text-red-400'}`}>{cert.status}</span>
-                    </div>
-                    <div className="p-4">
-                      <h3 className="font-bold text-white text-sm mb-1 line-clamp-2">{cert.video_title}</h3>
-                      <p className="text-xs text-gray-500 mb-3">{fmt(cert.issued_at)}</p>
-                      <p className="text-xs font-mono text-gray-600 mb-4 truncate">{cert.certificate_code}</p>
-                      <button
-                        onClick={() => onReprintCert(cert)}
-                        className="w-full bg-yellow-600/20 hover:bg-yellow-600/40 border border-yellow-700/50 text-yellow-300 hover:text-yellow-200 py-2 rounded-lg text-sm font-semibold transition flex items-center justify-center gap-2"
-                      >
-                        <Download size={14} /> Descargar certificado
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )
-          )}
+            </div>
+          ))}
         </div>
       )}
     </div>
@@ -3806,6 +3715,10 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
   const [certsLoading, setCertsLoading] = useState(false);
   const [certsLoaded, setCertsLoaded] = useState(false);
   const [certsFilter, setCertsFilter] = useState('');
+  const [certsDateMode, setCertsDateMode] = useState('month'); // 'month' | 'range' | 'all'
+  const [certsDateMonth, setCertsDateMonth] = useState(() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; });
+  const [certsDateStart, setCertsDateStart] = useState('');
+  const [certsDateEnd, setCertsDateEnd] = useState('');
   const now = new Date();
   const [filterMonth, setFilterMonth] = useState(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`);
   const [saveError, setSaveError] = useState('');
@@ -4220,7 +4133,8 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
 
         {showCertsSection && (
           <div className="border-t border-gray-800 p-6">
-            <div className="flex flex-col md:flex-row md:items-center gap-3 mb-5">
+            {/* Barra superior: búsqueda + acciones */}
+            <div className="flex flex-col md:flex-row md:items-center gap-3 mb-4">
               <div className="relative flex-1 max-w-sm">
                 <Search size={14} className="absolute left-3 top-2.5 text-gray-500 pointer-events-none" />
                 <input type="text" value={certsFilter} onChange={e => setCertsFilter(e.target.value)} placeholder="Filtrar por colegiado, nombre o curso..." className="w-full bg-black border border-gray-700 rounded-lg pl-8 pr-4 py-2 text-sm text-white focus:border-yellow-500 outline-none" />
@@ -4230,15 +4144,35 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
                 <button onClick={() => { setCertsLoaded(false); loadAdminCerts(); }} className="flex items-center gap-2 bg-gray-700 hover:bg-gray-600 px-3 py-2 rounded-lg text-sm font-semibold transition">
                   <Loader2 size={14} className={certsLoading ? 'animate-spin' : ''} /> Actualizar
                 </button>
-                {certsData.length > 0 && (
-                  <button onClick={() => exportCertsCSV(certsFilter ? certsData.filter(c => {
-                    const q = certsFilter.toLowerCase();
-                    return c.collegiate_number?.includes(q) || c.recipient_name?.toLowerCase().includes(q) || c.video_title?.toLowerCase().includes(q);
-                  }) : certsData)} className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 px-3 py-2 rounded-lg text-sm font-semibold transition">
-                    <Download size={14} /> Exportar CSV
-                  </button>
-                )}
               </div>
+            </div>
+
+            {/* Filtros de fecha */}
+            <div className="bg-black/30 border border-gray-800 rounded-xl px-4 py-3 mb-5">
+              <div className="flex flex-wrap gap-2 mb-3 items-center">
+                <span className="text-xs text-gray-500 uppercase tracking-wider mr-1">Filtrar por fecha:</span>
+                {[['month','Por mes'],['range','Por período'],['all','Mostrar todos']].map(([val, lbl]) => (
+                  <button key={val} onClick={() => setCertsDateMode(val)}
+                    className={`px-3 py-1 rounded-lg text-xs font-semibold border transition ${certsDateMode === val ? 'border-yellow-600 bg-yellow-900/30 text-yellow-300' : 'border-gray-700 text-gray-400 hover:border-gray-500'}`}>
+                    {lbl}
+                  </button>
+                ))}
+              </div>
+              {certsDateMode === 'month' && (
+                <div className="flex items-center gap-3">
+                  <label className="text-xs text-gray-400">Mes:</label>
+                  <input type="month" value={certsDateMonth} onChange={e => setCertsDateMonth(e.target.value)}
+                    className="bg-black border border-gray-700 rounded-lg px-3 py-1.5 text-white text-sm focus:border-yellow-500 outline-none" />
+                </div>
+              )}
+              {certsDateMode === 'range' && (
+                <div className="flex items-center gap-3 flex-wrap">
+                  <label className="text-xs text-gray-400">Desde:</label>
+                  <input type="date" value={certsDateStart} onChange={e => setCertsDateStart(e.target.value)} className="bg-black border border-gray-700 rounded-lg px-3 py-1.5 text-white text-sm focus:border-yellow-500 outline-none" />
+                  <label className="text-xs text-gray-400">Hasta:</label>
+                  <input type="date" value={certsDateEnd} onChange={e => setCertsDateEnd(e.target.value)} className="bg-black border border-gray-700 rounded-lg px-3 py-1.5 text-white text-sm focus:border-yellow-500 outline-none" />
+                </div>
+              )}
             </div>
 
             {certsLoading && <div className="text-center py-10"><Loader2 size={32} className="animate-spin text-yellow-500 mx-auto mb-3" /><p className="text-gray-400 text-sm">Cargando certificados...</p></div>}
@@ -4248,15 +4182,31 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
             )}
 
             {!certsLoading && certsData.length > 0 && (() => {
+              // Aplicar filtro de fecha
+              const dateFiltered = certsData.filter(c => {
+                const d = new Date(c.issued_at);
+                if (certsDateMode === 'month' && certsDateMonth) {
+                  const [y, m] = certsDateMonth.split('-').map(Number);
+                  return d.getFullYear() === y && (d.getMonth() + 1) === m;
+                }
+                if (certsDateMode === 'range') {
+                  if (certsDateStart && d < new Date(certsDateStart + 'T00:00:00')) return false;
+                  if (certsDateEnd && d > new Date(certsDateEnd + 'T23:59:59')) return false;
+                }
+                return true; // 'all'
+              });
+
+              // Aplicar búsqueda de texto sobre los ya filtrados por fecha
               const filtered = certsFilter
-                ? certsData.filter(c => {
+                ? dateFiltered.filter(c => {
                     const q = certsFilter.toLowerCase();
                     return c.collegiate_number?.includes(q) || c.recipient_name?.toLowerCase().includes(q) || c.video_title?.toLowerCase().includes(q);
                   })
-                : certsData;
+                : dateFiltered;
 
               return (
                 <>
+                  {/* Stats siempre sobre el total global */}
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
                     <div className="bg-yellow-900/20 border border-yellow-700/30 rounded-xl p-3 text-center">
                       <p className="text-2xl font-bold text-yellow-400">{certsData.length}</p>
@@ -4276,45 +4226,63 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
                     </div>
                   </div>
 
-                  {certsFilter && <p className="text-xs text-gray-500 mb-3">{filtered.length} resultado{filtered.length !== 1 ? 's' : ''} para "{certsFilter}"</p>}
-
-                  <div className="overflow-x-auto rounded-xl border border-gray-800">
-                    <table className="w-full text-sm">
-                      <thead className="bg-gray-900 text-gray-400 uppercase text-xs">
-                        <tr>
-                          <th className="text-left px-4 py-3">Profesional</th>
-                          <th className="text-left px-4 py-3">Colegiado</th>
-                          <th className="text-left px-4 py-3">Estado</th>
-                          <th className="text-left px-4 py-3">Curso</th>
-                          <th className="text-left px-4 py-3">Emisión</th>
-                          <th className="text-left px-4 py-3">Código</th>
-                          <th className="px-4 py-3">Acciones</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {filtered.map(c => (
-                          <tr key={c.id} className="border-t border-gray-800 hover:bg-gray-900/40">
-                            <td className="px-4 py-2.5 text-white font-medium">{c.recipient_name}</td>
-                            <td className="px-4 py-2.5 text-gray-300 font-mono">{c.collegiate_number}</td>
-                            <td className="px-4 py-2.5">
-                              <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${c.status === 'ACTIVO' ? 'bg-green-900/40 text-green-400' : 'bg-red-900/40 text-red-400'}`}>{c.status}</span>
-                            </td>
-                            <td className="px-4 py-2.5 text-gray-300 max-w-xs truncate">{c.video_title}</td>
-                            <td className="px-4 py-2.5 text-gray-400 whitespace-nowrap text-xs">{new Date(c.issued_at).toLocaleDateString('es-GT')}</td>
-                            <td className="px-4 py-2.5 text-gray-600 font-mono text-xs truncate max-w-[140px]">{c.certificate_code}</td>
-                            <td className="px-4 py-2.5">
-                              <div className="flex gap-1 justify-center">
-                                {c.verify_url && (
-                                  <a href={c.verify_url} target="_blank" rel="noreferrer" className="p-1.5 bg-blue-900/40 hover:bg-blue-900/70 text-blue-300 rounded" title="Ver verificación"><ExternalLink size={13} /></a>
-                                )}
-                                <button onClick={() => handleDeleteCert(c.id)} className="p-1.5 bg-red-900/40 hover:bg-red-900/70 text-red-300 rounded" title="Eliminar registro"><Trash2 size={13} /></button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                  {/* Conteo + exportar de lo filtrado */}
+                  <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                    <p className="text-xs text-gray-500">
+                      {filtered.length} certificado{filtered.length !== 1 ? 's' : ''} mostrado{filtered.length !== 1 ? 's' : ''}
+                      {(certsDateMode !== 'all' || certsFilter) ? ' (con filtros aplicados)' : ''}
+                    </p>
+                    {filtered.length > 0 && (
+                      <button onClick={() => exportCertsCSV(filtered)} className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 px-3 py-1.5 rounded-lg text-xs font-semibold transition">
+                        <Download size={13} /> Exportar XLSX ({filtered.length})
+                      </button>
+                    )}
                   </div>
+
+                  {filtered.length === 0 ? (
+                    <div className="text-center py-10 text-gray-500">
+                      <Award size={36} className="mx-auto mb-3 opacity-30" />
+                      <p>No hay certificados para los filtros seleccionados.</p>
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto rounded-xl border border-gray-800">
+                      <table className="w-full text-sm">
+                        <thead className="bg-gray-900 text-gray-400 uppercase text-xs">
+                          <tr>
+                            <th className="text-left px-4 py-3">Profesional</th>
+                            <th className="text-left px-4 py-3">Colegiado</th>
+                            <th className="text-left px-4 py-3">Estado</th>
+                            <th className="text-left px-4 py-3">Curso</th>
+                            <th className="text-left px-4 py-3">Emisión</th>
+                            <th className="text-left px-4 py-3">Código</th>
+                            <th className="px-4 py-3">Acciones</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filtered.map(c => (
+                            <tr key={c.id} className="border-t border-gray-800 hover:bg-gray-900/40">
+                              <td className="px-4 py-2.5 text-white font-medium">{c.recipient_name}</td>
+                              <td className="px-4 py-2.5 text-gray-300 font-mono">{c.collegiate_number}</td>
+                              <td className="px-4 py-2.5">
+                                <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${c.status === 'ACTIVO' ? 'bg-green-900/40 text-green-400' : 'bg-red-900/40 text-red-400'}`}>{c.status}</span>
+                              </td>
+                              <td className="px-4 py-2.5 text-gray-300 max-w-xs truncate">{c.video_title}</td>
+                              <td className="px-4 py-2.5 text-gray-400 whitespace-nowrap text-xs">{new Date(c.issued_at).toLocaleDateString('es-GT')}</td>
+                              <td className="px-4 py-2.5 text-gray-600 font-mono text-xs truncate max-w-[140px]">{c.certificate_code}</td>
+                              <td className="px-4 py-2.5">
+                                <div className="flex gap-1 justify-center">
+                                  {c.verify_url && (
+                                    <a href={c.verify_url} target="_blank" rel="noreferrer" className="p-1.5 bg-blue-900/40 hover:bg-blue-900/70 text-blue-300 rounded" title="Ver verificación"><ExternalLink size={13} /></a>
+                                  )}
+                                  <button onClick={() => handleDeleteCert(c.id)} className="p-1.5 bg-red-900/40 hover:bg-red-900/70 text-red-300 rounded" title="Eliminar registro"><Trash2 size={13} /></button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </>
               );
             })()}
