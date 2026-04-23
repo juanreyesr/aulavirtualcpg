@@ -86,7 +86,7 @@ const DEFAULT_CERT_CONFIG = {
     hours:      { top: 530, fontSize: 15 },
     motto:      { top: 568, fontSize: 17 },
     date:       { top: 600, fontSize: 13 },
-    signature:  { w: 300, h: 100, x: 0, y: 0 },
+    signature:  { w: 300, h: 90, x: 0, y: 0 },
     coordName:  { fontSize: 16 },
     coordTitle: { fontSize: 13 },
     coordBlock: { x: 0, y: 0 },
@@ -1509,9 +1509,16 @@ function CertificateCanvas({ certRef, onImageLoaded, tpl, recipientName, statusT
   const sigAreaLeft = 60;
   const sigAreaWidth = 700;
   const sigBlockGap = 10;
-  const maxSigWidth = useTwoRows ? 165 : 200;
+  const maxSigWidth = useTwoRows ? 165 : 210;
   const sigBlockW = Math.min(maxSigWidth, Math.floor((sigAreaWidth - sigBlockGap * (perRow - 1)) / perRow));
-  const sigBlockH = useTwoRows ? 90 : 115;
+  // Altura de firma: usa L.signature.h y escala según número de firmantes
+  const baseImgH = L.signature?.h || 90;
+  const sigImgH = useTwoRows
+    ? Math.round(baseImgH * 0.60)
+    : totalSigners > 1
+      ? Math.round(baseImgH * 0.80)
+      : baseImgH;
+  const sigBlockH = sigImgH + 55; // imagen + línea + texto coordinador
 
   const bottomY = L.bottomY || 25;
   const row1Y = useTwoRows ? bottomY + sigBlockH + 15 : bottomY;
@@ -1631,7 +1638,7 @@ function CertificateCanvas({ certRef, onImageLoaded, tpl, recipientName, statusT
                         crossOrigin="anonymous"
                         style={{
                           maxWidth: (sigBlockW - 10) + 'px',
-                          maxHeight: (useTwoRows ? 40 : 55) + 'px',
+                          maxHeight: sigImgH + 'px',
                           objectFit: 'contain',
                           margin: '0 auto 4px',
                           display: 'block'
@@ -1640,11 +1647,11 @@ function CertificateCanvas({ certRef, onImageLoaded, tpl, recipientName, statusT
                         onError={(e) => { e.target.style.display='none'; handleImgLoad(); }}
                       />
                     ) : (
-                      <div style={{ height: (useTwoRows ? 40 : 55) + 'px' }} />
+                      <div style={{ height: sigImgH + 'px' }} />
                     )}
                     <div style={{ borderTop: '1px solid #444', paddingTop: '4px', width: (sigBlockW - 20) + 'px', margin: '0 auto' }}>
-                      <p style={{ fontSize: (useTwoRows ? 11 : 13) + 'px', fontWeight: 'bold', color: '#1a1a2e', lineHeight: '1.15', margin: 0 }}>{signer.signer_name}</p>
-                      <p style={{ fontSize: (useTwoRows ? 9 : 11) + 'px', color: '#555', lineHeight: '1.1', margin: '1px 0 0' }}>{signer.signer_title}</p>
+                      <p style={{ fontSize: (L.coordName?.fontSize || (useTwoRows ? 11 : 13)) + 'px', fontWeight: 'bold', color: '#1a1a2e', lineHeight: '1.15', margin: 0 }}>{signer.signer_name}</p>
+                      <p style={{ fontSize: (L.coordTitle?.fontSize || (useTwoRows ? 9 : 11)) + 'px', color: '#555', lineHeight: '1.1', margin: '1px 0 0' }}>{signer.signer_title}</p>
                       <p style={{ fontSize: (useTwoRows ? 8 : 10) + 'px', color: '#888', fontStyle: 'italic', lineHeight: '1.1', margin: '1px 0 0' }}>{signer.commission_name}</p>
                     </div>
                   </div>
@@ -2930,13 +2937,18 @@ function LiveSessionView({ session, onBack, sessionUser, onRegisterAttendance })
 
 // ── EDITOR DE PLANTILLA DE CERTIFICADO (Admin) ────────────────
 // Control de posición/tamaño reutilizable
-function LayoutControl({ label, value, onChange, step = 2, unit = 'px', min = -200, max = 1056 }) {
+function SliderControl({ label, value, onChange, step = 1, min = 0, max = 800, unit = 'px' }) {
   return (
-    <div className="flex items-center gap-1.5">
-      <span className="text-[11px] text-gray-500 w-10 text-right shrink-0">{label}</span>
-      <button type="button" onClick={() => onChange(Math.max(min, value - step))} className="w-6 h-6 flex items-center justify-center bg-gray-800 hover:bg-gray-600 text-gray-300 rounded text-xs font-bold border border-gray-700">−</button>
-      <span className="text-xs text-white font-mono w-10 text-center">{value}{unit}</span>
-      <button type="button" onClick={() => onChange(Math.min(max, value + step))} className="w-6 h-6 flex items-center justify-center bg-gray-800 hover:bg-gray-600 text-gray-300 rounded text-xs font-bold border border-gray-700">+</button>
+    <div style={{ marginBottom: '10px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
+        <span style={{ fontSize: '12px', color: '#9ca3af' }}>{label}</span>
+        <span style={{ fontSize: '12px', color: '#fff', fontWeight: 'bold', fontFamily: 'monospace' }}>{value}{unit}</span>
+      </div>
+      <input
+        type="range" min={min} max={max} step={step} value={value}
+        onChange={e => onChange(Number(e.target.value))}
+        style={{ width: '100%', cursor: 'pointer', accentColor: '#6366f1', height: '4px' }}
+      />
     </div>
   );
 }
@@ -2946,7 +2958,6 @@ function CertTemplateAdmin({ certTemplate, onSave }) {
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState('');
   const [saveMsg, setSaveMsg] = useState('');
-  const [previewOpen, setPreviewOpen] = useState(false);
   const [layoutOpen, setLayoutOpen] = useState(false);
   const previewRef = useRef(null);
 
@@ -3010,83 +3021,8 @@ function CertTemplateAdmin({ certTemplate, onSave }) {
     { label: 'Fondo (opcional)', field: 'backgroundUrl', hint: '1056x816px' },
   ];
 
-  // Secciones de layout con sus controles
-  const layoutSections = [
-    { title: 'Logo CPG', controls: [
-      { label: 'Y', path: 'logoCpg.top', max: 200 },
-      { label: 'X', path: 'logoCpg.left', max: 400 },
-      { label: 'Ancho', path: 'logoCpg.w', step: 10, max: 500 },
-      { label: 'Alto', path: 'logoCpg.h', step: 10, max: 300 },
-    ]},
-    { title: 'Junta Directiva', controls: [
-      { label: 'Y', path: 'boardText.top', max: 200 },
-      { label: 'X', path: 'boardText.left', max: 900 },
-      { label: 'Texto', path: 'boardText.fontSize', step: 1, max: 40 },
-    ]},
-    { title: 'Logo CAEDUC', controls: [
-      { label: 'Y', path: 'logoCaeduc.top', max: 200 },
-      { label: 'Desde der.', path: 'logoCaeduc.right', max: 200 },
-      { label: 'Ancho', path: 'logoCaeduc.w', step: 10, max: 500 },
-      { label: 'Alto', path: 'logoCaeduc.h', step: 10, max: 300 },
-    ]},
-    { title: 'Encabezados', controls: [
-      { label: 'Y', path: 'header.top', max: 400 },
-      { label: 'Texto', path: 'header.fontSize', step: 1, max: 36 },
-      { label: 'Diploma', path: 'diploma.fontSize', step: 1, max: 30 },
-    ]},
-    { title: 'Nombre', controls: [
-      { label: 'Y', path: 'name.top', max: 500 },
-      { label: 'Texto', path: 'name.fontSize', step: 1, max: 50 },
-    ]},
-    { title: 'Colegiado', controls: [
-      { label: 'Y', path: 'collegiate.top', max: 500 },
-      { label: 'Texto', path: 'collegiate.fontSize', step: 1, max: 24 },
-    ]},
-    { title: 'Texto curso', controls: [
-      { label: 'Y', path: 'courseText.top', max: 600 },
-      { label: 'Texto', path: 'courseText.fontSize', step: 1, max: 24 },
-    ]},
-    { title: 'Titulo curso', controls: [
-      { label: 'Y', path: 'courseTitle.top', max: 600 },
-      { label: 'Texto', path: 'courseTitle.fontSize', step: 1, max: 36 },
-    ]},
-    { title: 'Horas', controls: [
-      { label: 'Y', path: 'hours.top', max: 700 },
-      { label: 'Texto', path: 'hours.fontSize', step: 1, max: 24 },
-    ]},
-    { title: 'Lema', controls: [
-      { label: 'Y', path: 'motto.top', max: 700 },
-      { label: 'Texto', path: 'motto.fontSize', step: 1, max: 24 },
-    ]},
-    { title: 'Fecha', controls: [
-      { label: 'Y', path: 'date.top', max: 750 },
-      { label: 'Texto', path: 'date.fontSize', step: 1, max: 20 },
-    ]},
-    { title: 'Imagen firma', controls: [
-      { label: 'X', path: 'signature.x', step: 5, min: -200, max: 200 },
-      { label: 'Y', path: 'signature.y', step: 5, min: -100, max: 100 },
-      { label: 'Ancho', path: 'signature.w', step: 10, max: 400 },
-      { label: 'Alto', path: 'signature.h', step: 10, max: 200 },
-    ]},
-    { title: 'Texto coordinador', controls: [
-      { label: 'X', path: 'coordBlock.x', step: 5, min: -200, max: 200 },
-      { label: 'Y', path: 'coordBlock.y', step: 5, min: -100, max: 100 },
-      { label: 'Nombre', path: 'coordName.fontSize', step: 1, max: 24 },
-      { label: 'Cargo', path: 'coordTitle.fontSize', step: 1, max: 20 },
-    ]},
-    { title: 'Sello', controls: [
-      { label: 'X', path: 'seal.x', step: 5, min: -200, max: 200 },
-      { label: 'Y', path: 'seal.y', step: 5, min: -100, max: 100 },
-      { label: 'Tamano', path: 'seal.w', step: 5, max: 200 },
-    ]},
-    { title: 'QR', controls: [
-      { label: 'Tamano', path: 'qr.w', step: 5, max: 200 },
-    ]},
-    { title: 'Fila inferior', controls: [
-      { label: 'Desde abajo', path: 'bottomY', step: 2, max: 100, isRoot: true },
-      { label: 'Espacio', path: 'bottomGap', step: 5, max: 150, isRoot: true },
-    ]},
-  ];
+  const [advTextOpen, setAdvTextOpen] = useState(false);
+  const [advLogosOpen, setAdvLogosOpen] = useState(false);
 
   const getLayoutVal = (path) => {
     const keys = path.split('.');
@@ -3157,41 +3093,103 @@ function CertTemplateAdmin({ certTemplate, onSave }) {
         </div>
       </div>
 
-      {/* EDITOR DE POSICION Y TAMANIO */}
+      {/* EDITOR DE DISEÑO — preview en vivo + sliders */}
       <div>
         <button type="button" onClick={() => setLayoutOpen(p => !p)} className="w-full flex items-center justify-between bg-gradient-to-r from-indigo-900/40 to-purple-900/30 border border-indigo-700/50 rounded-xl px-5 py-3.5 hover:from-indigo-900/50 transition">
           <div className="flex items-center gap-2">
             <Settings size={18} className="text-indigo-400" />
-            <span className="text-white font-bold">Ajustar posiciones y tamanos</span>
-            <span className="text-xs text-indigo-300 bg-indigo-900/50 px-2 py-0.5 rounded-full">Editor visual</span>
+            <span className="text-white font-bold">Editor de diseño del certificado</span>
+            <span className="text-xs text-indigo-300 bg-indigo-900/50 px-2 py-0.5 rounded-full">Vista en tiempo real</span>
           </div>
           <span className="text-gray-400">{layoutOpen ? '▲' : '▼'}</span>
         </button>
+
         {layoutOpen && (
-          <div className="mt-3 bg-black/40 border border-gray-800 rounded-xl p-5">
-            <p className="text-xs text-gray-500 mb-4">Usa los botones − y + para ajustar cada propiedad. Los cambios se reflejan en la vista previa en tiempo real.</p>
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-              {layoutSections.map(section => (
-                <div key={section.title} className="bg-gray-900/60 border border-gray-800 rounded-lg p-3">
-                  <p className="text-sm font-bold text-white mb-2">{section.title}</p>
-                  <div className="space-y-1.5">
-                    {section.controls.map(ctrl => (
-                      <LayoutControl
-                        key={ctrl.path}
-                        label={ctrl.label}
-                        value={getLayoutVal(ctrl.path)}
-                        onChange={v => setL(ctrl.path, v)}
-                        step={ctrl.step || 2}
-                        max={ctrl.max || 1000}
-                      />
-                    ))}
-                  </div>
-                </div>
-              ))}
+          <div className="mt-3 bg-black/40 border border-gray-800 rounded-xl overflow-hidden">
+            {/* Preview en vivo */}
+            <div className="border-b border-gray-800 bg-gray-950 p-3">
+              <p className="text-[11px] text-gray-500 mb-2 text-center tracking-wide uppercase">Vista previa — se actualiza al mover los controles</p>
+              <CertScaledPreview certRef={previewRef} imageLoaded={true}>
+                <CertificateCanvas
+                  certRef={previewRef} tpl={form} onImageLoaded={() => {}}
+                  recipientName="Nombre Completo del Profesional"
+                  statusText="ACTIVO" collegiateNumber="0000"
+                  videoTitle="Nombre del Curso o Actividad de Capacitación"
+                  videoDuration="2" dateFormatted="22 de marzo de 2026"
+                  certificateCode="CPG-20260322-0000"
+                  qrUrl={getCertQrUrl('CPG-20260322-0000')}
+                  commissionsSnapshot={[]}
+                />
+              </CertScaledPreview>
             </div>
-            <button onClick={() => { if (confirm('Restaurar todas las posiciones y tamanos al original?')) setForm(prev => ({ ...prev, layout: { ...DEFAULT_CERT_CONFIG.layout } })); }} className="mt-3 text-xs text-gray-500 hover:text-gray-300 transition">
-              Restaurar posiciones por defecto
-            </button>
+
+            {/* Controles agrupados */}
+            <div className="p-5 space-y-6">
+
+              {/* — Zona de firmas (más importante) — */}
+              <div>
+                <p className="text-xs font-bold text-indigo-300 uppercase tracking-widest mb-3 flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-indigo-400 inline-block" />
+                  Firmas, Sello y QR
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6">
+                  <SliderControl label="Altura de firma" value={getLayoutVal('signature.h')} min={40} max={130} step={5} onChange={v => setL('signature.h', v)} />
+                  <SliderControl label="Tamaño de nombre (coordinador)" value={getLayoutVal('coordName.fontSize')} min={10} max={24} step={1} onChange={v => setL('coordName.fontSize', v)} />
+                  <SliderControl label="Tamaño de cargo" value={getLayoutVal('coordTitle.fontSize')} min={8} max={20} step={1} onChange={v => setL('coordTitle.fontSize', v)} />
+                  <SliderControl label="Espacio desde la parte inferior" value={getLayoutVal('bottomY')} min={10} max={120} step={2} onChange={v => setL('bottomY', v)} />
+                  <SliderControl label="Tamaño del sello" value={getLayoutVal('seal.w')} min={60} max={200} step={5} onChange={v => setL('seal.w', v)} />
+                  <SliderControl label="Tamaño del QR" value={getLayoutVal('qr.w')} min={60} max={160} step={5} onChange={v => setL('qr.w', v)} />
+                </div>
+              </div>
+
+              {/* — Posiciones verticales de texto — */}
+              <div>
+                <button type="button" onClick={() => setAdvTextOpen(p => !p)} className="flex items-center gap-2 text-xs font-bold text-gray-400 uppercase tracking-widest mb-3 hover:text-gray-200 transition">
+                  <span className="w-2 h-2 rounded-full bg-gray-500 inline-block" />
+                  Posición y tamaño de textos {advTextOpen ? '▲' : '▼'}
+                </button>
+                {advTextOpen && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6">
+                    <SliderControl label="Encabezado — posición Y" value={getLayoutVal('header.top')} min={100} max={400} step={2} onChange={v => setL('header.top', v)} />
+                    <SliderControl label="Encabezado — tamaño" value={getLayoutVal('header.fontSize')} min={12} max={36} step={1} onChange={v => setL('header.fontSize', v)} />
+                    <SliderControl label="Nombre — posición Y" value={getLayoutVal('name.top')} min={200} max={500} step={2} onChange={v => setL('name.top', v)} />
+                    <SliderControl label="Nombre — tamaño" value={getLayoutVal('name.fontSize')} min={20} max={54} step={1} onChange={v => setL('name.fontSize', v)} />
+                    <SliderControl label="Colegiado — posición Y" value={getLayoutVal('collegiate.top')} min={250} max={550} step={2} onChange={v => setL('collegiate.top', v)} />
+                    <SliderControl label="Colegiado — tamaño" value={getLayoutVal('collegiate.fontSize')} min={10} max={24} step={1} onChange={v => setL('collegiate.fontSize', v)} />
+                    <SliderControl label="Título del curso — posición Y" value={getLayoutVal('courseTitle.top')} min={350} max={620} step={2} onChange={v => setL('courseTitle.top', v)} />
+                    <SliderControl label="Título del curso — tamaño" value={getLayoutVal('courseTitle.fontSize')} min={14} max={36} step={1} onChange={v => setL('courseTitle.fontSize', v)} />
+                    <SliderControl label="Horas — posición Y" value={getLayoutVal('hours.top')} min={400} max={680} step={2} onChange={v => setL('hours.top', v)} />
+                    <SliderControl label="Lema — posición Y" value={getLayoutVal('motto.top')} min={430} max={700} step={2} onChange={v => setL('motto.top', v)} />
+                    <SliderControl label="Fecha — posición Y" value={getLayoutVal('date.top')} min={460} max={730} step={2} onChange={v => setL('date.top', v)} />
+                  </div>
+                )}
+              </div>
+
+              {/* — Logos — */}
+              <div>
+                <button type="button" onClick={() => setAdvLogosOpen(p => !p)} className="flex items-center gap-2 text-xs font-bold text-gray-400 uppercase tracking-widest mb-3 hover:text-gray-200 transition">
+                  <span className="w-2 h-2 rounded-full bg-gray-500 inline-block" />
+                  Logos {advLogosOpen ? '▲' : '▼'}
+                </button>
+                {advLogosOpen && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6">
+                    <SliderControl label="Logo CPG — ancho" value={getLayoutVal('logoCpg.w')} min={80} max={500} step={10} onChange={v => setL('logoCpg.w', v)} />
+                    <SliderControl label="Logo CPG — alto" value={getLayoutVal('logoCpg.h')} min={40} max={300} step={10} onChange={v => setL('logoCpg.h', v)} />
+                    <SliderControl label="Logo CAEDUC — ancho" value={getLayoutVal('logoCaeduc.w')} min={80} max={400} step={10} onChange={v => setL('logoCaeduc.w', v)} />
+                    <SliderControl label="Logo CAEDUC — alto" value={getLayoutVal('logoCaeduc.h')} min={40} max={250} step={10} onChange={v => setL('logoCaeduc.h', v)} />
+                  </div>
+                )}
+              </div>
+
+              <div className="flex justify-between items-center pt-2 border-t border-gray-800">
+                <button onClick={() => { if (confirm('Restaurar posiciones y tamaños al diseño original?')) setForm(prev => ({ ...prev, layout: { ...DEFAULT_CERT_CONFIG.layout } })); }} className="text-xs text-gray-500 hover:text-red-400 transition">
+                  Restaurar diseño por defecto
+                </button>
+                <button onClick={handleSave} disabled={saving} className="bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-800 text-white font-bold px-5 py-2 rounded-lg transition flex items-center gap-2 text-sm">
+                  {saving ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle size={14} />} Guardar diseño
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </div>
@@ -3202,28 +3200,7 @@ function CertTemplateAdmin({ certTemplate, onSave }) {
           {saving ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle size={16} />}
           Guardar todo
         </button>
-        <button onClick={() => setPreviewOpen(p => !p)} className="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-5 py-2.5 rounded-lg transition flex items-center gap-2">
-          <Eye size={16} /> {previewOpen ? 'Ocultar vista previa' : 'Vista previa'}
-        </button>
       </div>
-
-      {/* VISTA PREVIA */}
-      {previewOpen && (
-        <div className="border border-gray-700 rounded-2xl overflow-hidden bg-gray-900 p-4">
-          <p className="text-xs text-gray-500 mb-3 text-center">Vista previa en tiempo real — los cambios de posicion se reflejan al instante</p>
-          <CertScaledPreview certRef={previewRef} imageLoaded={true}>
-            <CertificateCanvas
-              certRef={previewRef} tpl={form} onImageLoaded={() => {}}
-              recipientName="Juan Jose Ejemplo Lopez"
-              statusText="ACTIVO" collegiateNumber="4661"
-              videoTitle="Curso de Ejemplo - Psicologia Clinica Avanzada"
-              videoDuration="3" dateFormatted="22 de marzo de 2026"
-              certificateCode="CPG-20260322-4661"
-              qrUrl={getCertQrUrl('CPG-20260322-4661')}
-            />
-          </CertScaledPreview>
-        </div>
-      )}
     </div>
   );
 }
