@@ -1158,7 +1158,12 @@ export default function App() {
     localStorage.setItem('cpg_videos', JSON.stringify(nextVideos));
     localStorage.setItem('cpg_activities', JSON.stringify(nextActivities));
     if (supabase) {
-      const { error } = await supabase.from('cpg_content').upsert({ id: 1, videos: nextVideos, activities: nextActivities }, { onConflict: 'id' });
+      // Usar update en lugar de upsert para respetar la política RLS que permite
+      // UPDATE pero no INSERT en cpg_content
+      const { error } = await supabase
+        .from('cpg_content')
+        .update({ videos: nextVideos, activities: nextActivities })
+        .eq('id', 1);
       if (error) throw new Error(error.message);
     }
   };
@@ -1274,8 +1279,8 @@ export default function App() {
           <a href="https://colegiodepsicologos.org.gt" target="_blank" rel="noreferrer" className="hidden md:flex items-center gap-1 text-xs text-gray-300 hover:text-white border border-gray-600 px-3 py-1.5 rounded-full hover:bg-gray-800 transition"><ExternalLink size={12} /> Sitio Oficial</a>
 
           {!sessionUser.isGuest && (
-            <button onClick={() => setView('history')} className="flex items-center gap-1 text-xs text-gray-400 hover:text-white border border-gray-700 px-2.5 py-1.5 rounded-full hover:bg-gray-800 transition" title="Mis cursos">
-              <History size={13} />
+            <button onClick={() => setView('history')} className="flex items-center gap-1.5 text-xs text-gray-300 hover:text-white border border-gray-600 px-3 py-1.5 rounded-full hover:bg-gray-800 transition font-medium">
+              <History size={13} /> Mis Certificados
             </button>
           )}
 
