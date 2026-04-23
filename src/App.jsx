@@ -3762,7 +3762,7 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
     const s = new Date(reportRange.start + 'T00:00:00'), e = new Date(reportRange.end + 'T23:59:59');
     if (isNaN(s) || isNaN(e)) { setReportError('Rango inválido.'); return; }
     if (e < s) { setReportError('La fecha final debe ser posterior.'); return; }
-    const filtered = activities.filter(a => a?.date).map(a => ({ ...a, pd: new Date(a.date + 'T00:00:00') })).filter(a => !isNaN(a.pd) && a.pd >= s && a.pd <= e);
+    const filtered = activities.filter(a => a?.date).map(a => ({ ...a, pd: new Date(a.date + 'T00:00:00') })).filter(a => !isNaN(a.pd) && a.pd >= s && a.pd <= e).sort((a, b) => b.pd - a.pd);
     if (!filtered.length) { setReportError('No hay actividades en este rango.'); return; }
     const costLabel = (a) => { if (a.costType === 'paid') return 'Con costo'; if (a.costType === 'scholarship') return 'Con beca'; return 'Gratuito'; };
     const rows = [
@@ -4071,7 +4071,7 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
               </div>
             )}
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-              {activities.filter(a => !a.date || a.date.startsWith(filterMonth)).map(a => {
+              {activities.filter(a => !a.date || a.date.startsWith(filterMonth)).sort((a, b) => (b.date || '').localeCompare(a.date || '')).map(a => {
                 const isPast = new Date(a.date + 'T00:00:00') < new Date();
                 return (
                   <div key={a.id} className={`bg-[#141414] border rounded-xl p-4 ${isPast ? 'border-gray-700 opacity-80' : 'border-gray-800'}`}>
