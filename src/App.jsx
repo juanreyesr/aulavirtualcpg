@@ -19,7 +19,7 @@ const ADMIN_CREDENTIALS = {
 const EDGE_URL = 'https://ilyospunwucdojrnfgti.supabase.co/functions/v1/consultar-colegiado';
 const ADMIN_EDGE_URL = 'https://ilyospunwucdojrnfgti.supabase.co/functions/v1/manage-admin-user';
 const APP_URL = 'https://aulavirtualcpg.org';
-const CREDITOS_URL = 'https://creditos2025.vercel.app';
+const CREDITOS_URL = 'https://caeducgt.org';
 
 // ── Exportar XLSX usando SheetJS (cargado por CDN en index.html) ──
 function exportXLSX(rows, filename) {
@@ -779,7 +779,7 @@ function BulkCertificateEmitter({ videos, activities, commissions = [], onClose,
 
   const allItems = [
     ...videos.map(v => ({ id: 'video-' + v.id, label: v.title, duration: v.duration, videoId: v.id, type: 'video' })),
-    ...activities.map(a => ({ id: 'act-' + a.id, label: a.title, duration: '', videoId: a.id, type: 'activity' })),
+    ...activities.map(a => ({ id: 'act-' + a.id, label: a.title, duration: a.horas || a.duration || '', videoId: a.id, type: 'activity' })),
   ];
 
   const parseColegiadosList = async () => {
@@ -892,7 +892,7 @@ function BulkCertificateEmitter({ videos, activities, commissions = [], onClose,
               <select value={selectedVideoId} onChange={e => setSelectedVideoId(e.target.value)} className="w-full bg-black border border-gray-700 rounded-lg p-3 text-white text-sm focus:border-blue-500 outline-none">
                 <option value="">— Selecciona un curso o actividad —</option>
                 <optgroup label="Cursos (videos)">{videos.map(v => <option key={'v-'+v.id} value={'video-'+v.id}>{v.title} ({v.duration}h)</option>)}</optgroup>
-                <optgroup label="Actividades">{activities.map(a => <option key={'a-'+a.id} value={'act-'+a.id}>{a.title} ({a.date})</option>)}</optgroup>
+                <optgroup label="Actividades">{activities.map(a => <option key={'a-'+a.id} value={'act-'+a.id}>{a.title} ({a.date}{a.horas ? ` · ${a.horas}h` : ''})</option>)}</optgroup>
               </select>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -1790,6 +1790,7 @@ function HomeView({ videos, viewCounts, recentVideos, categories, upcomingVideos
             {activity.isFull && !isPast && <span className="text-xs uppercase bg-red-500/20 text-red-200 border border-red-500/40 px-2 py-1 rounded-full">Cupo lleno</span>}
           </div>
           <p className="text-sm text-gray-400">Organiza: {activity.organizer}</p>
+          {activity.horas && <span className="inline-flex mt-1 mr-1 text-xs bg-blue-900/30 text-blue-300 border border-blue-700/40 px-2 py-0.5 rounded-full">{activity.horas} horas acreditadas</span>}
           {activity.costType === 'free' && <span className="inline-flex mt-1 text-xs bg-green-900/30 text-green-300 border border-green-700/40 px-2 py-0.5 rounded-full">Gratuito</span>}
           {activity.costType === 'paid' && <span className="inline-flex mt-1 text-xs bg-blue-900/30 text-blue-300 border border-blue-700/40 px-2 py-0.5 rounded-full">Costo: Q.{activity.cost}</span>}
           {activity.costType === 'scholarship' && <span className="inline-flex mt-1 text-xs bg-purple-900/30 text-purple-300 border border-purple-700/40 px-2 py-0.5 rounded-full">Con beca {activity.scholarshipPct}% — Agremiado paga Q.{activity.scholarshipAmt}</span>}
@@ -3763,7 +3764,7 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
   // ── CAMBIO 4+5: formData incluye platform ──
   const [formData, setFormData] = useState({ title: '', category: '', youtubeId: '', duration: '', description: '', thumbnail: '', scheduledAt: '', quizEnabled: false, platform: 'youtube' });
   const [questions, setQuestions] = useState([]);
-  const EMPTY_ACTIVITY_FORM = { title: '', organizer: '', date: '', time: '', location: '', registrationLink: '', meetingLink: '', isFull: false, participants: '', costType: 'free', cost: '', scholarshipPct: '', scholarshipAmt: '', hasCommissions: false, commissions: [] };
+  const EMPTY_ACTIVITY_FORM = { title: '', organizer: '', date: '', time: '', horas: '', location: '', registrationLink: '', meetingLink: '', isFull: false, participants: '', costType: 'free', cost: '', scholarshipPct: '', scholarshipAmt: '', hasCommissions: false, commissions: [] };
   const [activityForm, setActivityForm] = useState(EMPTY_ACTIVITY_FORM);
 
   const handleCollegiateBlur = async () => {
@@ -3787,7 +3788,7 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
   const updateQuestion = useCallback((idx, updater) => { setQuestions(prev => prev.map((q, i) => i !== idx ? q : updater(q))); }, []);
   const handleSave = async () => { const nv = { ...formData, questions, viewCount: formData.viewCount || 0 }; setSaveError(''); try { if (videos.some(v => v.id === nv.id)) await onVideosChange(videos.map(v => v.id === nv.id ? nv : v)); else await onVideosChange([...videos, nv]); setEditingVideo(null); } catch (e) { setSaveError('No se pudieron guardar los cambios: ' + e.message); } };
   const handleDelete = async (id) => { if (confirm('¿Eliminar este video?')) { setSaveError(''); try { await onVideosChange(videos.filter(v => v.id !== id)); } catch (e) { setSaveError('No se pudo eliminar: ' + e.message); } } };
-  const handleActivityEdit = (a) => { setActivityError(''); setEditingActivity(a); setActivityForm({ title: a.title || '', organizer: a.organizer || '', date: a.date || '', time: a.time || '', location: a.location || '', registrationLink: a.registrationLink || '', meetingLink: a.meetingLink || '', isFull: Boolean(a.isFull), participants: a.participants || '', costType: a.costType || 'free', cost: a.cost || '', scholarshipPct: a.scholarshipPct || '', scholarshipAmt: a.scholarshipAmt || '', hasCommissions: !!a.hasCommissions, commissions: a.commissions || [] }); };
+  const handleActivityEdit = (a) => { setActivityError(''); setEditingActivity(a); setActivityForm({ title: a.title || '', organizer: a.organizer || '', date: a.date || '', time: a.time || '', horas: a.horas || '', location: a.location || '', registrationLink: a.registrationLink || '', meetingLink: a.meetingLink || '', isFull: Boolean(a.isFull), participants: a.participants || '', costType: a.costType || 'free', cost: a.cost || '', scholarshipPct: a.scholarshipPct || '', scholarshipAmt: a.scholarshipAmt || '', hasCommissions: !!a.hasCommissions, commissions: a.commissions || [] }); };
   const handleActivitySave = async () => { if (!activityForm.title || !activityForm.date) { setActivityError('El título y la fecha son obligatorios.'); return; } setActivityError(''); const next = { ...editingActivity, ...activityForm }; try { const exists = activities.some(a => a.id === next.id); await onActivitiesChange(exists ? activities.map(a => a.id === next.id ? next : a) : [...activities, next]); setEditingActivity(null); setActivityForm(EMPTY_ACTIVITY_FORM); } catch (e) { setActivityError('No se pudo guardar: ' + e.message); } };
   const handleActivityDelete = async (id) => { if (!confirm('¿Eliminar esta actividad?')) return; setActivityError(''); try { await onActivitiesChange(activities.filter(a => a.id !== id)); } catch (e) { setActivityError('No se pudo eliminar: ' + e.message); } };
   const handleReportGenerate = () => {
@@ -4036,6 +4037,7 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
                   <div><label className="block text-sm text-gray-400 mb-1">Organizador</label><input type="text" value={activityForm.organizer} onChange={e => setActivityForm({ ...activityForm, organizer: e.target.value })} className="w-full bg-black border border-gray-700 rounded p-2 text-white" /></div>
                   <div><label className="block text-sm text-gray-400 mb-1">Fecha</label><input type="date" value={activityForm.date} onChange={e => setActivityForm({ ...activityForm, date: e.target.value })} className="w-full bg-black border border-gray-700 rounded p-2 text-white" /></div>
                   <div><label className="block text-sm text-gray-400 mb-1">Hora</label><input type="time" value={activityForm.time} onChange={e => setActivityForm({ ...activityForm, time: e.target.value })} className="w-full bg-black border border-gray-700 rounded p-2 text-white" /></div>
+                  <div><label className="block text-sm text-gray-400 mb-1">Duración <span className="text-xs text-blue-400">(horas — para certificados y créditos)</span></label><input type="number" step="0.5" min="0.5" value={activityForm.horas} onChange={e => setActivityForm({ ...activityForm, horas: e.target.value })} className="w-full bg-black border border-gray-700 rounded p-2 text-white" placeholder="Ej: 2" /></div>
                   <div><label className="block text-sm text-gray-400 mb-1">Lugar</label><input type="text" value={activityForm.location} onChange={e => setActivityForm({ ...activityForm, location: e.target.value })} className="w-full bg-black border border-gray-700 rounded p-2 text-white" /></div>
                   <div><label className="block text-sm text-gray-400 mb-1">Enlace (Zoom/Meet)</label><input type="url" value={activityForm.meetingLink} onChange={e => setActivityForm({ ...activityForm, meetingLink: e.target.value })} className="w-full bg-black border border-gray-700 rounded p-2 text-white" /></div>
                   <div><label className="block text-sm text-gray-400 mb-1">Enlace de inscripción</label><input type="url" value={activityForm.registrationLink} onChange={e => setActivityForm({ ...activityForm, registrationLink: e.target.value })} className="w-full bg-black border border-gray-700 rounded p-2 text-white" /></div>
@@ -4119,6 +4121,7 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
                     <div className="text-sm text-gray-300 mt-2 space-y-0.5">
                       <p><span className="text-gray-500">Fecha:</span> {a.date ? new Date(a.date + 'T00:00:00').toLocaleDateString('es-GT') : 'Pendiente'}</p>
                       <p><span className="text-gray-500">Hora:</span> {a.time || 'Por confirmar'}</p>
+                      {a.horas && <p><span className="text-gray-500">Duración:</span> <span className="text-blue-300 font-semibold">{a.horas} h</span></p>}
                       <p><span className="text-gray-500">Lugar:</span> {a.location || 'Por confirmar'}</p>
                       {a.participants > 0 && <p className="flex items-center gap-1"><Users size={12} className="text-gray-500" /> <span className="text-gray-500">Participantes:</span> {a.participants}</p>}
                     </div>

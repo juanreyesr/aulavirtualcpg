@@ -515,7 +515,7 @@ function CertEmissionConfigModal({ items, mode, videos, activities, commissions,
     ...activities.map(a => ({
       id: `act-${a.id}`,
       label: a.title,
-      duration: '',
+      duration: a.horas || a.duration || '',
       refId: a.id,
       type: 'activity',
       commissions: a.commissions || [],
@@ -700,7 +700,7 @@ function CertEmissionConfigModal({ items, mode, videos, activities, commissions,
                     <optgroup label="Actividades">
                       {activities.map(a => (
                         <option key={`a-${a.id}`} value={`act-${a.id}`}>
-                          {a.title}{a.date ? ` (${a.date})` : ''}
+                          {a.title}{a.date ? ` (${a.date})` : ''}{a.horas ? ` · ${a.horas}h` : ''}
                         </option>
                       ))}
                     </optgroup>
