@@ -30,11 +30,11 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Users, Award, Download, X, Loader2, ChevronDown,
-  CheckCircle, XCircle, Shield
+  CheckCircle, XCircle, Shield, BadgeCheck
 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 
-const APP_URL = 'https://aulavirtualcpg.vercel.app';
+const APP_URL = 'https://aulavirtualcpg.org';
 
 export default function AttendanceReportView({
   videos = [],
@@ -50,6 +50,9 @@ export default function AttendanceReportView({
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [expandedSessions, setExpandedSessions] = useState(new Set());
   const [showCertModal, setShowCertModal] = useState(null);
+  // Map: "collegiate_number|session_title" → true (has cert)
+  const [certIndex, setCertIndex] = useState(new Map());
+  const [loadingCerts, setLoadingCerts] = useState(false);
 
   // ── Cargar asistencia ──
   const load = useCallback(async () => {
@@ -65,7 +68,35 @@ export default function AttendanceReportView({
     setLoading(false);
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  // ── Cargar certificados para cruzar con la asistencia ──
+  const loadCerts = useCallback(async (attendeeList) => {
+    if (!supabase || !attendeeList.length) return;
+    const nums = [...new Set(attendeeList.map(a => a.collegiate_number).filter(Boolean))];
+    if (!nums.length) return;
+    setLoadingCerts(true);
+    try {
+      const { data } = await supabase
+        .from('cpg_certificates')
+        .select('collegiate_number, video_title')
+        .in('collegiate_number', nums);
+      const map = new Map();
+      (data || []).forEach(c => {
+        // index by "num|title" (lowercased for fuzzy match)
+        const key = `${c.collegiate_number}|${(c.video_title || '').toLowerCase().trim()}`;
+        map.set(key, true);
+      });
+      setCertIndex(map);
+    } catch {}
+    setLoadingCerts(false);
+  }, []);
+
+  useEffect(() => {
+    load().then(() => {});
+  }, [load]);
+
+  useEffect(() => {
+    if (attendees.length > 0) loadCerts(attendees);
+  }, [attendees, loadCerts]);
 
   // ── Datos derivados ──
   const availableYears = useMemo(() => {
@@ -149,7 +180,12 @@ export default function AttendanceReportView({
     });
   };
 
-  // ── Exportar CSV ──
+  // ── Exportar XLSX ──
+  const hasCert = (collegiateNumber, sessionTitle) => {
+    const key = `${collegiateNumber}|${(sessionTitle || '').toLowerCase().trim()}`;
+    return certIndex.has(key);
+  };
+
   const exportCSV = (scope) => {
     let data = [];
     let filename = 'asistencia';
@@ -167,29 +203,22 @@ export default function AttendanceReportView({
     }
     if (!data.length) return;
 
-    const esc = v => {
-      const s = String(v || '');
-      return s.includes(',') || s.includes('"') ? '"' + s.replace(/"/g, '""') + '"' : s;
-    };
+    const XLSX = window.XLSX;
+    if (!XLSX) { alert('La librería de exportación no está disponible.'); return; }
     const rows = [
-      ['Nombre', 'Colegiado', 'Correo', 'Departamento', 'Teléfono', 'Plataforma', 'Sesión', 'Año', 'Fecha/Hora'],
+      ['Nombre', 'Colegiado', 'Correo', 'Departamento', 'Teléfono', 'Plataforma', 'Sesión', 'Año', 'Fecha/Hora', 'Certificado emitido'],
       ...data.map(a => [
         a.name, a.collegiate_number, a.email || '', a.department || '', a.phone || '',
         a.platform, a.session_title,
         a.joined_at ? new Date(a.joined_at).getFullYear() : '',
         a.joined_at ? new Date(a.joined_at).toLocaleString('es-GT') : '',
+        hasCert(a.collegiate_number, a.session_title) ? 'Sí' : 'No',
       ]),
     ];
-    const csv = rows.map(r => r.map(esc).join(',')).join('\n');
-    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `${filename}-${new Date().toISOString().slice(0, 10)}.csv`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Asistencia');
+    XLSX.writeFile(wb, `${filename}-${new Date().toISOString().slice(0, 10)}.xlsx`);
   };
 
   const openCertModal = (mode, items) => {
@@ -276,7 +305,7 @@ export default function AttendanceReportView({
                     onClick={() => exportCSV('selected')}
                     className="flex items-center gap-1.5 bg-emerald-700 hover:bg-emerald-600 px-3 py-1.5 rounded-lg text-xs font-bold transition"
                   >
-                    <Download size={12} /> CSV selección
+                    <Download size={12} /> XLSX selección
                   </button>
                   <button
                     onClick={() => setSelectedIds(new Set())}
@@ -290,7 +319,7 @@ export default function AttendanceReportView({
                   onClick={() => exportCSV(filterSession !== 'all' ? 'filtered' : 'global')}
                   className="flex items-center gap-1.5 bg-emerald-700 hover:bg-emerald-600 px-3 py-1.5 rounded-lg text-xs font-bold transition"
                 >
-                  <Download size={12} /> {filterSession !== 'all' ? 'CSV actividad' : 'CSV global'}
+                  <Download size={12} /> {filterSession !== 'all' ? 'XLSX actividad' : 'XLSX global'}
                 </button>
               )}
             </div>
@@ -374,12 +403,14 @@ export default function AttendanceReportView({
                           <th className="text-left px-3 py-2">Contacto</th>
                           <th className="text-left px-3 py-2">Depto.</th>
                           <th className="text-left px-3 py-2">Fecha</th>
-                          <th className="text-right px-3 py-2">Certificado</th>
+                          <th className="text-center px-3 py-2">Cert.</th>
+                          <th className="text-right px-3 py-2">Emitir</th>
                         </tr>
                       </thead>
                       <tbody>
                         {items.map(a => {
                           const selected = selectedIds.has(a.id);
+                          const certified = hasCert(a.collegiate_number, sessionTitle);
                           return (
                             <tr
                               key={a.id}
@@ -408,12 +439,27 @@ export default function AttendanceReportView({
                                   hour: '2-digit', minute: '2-digit',
                                 })}
                               </td>
+                              <td className="px-3 py-2 text-center">
+                                {loadingCerts ? (
+                                  <Loader2 size={12} className="animate-spin text-gray-500 mx-auto" />
+                                ) : certified ? (
+                                  <span title="Certificado emitido">
+                                    <BadgeCheck size={16} className="text-green-400 mx-auto" />
+                                  </span>
+                                ) : (
+                                  <span className="text-gray-700 text-xs">—</span>
+                                )}
+                              </td>
                               <td className="px-3 py-2 text-right">
                                 <button
                                   onClick={() => openCertModal('one', [a])}
-                                  className="inline-flex items-center gap-1 bg-yellow-600/30 hover:bg-yellow-600/60 text-yellow-300 hover:text-yellow-100 text-xs font-bold px-2.5 py-1 rounded border border-yellow-700/50 transition"
+                                  className={`inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded border transition ${
+                                    certified
+                                      ? 'bg-gray-700/40 hover:bg-yellow-600/40 text-gray-400 hover:text-yellow-200 border-gray-700 hover:border-yellow-700/50'
+                                      : 'bg-yellow-600/30 hover:bg-yellow-600/60 text-yellow-300 hover:text-yellow-100 border-yellow-700/50'
+                                  }`}
                                 >
-                                  <Award size={11} /> Emitir
+                                  <Award size={11} /> {certified ? 'Reemitir' : 'Emitir'}
                                 </button>
                               </td>
                             </tr>

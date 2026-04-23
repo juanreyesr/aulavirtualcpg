@@ -18,7 +18,17 @@ const ADMIN_CREDENTIALS = {
 
 const EDGE_URL = 'https://ilyospunwucdojrnfgti.supabase.co/functions/v1/consultar-colegiado';
 const ADMIN_EDGE_URL = 'https://ilyospunwucdojrnfgti.supabase.co/functions/v1/manage-admin-user';
-const APP_URL = 'https://aulavirtualcpg.vercel.app';
+const APP_URL = 'https://aulavirtualcpg.org';
+
+// ── Exportar XLSX usando SheetJS (cargado por CDN en index.html) ──
+function exportXLSX(rows, filename) {
+  const XLSX = window.XLSX;
+  if (!XLSX) { alert('La librería de exportación no está disponible.'); return; }
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Datos');
+  XLSX.writeFile(wb, filename);
+}
 
 const DEFAULT_SITE_LOGOS = {
   navLogoCpg: '/logo-cpg-grande.png',
@@ -954,6 +964,12 @@ export default function App() {
   const [commissions, setCommissions] = useState([]);
 
   const certCodeFromUrl = new URLSearchParams(window.location.search).get('cert');
+  const attendFromUrl = new URLSearchParams(window.location.search).get('attend') === '1';
+
+  // ── Auto-navegar a sesión en vivo si viene con ?attend=1 ──
+  useEffect(() => {
+    if (attendFromUrl && liveSession?.active) setView('live');
+  }, [attendFromUrl, liveSession?.active]);
 
   // ── Scroll automático al tope en cada cambio de vista ──
   useEffect(() => {
@@ -1344,6 +1360,14 @@ export default function App() {
 function HistoryView({ sessionUser, onBack, onReprintCert }) {
   const [certs, setCerts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [expanded, setExpanded] = useState(false);
+  const [filterMode, setFilterMode] = useState('month'); // 'month' | 'range'
+  const [filterMonth, setFilterMonth] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  });
+  const [filterStart, setFilterStart] = useState('');
+  const [filterEnd, setFilterEnd] = useState('');
 
   useEffect(() => {
     const load = async () => {
@@ -1363,10 +1387,23 @@ function HistoryView({ sessionUser, onBack, onReprintCert }) {
 
   const fmt = (iso) => new Date(iso).toLocaleDateString('es-GT', { year: 'numeric', month: 'long', day: 'numeric' });
 
+  const filteredCerts = certs.filter(c => {
+    const d = new Date(c.issued_at);
+    if (filterMode === 'month' && filterMonth) {
+      const [y, m] = filterMonth.split('-').map(Number);
+      return d.getFullYear() === y && (d.getMonth() + 1) === m;
+    }
+    if (filterMode === 'range') {
+      if (filterStart && d < new Date(filterStart + 'T00:00:00')) return false;
+      if (filterEnd && d > new Date(filterEnd + 'T23:59:59')) return false;
+    }
+    return true;
+  });
+
   return (
     <div className="min-h-screen bg-[#141414] pt-24 px-4 md:px-16 pb-12">
       <button onClick={onBack} className="flex items-center gap-2 text-gray-400 hover:text-white mb-6 transition"><ChevronLeft /> Regresar</button>
-      <div className="mb-8">
+      <div className="mb-6">
         <h1 className="text-3xl font-bold text-white mb-1">Mis certificados</h1>
         <p className="text-gray-400 text-sm">Colegiado No. {sessionUser.collegiateNumber} · {certs.length} certificado{certs.length !== 1 ? 's' : ''} emitido{certs.length !== 1 ? 's' : ''}</p>
         <p className="text-gray-600 text-xs mt-1">Puedes descargar tus certificados las veces que necesites.</p>
@@ -1385,27 +1422,96 @@ function HistoryView({ sessionUser, onBack, onReprintCert }) {
       )}
 
       {!loading && certs.length > 0 && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-          {certs.map(cert => (
-            <div key={cert.id} className="bg-[#1a1a1a] border border-gray-800 rounded-xl overflow-hidden hover:border-yellow-700/50 transition">
-              <div className="bg-gradient-to-r from-yellow-900/30 to-amber-900/10 border-b border-gray-800 px-4 py-3 flex items-center gap-2">
-                <Award size={16} className="text-yellow-500 shrink-0" />
-                <span className="text-xs font-bold text-yellow-400 uppercase tracking-wider">Certificado oficial</span>
-                <span className={`ml-auto text-xs font-bold px-2 py-0.5 rounded-full ${cert.status === 'ACTIVO' ? 'bg-green-900/40 text-green-400' : 'bg-red-900/40 text-red-400'}`}>{cert.status}</span>
+        <div>
+          {/* Header colapsable con filtros */}
+          <div className="bg-[#1a1a1a] border border-gray-800 rounded-xl mb-5 overflow-hidden">
+            <button
+              onClick={() => setExpanded(v => !v)}
+              className="w-full flex items-center justify-between px-5 py-4 hover:bg-white/5 transition"
+            >
+              <div className="flex items-center gap-3">
+                <Award size={18} className="text-yellow-500" />
+                <span className="font-semibold text-white">
+                  {expanded ? `${filteredCerts.length} certificado${filteredCerts.length !== 1 ? 's' : ''} mostrado${filteredCerts.length !== 1 ? 's' : ''}` : 'Ver mis certificados'}
+                </span>
               </div>
-              <div className="p-4">
-                <h3 className="font-bold text-white text-sm mb-1 line-clamp-2">{cert.video_title}</h3>
-                <p className="text-xs text-gray-500 mb-3">{fmt(cert.issued_at)}</p>
-                <p className="text-xs font-mono text-gray-600 mb-4 truncate">{cert.certificate_code}</p>
-                <button
-                  onClick={() => onReprintCert(cert)}
-                  className="w-full bg-yellow-600/20 hover:bg-yellow-600/40 border border-yellow-700/50 text-yellow-300 hover:text-yellow-200 py-2 rounded-lg text-sm font-semibold transition flex items-center justify-center gap-2"
-                >
-                  <Download size={14} /> Descargar certificado
-                </button>
+              <span className="text-gray-400 text-sm">{expanded ? '▲ Ocultar' : '▼ Mostrar'}</span>
+            </button>
+
+            {expanded && (
+              <div className="border-t border-gray-800 px-5 py-4">
+                {/* Selector de modo de filtro */}
+                <div className="flex gap-2 mb-4 flex-wrap">
+                  <button
+                    onClick={() => setFilterMode('month')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition ${filterMode === 'month' ? 'border-yellow-600 bg-yellow-900/30 text-yellow-300' : 'border-gray-700 text-gray-400 hover:border-gray-500'}`}
+                  >Por mes</button>
+                  <button
+                    onClick={() => setFilterMode('range')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition ${filterMode === 'range' ? 'border-yellow-600 bg-yellow-900/30 text-yellow-300' : 'border-gray-700 text-gray-400 hover:border-gray-500'}`}
+                  >Por período</button>
+                  <button
+                    onClick={() => setFilterMode('all')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition ${filterMode === 'all' ? 'border-yellow-600 bg-yellow-900/30 text-yellow-300' : 'border-gray-700 text-gray-400 hover:border-gray-500'}`}
+                  >Todos</button>
+                </div>
+
+                {filterMode === 'month' && (
+                  <div className="flex items-center gap-3">
+                    <label className="text-xs text-gray-400">Mes:</label>
+                    <input
+                      type="month"
+                      value={filterMonth}
+                      onChange={e => setFilterMonth(e.target.value)}
+                      className="bg-black border border-gray-700 rounded-lg px-3 py-1.5 text-white text-sm focus:border-yellow-600 outline-none"
+                    />
+                  </div>
+                )}
+
+                {filterMode === 'range' && (
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <label className="text-xs text-gray-400">Desde:</label>
+                    <input type="date" value={filterStart} onChange={e => setFilterStart(e.target.value)} className="bg-black border border-gray-700 rounded-lg px-3 py-1.5 text-white text-sm focus:border-yellow-600 outline-none" />
+                    <label className="text-xs text-gray-400">Hasta:</label>
+                    <input type="date" value={filterEnd} onChange={e => setFilterEnd(e.target.value)} className="bg-black border border-gray-700 rounded-lg px-3 py-1.5 text-white text-sm focus:border-yellow-600 outline-none" />
+                  </div>
+                )}
               </div>
-            </div>
-          ))}
+            )}
+          </div>
+
+          {/* Lista de certificados (solo visible si expanded) */}
+          {expanded && (
+            filteredCerts.length === 0 ? (
+              <div className="text-center py-12 text-gray-500">
+                <Award size={36} className="mx-auto mb-3 opacity-30" />
+                <p>No hay certificados en este período.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                {filteredCerts.map(cert => (
+                  <div key={cert.id} className="bg-[#1a1a1a] border border-gray-800 rounded-xl overflow-hidden hover:border-yellow-700/50 transition">
+                    <div className="bg-gradient-to-r from-yellow-900/30 to-amber-900/10 border-b border-gray-800 px-4 py-3 flex items-center gap-2">
+                      <Award size={16} className="text-yellow-500 shrink-0" />
+                      <span className="text-xs font-bold text-yellow-400 uppercase tracking-wider">Certificado oficial</span>
+                      <span className={`ml-auto text-xs font-bold px-2 py-0.5 rounded-full ${cert.status === 'ACTIVO' ? 'bg-green-900/40 text-green-400' : 'bg-red-900/40 text-red-400'}`}>{cert.status}</span>
+                    </div>
+                    <div className="p-4">
+                      <h3 className="font-bold text-white text-sm mb-1 line-clamp-2">{cert.video_title}</h3>
+                      <p className="text-xs text-gray-500 mb-3">{fmt(cert.issued_at)}</p>
+                      <p className="text-xs font-mono text-gray-600 mb-4 truncate">{cert.certificate_code}</p>
+                      <button
+                        onClick={() => onReprintCert(cert)}
+                        className="w-full bg-yellow-600/20 hover:bg-yellow-600/40 border border-yellow-700/50 text-yellow-300 hover:text-yellow-200 py-2 rounded-lg text-sm font-semibold transition flex items-center justify-center gap-2"
+                      >
+                        <Download size={14} /> Descargar certificado
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )
+          )}
         </div>
       )}
     </div>
@@ -2485,13 +2591,15 @@ function QuestionEditor({ question, idx, onQuestionChange }) {
 }
 
 // ── LIVE ADMIN PANEL ──────────────────────────────
-function LiveAdminPanel({ liveSession, onSave, onOpenAttendance }) {
+function LiveAdminPanel({ liveSession, onSave, onOpenAttendance, commissions = [], activities = [] }) {
   const PLATFORMS = [
     { id: 'youtube', label: 'YouTube Live', hint: 'Pega la URL del video en vivo', color: 'border-red-600 bg-red-900/20 text-red-300' },
     { id: 'zoom',    label: 'Zoom',         hint: 'Pega el enlace de invitación de Zoom', color: 'border-blue-600 bg-blue-900/20 text-blue-300' },
     { id: 'meet',    label: 'Google Meet',  hint: 'Pega el enlace de Google Meet', color: 'border-green-600 bg-green-900/20 text-green-300' },
   ];
-  const [form, setForm] = useState({ title: liveSession?.title || '', platform: liveSession?.platform || 'youtube', url: liveSession?.url || '' });
+  const EMPTY_LIVE_FORM = { title: '', platform: 'youtube', url: '', hasCommissions: false, commissions: [] };
+  const [form, setForm] = useState(EMPTY_LIVE_FORM);
+  const [selectedActivity, setSelectedActivity] = useState('');
   const [attendees, setAttendees] = useState([]);
   const [loadingAtt, setLoadingAtt] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -2502,10 +2610,28 @@ function LiveAdminPanel({ liveSession, onSave, onOpenAttendance }) {
   const isActive = liveSession?.active;
   const currentPlatform = PLATFORMS.find(p => p.id === form.platform);
 
+  const handleActivityPreFill = (actId) => {
+    setSelectedActivity(actId);
+    if (!actId) return;
+    const a = activities.find(x => String(x.id) === actId);
+    if (!a) return;
+    setForm(prev => ({
+      ...prev,
+      title: a.title || prev.title,
+      url: a.meetingLink || a.zoomLink || prev.url,
+      platform: a.meetingLink?.includes('zoom') ? 'zoom' : a.meetingLink?.includes('meet.google') ? 'meet' : prev.platform,
+      hasCommissions: !!a.hasCommissions,
+      commissions: a.commissions || [],
+    }));
+  };
+
   const handleToggle = async () => {
     setSaving(true);
     if (!isActive) {
-      await onSave({ active: true, title: form.title, platform: form.platform, url: form.url, started_at: new Date().toISOString() });
+      const commSnap = form.hasCommissions
+        ? commissions.filter(c => (form.commissions || []).includes(c.id)).map(c => ({ id: c.id, commission_name: c.commission_name, signer_name: c.signer_name, signer_title: c.signer_title, signature_url: c.signature_url }))
+        : [];
+      await onSave({ active: true, title: form.title, platform: form.platform, url: form.url, started_at: new Date().toISOString(), commissions_snapshot: commSnap });
     } else {
       // Al finalizar: contar asistentes de esta sesión y guardar en el log
       if (supabase && liveSession?.title) {
@@ -2528,7 +2654,14 @@ function LiveAdminPanel({ liveSession, onSave, onOpenAttendance }) {
     setSaving(false);
   };
 
-  const handleUpdate = async () => { setSaving(true); await onSave({ title: form.title, platform: form.platform, url: form.url }); setSaving(false); };
+  const handleUpdate = async () => {
+    setSaving(true);
+    const commSnap = form.hasCommissions
+      ? commissions.filter(c => (form.commissions || []).includes(c.id)).map(c => ({ id: c.id, commission_name: c.commission_name, signer_name: c.signer_name, signer_title: c.signer_title, signature_url: c.signature_url }))
+      : [];
+    await onSave({ title: form.title, platform: form.platform, url: form.url, commissions_snapshot: commSnap });
+    setSaving(false);
+  };
 
   const loadAttendees = async () => {
     if (!supabase) return; setLoadingAtt(true);
@@ -2545,28 +2678,20 @@ function LiveAdminPanel({ liveSession, onSave, onOpenAttendance }) {
 
   const exportAttendance = () => {
     if (!attendees.length) return;
-    const esc = v => { const s = String(v || ''); return s.includes(',') || s.includes('"') ? '"' + s.replace(/"/g, '""') + '"' : s; };
     const rows = [
       ['Nombre', 'Colegiado', 'Correo', 'Departamento', 'Teléfono', 'Plataforma', 'Sesión', 'Fecha/Hora'],
       ...attendees.map(a => [a.name, a.collegiate_number, a.email || '', a.department || '', a.phone || '', a.platform, a.session_title, new Date(a.joined_at).toLocaleString('es-GT')])
     ];
-    const csv = rows.map(r => r.map(esc).join(',')).join('\n');
-    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url;
-    link.download = 'asistencia-sesiones-en-vivo.csv'; document.body.appendChild(link); link.click(); document.body.removeChild(link); URL.revokeObjectURL(url);
+    exportXLSX(rows, 'asistencia-sesiones-en-vivo.xlsx');
   };
 
   const exportSessionsLog = () => {
     if (!sessionsLog.length) return;
-    const esc = v => { const s = String(v || ''); return s.includes(',') || s.includes('"') ? '"' + s.replace(/"/g, '""') + '"' : s; };
     const rows = [
       ['Título', 'Plataforma', 'Inicio', 'Fin', 'Asistentes'],
       ...sessionsLog.map(s => [s.title, s.platform, s.started_at ? new Date(s.started_at).toLocaleString('es-GT') : '', new Date(s.ended_at).toLocaleString('es-GT'), s.attendee_count])
     ];
-    const csv = rows.map(r => r.map(esc).join(',')).join('\n');
-    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url;
-    link.download = 'informe-sesiones-en-vivo.csv'; document.body.appendChild(link); link.click(); document.body.removeChild(link); URL.revokeObjectURL(url);
+    exportXLSX(rows, 'informe-sesiones-en-vivo.xlsx');
   };
 
   return (
@@ -2585,6 +2710,23 @@ function LiveAdminPanel({ liveSession, onSave, onOpenAttendance }) {
           </button>
         </div>
       </div>
+      {/* Prefill desde actividad existente */}
+      {activities.length > 0 && !isActive && (
+        <div className="mb-4">
+          <label className="block text-sm text-gray-400 mb-1">Cargar datos desde actividad del calendario</label>
+          <select
+            value={selectedActivity}
+            onChange={e => handleActivityPreFill(e.target.value)}
+            className="w-full bg-black border border-gray-700 rounded-lg p-2.5 text-white focus:border-blue-500 outline-none"
+          >
+            <option value="">— Ingresar manualmente —</option>
+            {activities.sort((a, b) => (a.date > b.date ? -1 : 1)).map(a => (
+              <option key={a.id} value={String(a.id)}>{a.date ? a.date + ' · ' : ''}{a.title}</option>
+            ))}
+          </select>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
           <label className="block text-sm text-gray-400 mb-1">Título de la sesión</label>
@@ -2603,14 +2745,65 @@ function LiveAdminPanel({ liveSession, onSave, onOpenAttendance }) {
           <input type="url" value={form.url} onChange={e => setForm({ ...form, url: e.target.value })} placeholder={currentPlatform?.hint} className="w-full bg-black border border-gray-700 rounded-lg p-2.5 text-white focus:border-blue-500 outline-none" />
         </div>
       </div>
-      {isActive && <button onClick={handleUpdate} disabled={saving} className="mt-4 flex items-center gap-2 bg-blue-700 hover:bg-blue-600 px-4 py-2 rounded-lg text-sm font-semibold transition">{saving ? <Loader2 size={14} className="animate-spin" /> : null}Actualizar configuración en vivo</button>}
+
+      {/* Comisiones de la transmisión */}
+      <div className="bg-gray-900/60 border border-gray-800 rounded-xl p-4 mt-4">
+        <div className="flex items-center gap-3 mb-2">
+          <input type="checkbox" id="liveCommToggle" checked={!!form.hasCommissions} onChange={e => setForm({ ...form, hasCommissions: e.target.checked, commissions: e.target.checked ? (form.commissions || []) : [] })} className="w-5 h-5 text-purple-600 rounded" />
+          <label htmlFor="liveCommToggle" className="font-semibold cursor-pointer">¿Otra comisión involucrada?</label>
+        </div>
+        <p className="text-xs text-gray-500 mb-3">Las comisiones seleccionadas firmarán los certificados de asistencia a esta transmisión.</p>
+        {form.hasCommissions && (
+          <div>
+            {(!commissions || commissions.length === 0) ? (
+              <p className="text-sm text-amber-400 bg-amber-900/20 border border-amber-700/30 rounded-lg px-3 py-2">No hay comisiones activas.</p>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                {commissions.map(c => {
+                  const ids = form.commissions || [];
+                  const checked = ids.includes(c.id);
+                  return (
+                    <label key={c.id} className={`flex items-center gap-2 p-2.5 rounded-lg border cursor-pointer transition ${checked ? 'border-purple-500 bg-purple-900/20' : 'border-gray-700 hover:border-gray-500'}`}>
+                      <input type="checkbox" checked={checked} onChange={() => { const next = checked ? ids.filter(x => x !== c.id) : [...ids, c.id]; setForm({ ...form, commissions: next }); }} className="w-4 h-4 accent-purple-500" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-white text-sm font-semibold truncate">{c.commission_name}</p>
+                        <p className="text-gray-500 text-xs truncate">{c.signer_name} · {c.signer_title}</p>
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {isActive && (
+        <div className="mt-4 flex flex-wrap gap-3 items-start">
+          <button onClick={handleUpdate} disabled={saving} className="flex items-center gap-2 bg-blue-700 hover:bg-blue-600 px-4 py-2 rounded-lg text-sm font-semibold transition">{saving ? <Loader2 size={14} className="animate-spin" /> : null}Actualizar configuración en vivo</button>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs text-gray-500 mb-1">Enlace de asistencia para compartir:</p>
+            <div className="flex items-center gap-2">
+              <code className="flex-1 bg-black border border-gray-700 rounded-lg px-3 py-2 text-xs text-green-300 font-mono truncate">{APP_URL}/?attend=1</code>
+              <button
+                onClick={() => { navigator.clipboard.writeText(APP_URL + '/?attend=1'); }}
+                className="shrink-0 flex items-center gap-1.5 bg-gray-700 hover:bg-gray-600 px-3 py-2 rounded-lg text-xs font-semibold transition"
+                title="Copiar enlace"
+              >
+                Copiar
+              </button>
+            </div>
+            <p className="text-xs text-gray-600 mt-1">Quienes accedan a este enlace podrán registrar su asistencia directamente.</p>
+          </div>
+        </div>
+      )}
 
       {/* ── INFORME DE SESIONES EN VIVO ── */}
       {showSessionsLog && (
         <div className="mt-6 border-t border-gray-800 pt-5">
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-bold text-white">Historial de sesiones en vivo ({sessionsLog.length})</h3>
-            {sessionsLog.length > 0 && <button onClick={exportSessionsLog} className="flex items-center gap-2 bg-emerald-700 hover:bg-emerald-600 px-3 py-1.5 rounded text-xs font-semibold"><Download size={14} /> Exportar CSV</button>}
+            {sessionsLog.length > 0 && <button onClick={exportSessionsLog} className="flex items-center gap-2 bg-emerald-700 hover:bg-emerald-600 px-3 py-1.5 rounded text-xs font-semibold"><Download size={14} /> Exportar XLSX</button>}
           </div>
           {loadingLog && <div className="text-center py-6"><Loader2 className="animate-spin mx-auto text-gray-500" size={24} /></div>}
           {!loadingLog && sessionsLog.length === 0 && <p className="text-gray-500 text-sm text-center py-4">No hay sesiones registradas aún. El historial se genera al finalizar cada transmisión.</p>}
@@ -3486,7 +3679,6 @@ function AuditLogViewer() {
 
   const exportCSV = () => {
     if (!logs.length) return;
-    const esc = v => { const s = String(v || ''); return s.includes(',') || s.includes('"') ? '"' + s.replace(/"/g, '""') + '"' : s; };
     const rows = [
       ['Fecha/Hora', 'Admin', 'Email Admin', 'Acción', 'Recurso', 'ID Recurso', 'Detalles'],
       ...logs.map(l => [
@@ -3499,13 +3691,7 @@ function AuditLogViewer() {
         JSON.stringify(l.details || {}),
       ])
     ];
-    const csv = rows.map(r => r.map(esc).join(',')).join('\n');
-    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'audit-log-' + new Date().toISOString().slice(0, 10) + '.csv';
-    document.body.appendChild(link); link.click(); document.body.removeChild(link); URL.revokeObjectURL(url);
+    exportXLSX(rows, 'audit-log-' + new Date().toISOString().slice(0, 10) + '.xlsx');
   };
 
   return (
@@ -3529,7 +3715,7 @@ function AuditLogViewer() {
         </select>
         <button onClick={() => { setFilterAdmin(''); setFilterAction(''); setFilterDate(''); }} className="px-3 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg text-xs text-gray-300 transition">Limpiar</button>
         <button onClick={loadLogs} className="px-3 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg text-xs text-gray-300 transition flex items-center gap-1"><Loader2 size={12} className={loading ? 'animate-spin' : ''} /> Actualizar</button>
-        {logs.length > 0 && <button onClick={exportCSV} className="flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 px-3 py-2 rounded-lg text-xs font-semibold transition"><Download size={12} /> CSV</button>}
+        {logs.length > 0 && <button onClick={exportCSV} className="flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 px-3 py-2 rounded-lg text-xs font-semibold transition"><Download size={12} /> XLSX</button>}
       </div>
 
       {/* Stats rápidos */}
@@ -3631,7 +3817,7 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
   // ── CAMBIO 4+5: formData incluye platform ──
   const [formData, setFormData] = useState({ title: '', category: '', youtubeId: '', duration: '', description: '', thumbnail: '', scheduledAt: '', quizEnabled: false, platform: 'youtube' });
   const [questions, setQuestions] = useState([]);
-  const EMPTY_ACTIVITY_FORM = { title: '', organizer: '', date: '', time: '', location: '', registrationLink: '', meetingLink: '', isFull: false, participants: '', costType: 'free', cost: '', scholarshipPct: '', scholarshipAmt: '' };
+  const EMPTY_ACTIVITY_FORM = { title: '', organizer: '', date: '', time: '', location: '', registrationLink: '', meetingLink: '', isFull: false, participants: '', costType: 'free', cost: '', scholarshipPct: '', scholarshipAmt: '', hasCommissions: false, commissions: [] };
   const [activityForm, setActivityForm] = useState(EMPTY_ACTIVITY_FORM);
 
   const handleCollegiateBlur = async () => {
@@ -3655,7 +3841,7 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
   const updateQuestion = useCallback((idx, updater) => { setQuestions(prev => prev.map((q, i) => i !== idx ? q : updater(q))); }, []);
   const handleSave = async () => { const nv = { ...formData, questions, viewCount: formData.viewCount || 0 }; setSaveError(''); try { if (videos.some(v => v.id === nv.id)) await onVideosChange(videos.map(v => v.id === nv.id ? nv : v)); else await onVideosChange([...videos, nv]); setEditingVideo(null); } catch (e) { setSaveError('No se pudieron guardar los cambios: ' + e.message); } };
   const handleDelete = async (id) => { if (confirm('¿Eliminar este video?')) { setSaveError(''); try { await onVideosChange(videos.filter(v => v.id !== id)); } catch (e) { setSaveError('No se pudo eliminar: ' + e.message); } } };
-  const handleActivityEdit = (a) => { setActivityError(''); setEditingActivity(a); setActivityForm({ title: a.title || '', organizer: a.organizer || '', date: a.date || '', time: a.time || '', location: a.location || '', registrationLink: a.registrationLink || '', meetingLink: a.meetingLink || '', isFull: Boolean(a.isFull), participants: a.participants || '', costType: a.costType || 'free', cost: a.cost || '', scholarshipPct: a.scholarshipPct || '', scholarshipAmt: a.scholarshipAmt || '' }); };
+  const handleActivityEdit = (a) => { setActivityError(''); setEditingActivity(a); setActivityForm({ title: a.title || '', organizer: a.organizer || '', date: a.date || '', time: a.time || '', location: a.location || '', registrationLink: a.registrationLink || '', meetingLink: a.meetingLink || '', isFull: Boolean(a.isFull), participants: a.participants || '', costType: a.costType || 'free', cost: a.cost || '', scholarshipPct: a.scholarshipPct || '', scholarshipAmt: a.scholarshipAmt || '', hasCommissions: !!a.hasCommissions, commissions: a.commissions || [] }); };
   const handleActivitySave = async () => { if (!activityForm.title || !activityForm.date) { setActivityError('El título y la fecha son obligatorios.'); return; } setActivityError(''); const next = { ...editingActivity, ...activityForm }; try { const exists = activities.some(a => a.id === next.id); await onActivitiesChange(exists ? activities.map(a => a.id === next.id ? next : a) : [...activities, next]); setEditingActivity(null); setActivityForm(EMPTY_ACTIVITY_FORM); } catch (e) { setActivityError('No se pudo guardar: ' + e.message); } };
   const handleActivityDelete = async (id) => { if (!confirm('¿Eliminar esta actividad?')) return; setActivityError(''); try { await onActivitiesChange(activities.filter(a => a.id !== id)); } catch (e) { setActivityError('No se pudo eliminar: ' + e.message); } };
   const handleReportGenerate = () => {
@@ -3665,17 +3851,12 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
     if (e < s) { setReportError('La fecha final debe ser posterior.'); return; }
     const filtered = activities.filter(a => a?.date).map(a => ({ ...a, pd: new Date(a.date + 'T00:00:00') })).filter(a => !isNaN(a.pd) && a.pd >= s && a.pd <= e);
     if (!filtered.length) { setReportError('No hay actividades en este rango.'); return; }
-    const esc = v => { if (!v) return ''; const str = String(v); return (str.includes('"') || str.includes(',') || str.includes('\n')) ? '"' + str.replace(/"/g, '""') + '"' : str; };
     const costLabel = (a) => { if (a.costType === 'paid') return 'Con costo'; if (a.costType === 'scholarship') return 'Con beca'; return 'Gratuito'; };
     const rows = [
       ['Título', 'Organizador', 'Fecha', 'Hora', 'Lugar', 'Participantes', 'Cupo lleno', 'Modalidad de costo', 'Costo total (Q.)', 'Pago agremiado (Q.)', '% de beca', 'Enlace actividad', 'Enlace inscripción'],
       ...filtered.map(a => [a.title, a.organizer || '', a.date, a.time || '', a.location || '', a.participants || '0', a.isFull ? 'Sí' : 'No', costLabel(a), a.costType === 'paid' ? (a.cost || '') : a.costType === 'scholarship' ? (a.cost || '') : '', a.costType === 'scholarship' ? (a.scholarshipAmt || '') : '', a.costType === 'scholarship' ? (a.scholarshipPct ? a.scholarshipPct + '%' : '') : '', a.meetingLink || '', a.registrationLink || ''])
     ];
-    const csv = rows.map(r => r.map(esc).join(',')).join('\n');
-    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob); const link = document.createElement('a');
-    link.href = url; link.download = 'informe-actividades-' + reportRange.start + '-a-' + reportRange.end + '.csv';
-    document.body.appendChild(link); link.click(); document.body.removeChild(link); URL.revokeObjectURL(url);
+    exportXLSX(rows, 'informe-actividades-' + reportRange.start + '-a-' + reportRange.end + '.xlsx');
     setShowReportModal(false);
   };
 
@@ -3700,17 +3881,11 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
   };
 
   const exportCertsCSV = (data) => {
-    const esc = v => { const s = String(v || ''); return s.includes(',') || s.includes('"') ? '"' + s.replace(/"/g, '""')+'"' : s; };
     const rows = [
       ['Código', 'Colegiado', 'Nombre', 'Estado CPG', 'Curso', 'Duración (hrs)', 'Fecha de emisión', 'URL verificación'],
       ...data.map(c => [c.certificate_code, c.collegiate_number, c.recipient_name, c.status, c.video_title, c.video_duration || '', new Date(c.issued_at).toLocaleString('es-GT'), c.verify_url || ''])
     ];
-    const csv = rows.map(r => r.map(esc).join(',')).join('\n');
-    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a'); link.href = url;
-    link.download = 'certificados-emitidos-' + new Date().toISOString().slice(0,10) + '.csv';
-    document.body.appendChild(link); link.click(); document.body.removeChild(link); URL.revokeObjectURL(url);
+    exportXLSX(rows, 'certificados-emitidos-' + new Date().toISOString().slice(0,10) + '.xlsx');
   };
 
   if (editingVideo) {
@@ -3853,7 +4028,7 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
           </div>
           <span className="text-gray-400 text-lg">{showLiveSection ? '▲' : '▼'}</span>
         </button>
-        {showLiveSection && <div className="border-t border-gray-800"><LiveAdminPanel liveSession={liveSession} onSave={onSaveLiveSession} onOpenAttendance={() => setShowAttendanceReport(true)} /></div>}
+        {showLiveSection && <div className="border-t border-gray-800"><LiveAdminPanel liveSession={liveSession} onSave={onSaveLiveSession} onOpenAttendance={() => setShowAttendanceReport(true)} commissions={commissions} activities={activities} /></div>}
       </div>
 
       {/* ── PLANTILLA DE CERTIFICADO (colapsable) ── */}
@@ -3943,6 +4118,39 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
                     </div>
                   )}
                 </div>
+                {/* ── Comisiones firmantes de la actividad ── */}
+                <div className="bg-gray-900 p-4 rounded border border-gray-800 mt-4">
+                  <div className="flex items-center gap-3 mb-2">
+                    <input type="checkbox" id="actCommToggle" checked={!!activityForm.hasCommissions} onChange={e => setActivityForm({ ...activityForm, hasCommissions: e.target.checked, commissions: e.target.checked ? (activityForm.commissions || []) : [] })} className="w-5 h-5 text-purple-600 rounded" />
+                    <label htmlFor="actCommToggle" className="font-bold cursor-pointer">¿Otra comisión involucrada?</label>
+                  </div>
+                  <p className="text-xs text-gray-500 mb-3">Además del Coordinador CAEDUC, marca qué comisiones firmarán los certificados de esta actividad.</p>
+                  {activityForm.hasCommissions && (
+                    <div>
+                      {(!commissions || commissions.length === 0) ? (
+                        <p className="text-sm text-amber-400 bg-amber-900/20 border border-amber-700/30 rounded-lg px-3 py-2">No hay comisiones activas. Agrégalas en "Comisiones y firmantes" del panel principal.</p>
+                      ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                          {commissions.map(c => {
+                            const ids = activityForm.commissions || [];
+                            const checked = ids.includes(c.id);
+                            return (
+                              <label key={c.id} className={`flex items-center gap-2 p-2.5 rounded-lg border cursor-pointer transition ${checked ? 'border-purple-500 bg-purple-900/20' : 'border-gray-700 hover:border-gray-500'}`}>
+                                <input type="checkbox" checked={checked} onChange={() => { const next = checked ? ids.filter(x => x !== c.id) : [...ids, c.id]; setActivityForm({ ...activityForm, commissions: next }); }} className="w-4 h-4 accent-purple-500" />
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-white text-sm font-semibold truncate">{c.commission_name}</p>
+                                  <p className="text-gray-500 text-xs truncate">{c.signer_name} · {c.signer_title}</p>
+                                </div>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      )}
+                      <p className="text-xs text-gray-500 mt-2">{(activityForm.commissions || []).length} comisión{(activityForm.commissions || []).length !== 1 ? 'es' : ''} seleccionada{(activityForm.commissions || []).length !== 1 ? 's' : ''}</p>
+                    </div>
+                  )}
+                </div>
+
                 <div className="flex justify-end gap-2 mt-4">
                   <button onClick={() => setEditingActivity(null)} className="px-4 py-2 bg-gray-700 rounded hover:bg-gray-600">Cancelar</button>
                   <button onClick={handleActivitySave} className="px-4 py-2 bg-green-600 rounded hover:bg-green-700 font-bold">Guardar actividad</button>
