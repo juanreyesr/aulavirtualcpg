@@ -19,6 +19,7 @@ const ADMIN_CREDENTIALS = {
 const EDGE_URL = 'https://ilyospunwucdojrnfgti.supabase.co/functions/v1/consultar-colegiado';
 const ADMIN_EDGE_URL = 'https://ilyospunwucdojrnfgti.supabase.co/functions/v1/manage-admin-user';
 const APP_URL = 'https://aulavirtualcpg.org';
+const CREDITOS_URL = 'https://creditos2025.vercel.app';
 
 // ── Exportar XLSX usando SheetJS (cargado por CDN en index.html) ──
 function exportXLSX(rows, filename) {
@@ -194,6 +195,15 @@ async function consultarColegiado(id) {
   const data = await res.json();
   if (!res.ok || !data.found) throw new Error(data.error || 'Colegiado no encontrado');
   return data;
+}
+
+async function navigateToCreditos(sessionUser) {
+  if (!supabase) return;
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) return;
+  const hash = `access_token=${session.access_token}&refresh_token=${session.refresh_token}&token_type=bearer&expires_in=${session.expires_in || 3600}&type=magiclink`;
+  const query = sessionUser?.collegiateNumber ? `?sso_colegiado=${encodeURIComponent(sessionUser.collegiateNumber)}&sso_nombre=${encodeURIComponent(sessionUser.name || '')}` : '';
+  window.open(`${CREDITOS_URL}/${query}#${hash}`, '_blank');
 }
 
 
@@ -1043,6 +1053,26 @@ export default function App() {
             localStorage.setItem('cpg_session', JSON.stringify(user));
             setSessionUser(user);
           } catch {}
+        } else {
+          // SSO desde Créditos Académicos
+          try {
+            const params = new URLSearchParams(window.location.search);
+            const ssoColegiado = params.get('sso_colegiado');
+            const ssoNombre = decodeURIComponent(params.get('sso_nombre') || '');
+            if (ssoColegiado) {
+              // Verificar/enriquecer con perfil existente
+              const { data: profile } = await supabase.from('cpg_user_profiles').select('name').eq('collegiate_number', ssoColegiado).maybeSingle();
+              const nombre = profile?.name || ssoNombre;
+              const user = { name: nombre, collegiateNumber: ssoColegiado, isGuest: false, email: session.user.email };
+              await supabase.from('cpg_user_profiles').upsert(
+                { collegiate_number: ssoColegiado, email: session.user.email, name: nombre },
+                { onConflict: 'collegiate_number' }
+              );
+              localStorage.setItem('cpg_session', JSON.stringify(user));
+              setSessionUser(user);
+              window.history.replaceState(null, '', window.location.pathname);
+            }
+          } catch {}
         }
       }
     });
@@ -1291,7 +1321,10 @@ export default function App() {
             </button>
           )}
           <a href="https://gestionescaeduc.vercel.app/" target="_blank" rel="noreferrer" className="hidden md:flex items-center gap-1 text-xs text-gray-300 hover:text-white border border-gray-600 px-3 py-1.5 rounded-full hover:bg-gray-800 transition"><ExternalLink size={12} /> Avales CAEDUC</a>
-          <a href="https://caeducgt.org/" target="_blank" rel="noreferrer" className="hidden md:flex items-center gap-1 text-xs text-gray-300 hover:text-white border border-gray-600 px-3 py-1.5 rounded-full hover:bg-gray-800 transition"><ExternalLink size={12} /> Créditos Académicos</a>
+          {!sessionUser.isGuest
+            ? <button onClick={() => navigateToCreditos(sessionUser)} className="hidden md:flex items-center gap-1 text-xs text-blue-300 hover:text-white border border-blue-700 px-3 py-1.5 rounded-full hover:bg-blue-900/40 transition font-medium" title="Ir a Créditos Académicos (sesión compartida)"><ExternalLink size={12} /> Créditos Académicos</button>
+            : <a href={CREDITOS_URL} target="_blank" rel="noreferrer" className="hidden md:flex items-center gap-1 text-xs text-gray-300 hover:text-white border border-gray-600 px-3 py-1.5 rounded-full hover:bg-gray-800 transition"><ExternalLink size={12} /> Créditos Académicos</a>
+          }
           <a href="https://colegiodepsicologos.org.gt" target="_blank" rel="noreferrer" className="hidden md:flex items-center gap-1 text-xs text-gray-300 hover:text-white border border-gray-600 px-3 py-1.5 rounded-full hover:bg-gray-800 transition"><ExternalLink size={12} /> Sitio Oficial</a>
 
           {!sessionUser.isGuest && (
