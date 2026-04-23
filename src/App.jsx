@@ -4071,7 +4071,7 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
               </div>
             )}
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-              {activities.filter(a => !a.date || a.date.startsWith(filterMonth)).sort((a, b) => (b.date || '').localeCompare(a.date || '')).map(a => {
+              {activities.filter(a => !a.date || a.date.startsWith(filterMonth)).sort((a, b) => (a.date || '').localeCompare(b.date || '')).map(a => {
                 const isPast = new Date(a.date + 'T00:00:00') < new Date();
                 return (
                   <div key={a.id} className={`bg-[#141414] border rounded-xl p-4 ${isPast ? 'border-gray-700 opacity-80' : 'border-gray-800'}`}>
