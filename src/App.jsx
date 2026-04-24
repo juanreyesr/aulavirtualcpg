@@ -484,6 +484,8 @@ function LoginColModal({ onSession }) {
   const [cpgData, setCpgData] = useState(null);
   const [registeredEmail, setRegisteredEmail] = useState(null);
   const [resetSent, setResetSent] = useState(false);
+  const [lookingUp, setLookingUp] = useState(false);
+  const [existingUser, setExistingUser] = useState(null); // { name, email } si ya está registrado
 
   useEffect(() => {
     const blocked = localStorage.getItem('cpg_google_blocked');
@@ -496,14 +498,34 @@ function LoginColModal({ onSession }) {
     }
   }, []);
 
+  const handleColegiadoBlur = async () => {
+    const val = colegiadoInput.trim();
+    if (!val || !/^\d+$/.test(val) || !supabase) return;
+    setLookingUp(true);
+    try {
+      const { data: profile } = await supabase
+        .from('cpg_user_profiles')
+        .select('email, name')
+        .eq('collegiate_number', val)
+        .maybeSingle();
+      if (profile?.name) {
+        setExistingUser({ name: profile.name, email: profile.email });
+        setNameInput(profile.name);
+      } else {
+        setExistingUser(null);
+      }
+    } catch {}
+    setLookingUp(false);
+  };
+
   const handleVerifyCollegiado = async () => {
     // TEMPORAL: verificación CPG desactivada (servicio del colegio no disponible)
     const val = colegiadoInput.trim();
     if (!val || !/^\d+$/.test(val)) { setError('Ingresa un número de colegiado válido (solo números).'); return; }
-    if (!nameInput.trim()) { setError('Ingresa tu nombre completo.'); return; }
+    const resolvedName = existingUser?.name || nameInput.trim();
+    if (!resolvedName) { setError('Ingresa tu nombre completo.'); return; }
     setLoading(true); setError('');
     try {
-      let resolvedName = nameInput.trim();
       setRegisteredEmail(null);
       setResetSent(false);
       if (supabase) {
@@ -515,7 +537,6 @@ function LoginColModal({ onSession }) {
         if (profile?.email) {
           setRegisteredEmail(profile.email);
           setAuthMode('login');
-          if (!resolvedName && profile.name) { resolvedName = profile.name; setNameInput(profile.name); }
         }
       }
       setCpgData({ colegiado: val, name: resolvedName, status: 'DESCONOCIDO' });
@@ -637,15 +658,27 @@ function LoginColModal({ onSession }) {
           {step === 'collegiate' && (
             <>
               <h2 className="text-white font-bold text-xl mb-1">Bienvenido</h2>
-              <p className="text-gray-400 text-sm mb-6">Ingresa tu número de colegiado y tu nombre para continuar.</p>
+              <p className="text-gray-400 text-sm mb-6">{existingUser ? `Hola de nuevo, ${existingUser.name}.` : 'Ingresa tu número de colegiado para continuar.'}</p>
               <div className="mb-3">
                 <label className="block text-gray-400 text-xs mb-1.5 uppercase tracking-wider">Número de Colegiado</label>
-                <input type="number" value={colegiadoInput} onChange={e => { setColegiadoInput(e.target.value); setError(''); }} onKeyDown={e => e.key === 'Enter' && handleVerifyCollegiado()} className="w-full bg-black border border-gray-700 rounded-lg p-3.5 text-white text-lg font-mono focus:border-blue-500 outline-none transition" placeholder="Ej. 4661" disabled={loading} />
+                <div className="relative">
+                  <input
+                    type="number" value={colegiadoInput}
+                    onChange={e => { setColegiadoInput(e.target.value); setError(''); setExistingUser(null); setNameInput(''); }}
+                    onBlur={handleColegiadoBlur}
+                    onKeyDown={e => e.key === 'Enter' && handleVerifyCollegiado()}
+                    className="w-full bg-black border border-gray-700 rounded-lg p-3.5 text-white text-lg font-mono focus:border-blue-500 outline-none transition"
+                    placeholder="Ej. 4661" disabled={loading}
+                  />
+                  {lookingUp && <Loader2 size={16} className="animate-spin text-blue-400 absolute right-3 top-4" />}
+                </div>
               </div>
-              <div className="mb-4">
-                <label className="block text-gray-400 text-xs mb-1.5 uppercase tracking-wider">Nombre completo</label>
-                <input type="text" value={nameInput} onChange={e => { setNameInput(e.target.value); setError(''); }} onKeyDown={e => e.key === 'Enter' && handleVerifyCollegiado()} className="w-full bg-black border border-gray-700 rounded-lg p-3.5 text-white focus:border-blue-500 outline-none transition" placeholder="Ej. María García López" disabled={loading} />
-              </div>
+              {!existingUser && (
+                <div className="mb-4">
+                  <label className="block text-gray-400 text-xs mb-1.5 uppercase tracking-wider">Nombre completo</label>
+                  <input type="text" value={nameInput} onChange={e => { setNameInput(e.target.value); setError(''); }} onKeyDown={e => e.key === 'Enter' && handleVerifyCollegiado()} className="w-full bg-black border border-gray-700 rounded-lg p-3.5 text-white focus:border-blue-500 outline-none transition" placeholder="Ej. María García López" disabled={loading} />
+                </div>
+              )}
               {error && <div className="mb-4 bg-red-500/10 border border-red-500/30 rounded-lg px-4 py-3 text-sm text-red-300 flex items-start gap-2"><XCircle size={16} className="mt-0.5 flex-shrink-0" />{error}</div>}
               <button onClick={handleVerifyCollegiado} disabled={loading} className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 disabled:cursor-not-allowed text-white font-bold py-3.5 rounded-lg transition flex items-center justify-center gap-2 mb-3">
                 {loading ? <><Loader2 size={18} className="animate-spin" /> Procesando...</> : <><UserCheck size={18} /> Continuar</>}
