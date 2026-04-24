@@ -193,8 +193,9 @@ const saveCompleted = (num, s) => { if (!num || num === '0000') return; localSto
 async function consultarColegiado(id) {
   const res = await fetch(EDGE_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: String(id).trim() }) });
   const data = await res.json();
-  if (!res.ok || !data.found) throw new Error(data.error || 'Colegiado no encontrado');
-  return data;
+  if (!res.ok || data.error) throw new Error(data.error || 'Colegiado no encontrado');
+  if (!data.nombre && !data.estatus) throw new Error('Colegiado no encontrado');
+  return { colegiado: data.numero || id, name: data.nombre || '', status: data.estatus || 'DESCONOCIDO', ...data };
 }
 
 async function navigateToCreditos(sessionUser) {
@@ -208,12 +209,32 @@ async function navigateToCreditos(sessionUser) {
 
 
 // ── LOG DE AUDITORÍA ─────────────────────────────
+const SUPER_ADMIN_EMAIL = 'lic.juanreyesr@gmail.com';
+
 const logAudit = async (adminEmail, adminName, action, resourceType, resourceId = '', details = {}) => {
   if (!supabase) return;
+  if ((adminEmail || '').toLowerCase().trim() === SUPER_ADMIN_EMAIL) return;
   try {
     await supabase.from('cpg_audit_log').insert({
       admin_email: adminEmail || '',
       admin_name: adminName || '',
+      action,
+      resource_type: resourceType,
+      resource_id: String(resourceId),
+      details,
+    });
+  } catch (e) { console.warn('[Audit] Error:', e.message); }
+};
+
+const logAuditAuto = async (action, resourceType, resourceId = '', details = {}) => {
+  if (!supabase) return;
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    const email = (session?.user?.email || '').toLowerCase().trim();
+    if (email === SUPER_ADMIN_EMAIL) return;
+    await supabase.from('cpg_audit_log').insert({
+      admin_email: email,
+      admin_name: '',
       action,
       resource_type: resourceType,
       resource_id: String(resourceId),
@@ -519,19 +540,18 @@ function LoginColModal({ onSession }) {
   };
 
   const handleVerifyCollegiado = async () => {
-    // TEMPORAL: verificación CPG desactivada (servicio del colegio no disponible)
     const val = colegiadoInput.trim();
-    if (!val || !/^\d+$/.test(val)) { setError('Ingresa un número de colegiado válido (solo números).'); return; }
-    const resolvedName = existingUser?.name || nameInput.trim();
-    if (!resolvedName) { setError('Ingresa tu nombre completo.'); return; }
+    if (!val) { setError('Ingresa tu número de colegiado.'); return; }
     setLoading(true); setError('');
     try {
+      const data = await consultarColegiado(val);
+      setCpgData(data);
       setRegisteredEmail(null);
       setResetSent(false);
       if (supabase) {
         const { data: profile } = await supabase
           .from('cpg_user_profiles')
-          .select('email, name')
+          .select('email')
           .eq('collegiate_number', val)
           .maybeSingle();
         if (profile?.email) {
@@ -539,10 +559,9 @@ function LoginColModal({ onSession }) {
           setAuthMode('login');
         }
       }
-      setCpgData({ colegiado: val, name: resolvedName, status: 'DESCONOCIDO' });
       setStep('auth');
     } catch (e) {
-      setError(e.message || 'Error al procesar.');
+      setError(e.message || 'No se encontró el colegiado.');
     } finally { setLoading(false); }
   };
 
@@ -659,12 +678,12 @@ function LoginColModal({ onSession }) {
             <>
               <h2 className="text-white font-bold text-xl mb-1">Bienvenido</h2>
               <p className="text-gray-400 text-sm mb-6">{existingUser ? `Hola de nuevo, ${existingUser.name}.` : 'Ingresa tu número de colegiado para continuar.'}</p>
-              <div className="mb-3">
+              <div className="mb-4">
                 <label className="block text-gray-400 text-xs mb-1.5 uppercase tracking-wider">Número de Colegiado</label>
                 <div className="relative">
                   <input
                     type="number" value={colegiadoInput}
-                    onChange={e => { setColegiadoInput(e.target.value); setError(''); setExistingUser(null); setNameInput(''); }}
+                    onChange={e => { setColegiadoInput(e.target.value); setError(''); setExistingUser(null); }}
                     onBlur={handleColegiadoBlur}
                     onKeyDown={e => e.key === 'Enter' && handleVerifyCollegiado()}
                     className="w-full bg-black border border-gray-700 rounded-lg p-3.5 text-white text-lg font-mono focus:border-blue-500 outline-none transition"
@@ -673,15 +692,9 @@ function LoginColModal({ onSession }) {
                   {lookingUp && <Loader2 size={16} className="animate-spin text-blue-400 absolute right-3 top-4" />}
                 </div>
               </div>
-              {!existingUser && (
-                <div className="mb-4">
-                  <label className="block text-gray-400 text-xs mb-1.5 uppercase tracking-wider">Nombre completo</label>
-                  <input type="text" value={nameInput} onChange={e => { setNameInput(e.target.value); setError(''); }} onKeyDown={e => e.key === 'Enter' && handleVerifyCollegiado()} className="w-full bg-black border border-gray-700 rounded-lg p-3.5 text-white focus:border-blue-500 outline-none transition" placeholder="Ej. María García López" disabled={loading} />
-                </div>
-              )}
               {error && <div className="mb-4 bg-red-500/10 border border-red-500/30 rounded-lg px-4 py-3 text-sm text-red-300 flex items-start gap-2"><XCircle size={16} className="mt-0.5 flex-shrink-0" />{error}</div>}
               <button onClick={handleVerifyCollegiado} disabled={loading} className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 disabled:cursor-not-allowed text-white font-bold py-3.5 rounded-lg transition flex items-center justify-center gap-2 mb-3">
-                {loading ? <><Loader2 size={18} className="animate-spin" /> Procesando...</> : <><UserCheck size={18} /> Continuar</>}
+                {loading ? <><Loader2 size={18} className="animate-spin" /> Verificando con CPG...</> : <><UserCheck size={18} /> Verificar colegiado</>}
               </button>
               <button onClick={handleGuest} disabled={loading} className="w-full bg-transparent hover:bg-gray-800 text-gray-400 hover:text-white border border-gray-700 font-medium py-3 rounded-lg transition flex items-center justify-center gap-2 text-sm">
                 <UserX size={16} /> Ver como invitado (acceso limitado)
@@ -692,10 +705,10 @@ function LoginColModal({ onSession }) {
 
           {step === 'auth' && cpgData && (
             <>
-              <div className="bg-blue-900/20 border border-blue-700/40 rounded-xl p-4 mb-6">
-                <p className="text-blue-400 text-xs font-bold uppercase tracking-wider mb-1">Número de colegiado</p>
-                {cpgData.name && <p className="text-white font-bold">{cpgData.name}</p>}
-                <p className="text-gray-400 text-sm">No. {cpgData.colegiado}</p>
+              <div className="bg-green-900/20 border border-green-700/40 rounded-xl p-4 mb-6">
+                <p className="text-green-400 text-xs font-bold uppercase tracking-wider mb-1">✓ Colegiado verificado</p>
+                <p className="text-white font-bold">{cpgData.name}</p>
+                <p className="text-gray-400 text-sm">No. {cpgData.colegiado} · <span className={`font-semibold ${cpgData.status === 'ACTIVO' ? 'text-green-400' : 'text-red-400'}`}>{cpgData.status}</span></p>
               </div>
 
               {registeredEmail ? (
@@ -1201,6 +1214,7 @@ export default function App() {
     setCertTemplate(merged);
     if (!supabase) return;
     await supabase.from('cpg_cert_config').upsert({ id: 1, config: merged, updated_at: new Date().toISOString() }, { onConflict: 'id' });
+    logAuditAuto('cert_template_saved', 'cert_template', '1');
   };
 
   useEffect(() => {
@@ -2219,8 +2233,19 @@ function PlayerView({ video, viewCounts, onBack, sessionUser, userProfile, setUs
     );
   }
 
-  const handleStartQuiz = () => {
-    // TEMPORAL: consulta CPG desactivada (servicio no disponible)
+  const handleStartQuiz = async () => {
+    setLookingUpStatus(true);
+    try {
+      const res = await fetch(EDGE_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: sessionUser.collegiateNumber }) });
+      const data = await res.json();
+      if (data?.estatus) {
+        const s = String(data.estatus).toUpperCase();
+        setUserProfile(prev => ({ ...prev, status: s }));
+      }
+    } catch (err) {
+      console.error('[CPG] Error consultando colegiado:', err);
+    }
+    setLookingUpStatus(false);
     setShowQuiz(true);
   };
 
@@ -2409,8 +2434,14 @@ function CertificateView({ video, userProfile, sessionUser, onBack, certTemplate
       if (sessionStatus && sessionStatus !== 'DESCONOCIDO' && sessionStatus !== 'INVITADO') {
         setResolvedStatus(sessionStatus); return;
       }
-      // TEMPORAL: consulta CPG desactivada (servicio no disponible)
-      // El status se toma del perfil/sesión existente sin verificar contra CPG
+      const collegiateNum = userProfile.collegiateNumber || sessionUser?.collegiateNumber;
+      if (!collegiateNum || collegiateNum === '0000') return;
+      try {
+        const res = await fetch(EDGE_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: collegiateNum }) });
+        const data = await res.json();
+        const apiStatus = String(data?.estatus || '').toUpperCase().trim();
+        if (apiStatus && apiStatus !== 'DESCONOCIDO') setResolvedStatus(apiStatus);
+      } catch {}
     };
     tryResolve();
   }, [userProfile.status, userProfile.collegiateNumber]);
@@ -2446,9 +2477,10 @@ function CertificateView({ video, userProfile, sessionUser, onBack, certTemplate
         commissions_snapshot: certCommissions,
       }).then(({ error }) => {
         if (error && error.code !== '23505') console.warn('[CPG Cert] No se pudo guardar registro:', error.message);
+        if (!error) logAuditAuto('cert_emitted', 'certificate', certificateCode, { recipient: editableName || userProfile.name || '', video: video.title, collegiate: collegiateNum });
       });
     });
-  }, [resolvedStatus, saved]);
+  }, [resolvedStatus, saved, imageLoaded]);
 
   const handleDownloadPDF = async () => {
     if (!certRef.current || !imageLoaded) { alert('Espera a que la plantilla del certificado cargue completamente.'); return; }
@@ -3355,7 +3387,7 @@ function AdminUsersManager({ currentAdminRole }) {
     setLoading(true);
     try {
       const { data } = await supabase.from('cpg_admin_users').select('*').order('created_at', { ascending: true });
-      setUsers(data || []);
+      setUsers((data || []).filter(u => u.email?.toLowerCase().trim() !== SUPER_ADMIN_EMAIL));
     } catch {}
     setLoading(false);
   };
@@ -3387,6 +3419,7 @@ function AdminUsersManager({ currentAdminRole }) {
     setSaving(true); setError('');
     try {
       await callEdge({ action: 'create', email: form.email.trim(), password: form.password, name: form.name.trim(), role: form.role });
+      logAuditAuto('admin_created', 'admin_user', form.email.trim(), { name: form.name.trim(), role: form.role });
       setSuccessMsg('Administrador creado exitosamente');
       setTimeout(() => setSuccessMsg(''), 4000);
       setShowForm(false); setForm({ email: '', name: '', password: '', role: 'admin' });
@@ -3400,6 +3433,7 @@ function AdminUsersManager({ currentAdminRole }) {
     setSaving(true); setError('');
     try {
       await callEdge({ action: 'update', id: editingUser.id, name: form.name.trim(), role: form.role, active: editingUser.active });
+      logAuditAuto('admin_updated', 'admin_user', editingUser.email, { name: form.name.trim(), role: form.role });
       setSuccessMsg('Administrador actualizado');
       setTimeout(() => setSuccessMsg(''), 4000);
       setEditingUser(null); setForm({ email: '', name: '', password: '', role: 'admin' });
@@ -3412,6 +3446,7 @@ function AdminUsersManager({ currentAdminRole }) {
     if (!confirm(user.active ? '¿Desactivar este administrador? No podrá iniciar sesión.' : '¿Reactivar este administrador?')) return;
     try {
       await callEdge({ action: 'update', id: user.id, active: !user.active });
+      logAuditAuto('admin_toggled', 'admin_user', user.email, { active: !user.active });
       await loadUsers();
     } catch (e) { setError(e.message); }
   };
@@ -3420,6 +3455,7 @@ function AdminUsersManager({ currentAdminRole }) {
     if (!confirm(`¿Eliminar a "${user.name || user.email}" como administrador? Esta acción no se puede deshacer.`)) return;
     try {
       await callEdge({ action: 'delete', id: user.id });
+      logAuditAuto('admin_deleted', 'admin_user', user.email, { name: user.name || '' });
       setSuccessMsg('Administrador eliminado');
       setTimeout(() => setSuccessMsg(''), 4000);
       await loadUsers();
@@ -3431,6 +3467,7 @@ function AdminUsersManager({ currentAdminRole }) {
     setSaving(true); setError('');
     try {
       await callEdge({ action: 'reset_password', email: showResetPw.email, new_password: newPw });
+      logAuditAuto('admin_password_reset', 'admin_user', showResetPw.email, {});
       setSuccessMsg('Contraseña actualizada para ' + showResetPw.email);
       setTimeout(() => setSuccessMsg(''), 4000);
       setShowResetPw(null); setNewPw('');
@@ -3791,8 +3828,18 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
   const EMPTY_ACTIVITY_FORM = { title: '', organizer: '', date: '', time: '', horas: '', location: '', registrationLink: '', meetingLink: '', isFull: false, participants: '', costType: 'free', cost: '', scholarshipPct: '', scholarshipAmt: '', hasCommissions: false, commissions: [] };
   const [activityForm, setActivityForm] = useState(EMPTY_ACTIVITY_FORM);
 
-  const handleCollegiateBlur = () => {
-    // TEMPORAL: consulta CPG desactivada (servicio no disponible)
+  const handleCollegiateBlur = async () => {
+    const num = manualProfile.collegiateNumber.trim();
+    if (!num || num.length < 3) return;
+    setLookingUpStatus(true);
+    try {
+      const res = await fetch(EDGE_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: num }) });
+      const data = await res.json();
+      if (data?.estatus && data.estatus !== 'DESCONOCIDO') {
+        setManualProfile(prev => ({ ...prev, status: data.estatus, name: prev.name || data.nombre || '' }));
+      }
+    } catch {}
+    setLookingUpStatus(false);
   };
 
   // ── CAMBIO 5: handleEdit preserva platform ──
@@ -3800,11 +3847,48 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
   // ── CAMBIO 5: handleCreate con platform default ──
   const handleCreate = () => { setSaveError(''); const e = { id: Date.now(), title: '', category: '', youtubeId: '', duration: '', description: '', thumbnail: '', scheduledAt: '', quizEnabled: false, viewCount: 0, platform: 'youtube', hasCommissions: false, commissions: [] }; setEditingVideo(e); setFormData(e); setQuestions(Array(10).fill(null).map((_, i) => ({ question: 'Pregunta ' + (i+1), options: ['Opción 1', 'Opción 2', 'Opción 3'], correctAnswer: 0 }))); };
   const updateQuestion = useCallback((idx, updater) => { setQuestions(prev => prev.map((q, i) => i !== idx ? q : updater(q))); }, []);
-  const handleSave = async () => { const nv = { ...formData, questions, viewCount: formData.viewCount || 0 }; setSaveError(''); try { if (videos.some(v => v.id === nv.id)) await onVideosChange(videos.map(v => v.id === nv.id ? nv : v)); else await onVideosChange([...videos, nv]); setEditingVideo(null); } catch (e) { setSaveError('No se pudieron guardar los cambios: ' + e.message); } };
-  const handleDelete = async (id) => { if (confirm('¿Eliminar este video?')) { setSaveError(''); try { await onVideosChange(videos.filter(v => v.id !== id)); } catch (e) { setSaveError('No se pudo eliminar: ' + e.message); } } };
+  const handleSave = async () => {
+    const nv = { ...formData, questions, viewCount: formData.viewCount || 0 };
+    setSaveError('');
+    try {
+      const isNew = !videos.some(v => v.id === nv.id);
+      await onVideosChange(isNew ? [...videos, nv] : videos.map(v => v.id === nv.id ? nv : v));
+      logAuditAuto(isNew ? 'video_created' : 'video_updated', 'video', String(nv.id), { title: nv.title });
+      setEditingVideo(null);
+    } catch (e) { setSaveError('No se pudieron guardar los cambios: ' + e.message); }
+  };
+  const handleDelete = async (id) => {
+    if (confirm('¿Eliminar este video?')) {
+      setSaveError('');
+      try {
+        const v = videos.find(x => x.id === id);
+        await onVideosChange(videos.filter(v => v.id !== id));
+        logAuditAuto('video_deleted', 'video', String(id), { title: v?.title || '' });
+      } catch (e) { setSaveError('No se pudo eliminar: ' + e.message); }
+    }
+  };
   const handleActivityEdit = (a) => { setActivityError(''); setEditingActivity(a); setActivityForm({ title: a.title || '', organizer: a.organizer || '', date: a.date || '', time: a.time || '', horas: a.horas || '', location: a.location || '', registrationLink: a.registrationLink || '', meetingLink: a.meetingLink || '', isFull: Boolean(a.isFull), participants: a.participants || '', costType: a.costType || 'free', cost: a.cost || '', scholarshipPct: a.scholarshipPct || '', scholarshipAmt: a.scholarshipAmt || '', hasCommissions: !!a.hasCommissions, commissions: a.commissions || [] }); };
-  const handleActivitySave = async () => { if (!activityForm.title || !activityForm.date) { setActivityError('El título y la fecha son obligatorios.'); return; } setActivityError(''); const next = { ...editingActivity, ...activityForm }; try { const exists = activities.some(a => a.id === next.id); await onActivitiesChange(exists ? activities.map(a => a.id === next.id ? next : a) : [...activities, next]); setEditingActivity(null); setActivityForm(EMPTY_ACTIVITY_FORM); } catch (e) { setActivityError('No se pudo guardar: ' + e.message); } };
-  const handleActivityDelete = async (id) => { if (!confirm('¿Eliminar esta actividad?')) return; setActivityError(''); try { await onActivitiesChange(activities.filter(a => a.id !== id)); } catch (e) { setActivityError('No se pudo eliminar: ' + e.message); } };
+  const handleActivitySave = async () => {
+    if (!activityForm.title || !activityForm.date) { setActivityError('El título y la fecha son obligatorios.'); return; }
+    setActivityError('');
+    const next = { ...editingActivity, ...activityForm };
+    try {
+      const exists = activities.some(a => a.id === next.id);
+      await onActivitiesChange(exists ? activities.map(a => a.id === next.id ? next : a) : [...activities, next]);
+      logAuditAuto(exists ? 'activity_updated' : 'activity_created', 'activity', String(next.id), { title: next.title });
+      setEditingActivity(null);
+      setActivityForm(EMPTY_ACTIVITY_FORM);
+    } catch (e) { setActivityError('No se pudo guardar: ' + e.message); }
+  };
+  const handleActivityDelete = async (id) => {
+    if (!confirm('¿Eliminar esta actividad?')) return;
+    setActivityError('');
+    try {
+      const a = activities.find(x => x.id === id);
+      await onActivitiesChange(activities.filter(a => a.id !== id));
+      logAuditAuto('activity_deleted', 'activity', String(id), { title: a?.title || '' });
+    } catch (e) { setActivityError('No se pudo eliminar: ' + e.message); }
+  };
   const handleReportGenerate = () => {
     if (!reportRange.start || !reportRange.end) { setReportError('Selecciona un rango de fechas completo.'); return; }
     const s = new Date(reportRange.start + 'T00:00:00'), e = new Date(reportRange.end + 'T23:59:59');
@@ -4342,20 +4426,22 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
 
 
 
-      {/* ── LOG DE AUDITORÍA (colapsable) ── */}
+      {/* ── LOG DE AUDITORÍA (solo Super Admin) ── */}
+      {adminRole === 'super_admin' && (
       <div className="bg-[#1b1b1b] border border-gray-800 rounded-2xl mb-6 overflow-hidden">
         <button type="button" onClick={() => setShowAuditLogSection(v => !v)} className="w-full flex items-center justify-between px-6 py-4 hover:bg-white/5 transition">
           <div className="flex items-center gap-3">
             <div className="bg-emerald-600 p-2 rounded-lg"><History size={18} className="text-white" /></div>
             <div className="text-left">
               <h2 className="text-xl font-bold text-white">Log de auditoría</h2>
-              <p className="text-xs text-gray-400">Registro de todas las acciones administrativas</p>
+              <p className="text-xs text-gray-400">Visible únicamente para el Super Administrador</p>
             </div>
           </div>
           <span className="text-gray-400 text-lg">{showAuditLogSection ? '▲' : '▼'}</span>
         </button>
         {showAuditLogSection && <div className="border-t border-gray-800"><AuditLogViewer /></div>}
       </div>
+      )}
 
       {/* ── GESTIÓN DE ADMINISTRADORES (colapsable) ── */}
       <div className="bg-[#1b1b1b] border border-gray-800 rounded-2xl mb-6 overflow-hidden">

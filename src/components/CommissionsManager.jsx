@@ -20,6 +20,21 @@ import {
 import { supabase } from '../supabaseClient';
 
 const MAX_ACTIVE = 6;
+const SUPER_ADMIN_EMAIL = 'lic.juanreyesr@gmail.com';
+
+async function logCommissionAudit(action, resourceId = '', details = {}) {
+  if (!supabase) return;
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    const email = (session?.user?.email || '').toLowerCase().trim();
+    if (email === SUPER_ADMIN_EMAIL) return;
+    await supabase.from('cpg_audit_log').insert({
+      admin_email: email, admin_name: '',
+      action, resource_type: 'commission',
+      resource_id: String(resourceId), details,
+    });
+  } catch {}
+}
 
 // Helper compartido — sube imagen al bucket cert-assets
 async function uploadCertAsset(file, prefix) {
@@ -119,6 +134,7 @@ export default function CommissionsManager() {
       };
       if (editingId) {
         await supabase.from('cpg_commissions').update(payload).eq('id', editingId);
+        logCommissionAudit('commission_updated', editingId, { name: form.commission_name });
       } else {
         const nextOrder = commissions.length > 0
           ? Math.max(...commissions.map(c => c.display_order || 0)) + 1
@@ -128,6 +144,7 @@ export default function CommissionsManager() {
           display_order: nextOrder,
           active: true,
         });
+        logCommissionAudit('commission_created', '', { name: form.commission_name });
       }
       setMsg({ type: 'success', text: editingId ? 'Comisión actualizada' : 'Comisión creada' });
       setTimeout(() => setMsg(null), 2500);
@@ -149,6 +166,7 @@ export default function CommissionsManager() {
         .from('cpg_commissions')
         .update({ active: !c.active, updated_at: new Date().toISOString() })
         .eq('id', c.id);
+      logCommissionAudit('commission_toggled', c.id, { name: c.commission_name, active: !c.active });
       await load();
     } catch (e) {
       setMsg({ type: 'error', text: 'Error: ' + e.message });
@@ -162,6 +180,7 @@ export default function CommissionsManager() {
     )) return;
     try {
       await supabase.from('cpg_commissions').delete().eq('id', c.id);
+      logCommissionAudit('commission_deleted', c.id, { name: c.commission_name });
       await load();
       setMsg({ type: 'success', text: 'Comisión eliminada' });
       setTimeout(() => setMsg(null), 2500);
