@@ -1137,33 +1137,41 @@ export default function App() {
       const currentYear = new Date().getFullYear();
       let rows = null;
 
-      // Intento 1: por usuario_id de Supabase auth
+      // Intento 1: por sesión activa → usuario_id
       try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
           const { data } = await supabase
             .from('registros')
             .select('creditos, fecha, created_at')
-            .eq('usuario_id', user.id);
-          if (data && data.length > 0) rows = data;
+            .eq('usuario_id', session.user.id);
+          if (data) rows = data;
         }
       } catch {}
 
-      // Intento 2: por colegiado_numero (si el 1 falló o no devolvió datos)
-      if (!rows || rows.length === 0) {
+      // Intento 2: por colegiado_numero como fallback
+      if (!rows) {
         const { data } = await supabase
           .from('registros')
           .select('creditos, fecha, created_at')
           .eq('colegiado_numero', sessionUser.collegiateNumber);
-        if (data && data.length > 0) rows = data;
+        if (data) rows = data;
       }
 
-      const yearRows = (rows || []).filter(r => {
+      const allRows = rows || [];
+      const yearRows = allRows.filter(r => {
         const y = new Date(r.fecha || r.created_at || '').getFullYear();
         return y === currentYear;
       });
       const totalCred = yearRows.reduce((acc, r) => acc + (Number(r.creditos) || 0), 0);
-      setProfileCredits({ creditos: Math.round(totalCred * 100) / 100, actividades: yearRows.length, loading: false });
+      const totalAll = allRows.reduce((acc, r) => acc + (Number(r.creditos) || 0), 0);
+      setProfileCredits({
+        creditos: Math.round(totalCred * 100) / 100,
+        actividades: yearRows.length,
+        totalCreditosHistorico: Math.round(totalAll * 100) / 100,
+        totalActividadesHistorico: allRows.length,
+        loading: false,
+      });
     } catch { setProfileCredits({ creditos: null, actividades: null, loading: false }); }
   }, [sessionUser]);
 
@@ -1288,8 +1296,8 @@ export default function App() {
               const nombre = profile?.name || ssoNombre;
               // Preservar datos CPG si ya existían en la sesión guardada
               let prevCpg = {};
-              try { const prev = JSON.parse(localStorage.getItem('cpg_session') || '{}'); if (prev.collegiateNumber === ssoColegiado) prevCpg = { fechaColegiacion: prev.fechaColegiacion, ultimoPago: prev.ultimoPago, cuotaCongreso: prev.cuotaCongreso }; } catch {}
-              const user = { name: nombre, collegiateNumber: ssoColegiado, isGuest: false, email: session.user.email, fechaColegiacion: prevCpg.fechaColegiacion || '', ultimoPago: prevCpg.ultimoPago || '', cuotaCongreso: prevCpg.cuotaCongreso || '' };
+              try { const prev = JSON.parse(localStorage.getItem('cpg_session') || '{}'); if (prev.collegiateNumber === ssoColegiado) prevCpg = { status: prev.status, fechaColegiacion: prev.fechaColegiacion, ultimoPago: prev.ultimoPago, cuotaCongreso: prev.cuotaCongreso }; } catch {}
+              const user = { name: nombre, collegiateNumber: ssoColegiado, isGuest: false, email: session.user.email, status: prevCpg.status || '', fechaColegiacion: prevCpg.fechaColegiacion || '', ultimoPago: prevCpg.ultimoPago || '', cuotaCongreso: prevCpg.cuotaCongreso || '' };
               await supabase.from('cpg_user_profiles').upsert(
                 { collegiate_number: ssoColegiado, email: session.user.email, name: nombre },
                 { onConflict: 'collegiate_number' }
@@ -1570,52 +1578,76 @@ export default function App() {
               <span className="text-sm text-gray-200 font-medium">{sessionUser.isGuest ? 'Invitado' : 'Bienvenido, ' + firstName}</span>
               <ChevronDown size={13} className={'text-gray-500 transition-transform ' + (showProfile ? 'rotate-180' : '')} />
             </button>
-            <button onClick={() => { setSessionUser(null); setShowProfile(false); }} className="text-gray-500 hover:text-red-400 transition ml-1 p-1" title="Cerrar sesión"><X size={14} /></button>
 
-            {showProfile && !sessionUser.isGuest && (
+            {(showProfile || sessionUser.isGuest) && showProfile && (
               <div className="absolute right-0 top-full mt-2 w-80 bg-[#1a1a2e] border border-gray-700 rounded-2xl shadow-2xl shadow-black/60 z-[200] overflow-hidden">
-                <div className="bg-gradient-to-br from-blue-900/40 to-purple-900/20 px-5 py-4 border-b border-gray-700">
-                  <p className="text-white font-bold text-base leading-tight">{sessionUser.name}</p>
-                  <p className="text-gray-400 text-xs mt-0.5">No. {sessionUser.collegiateNumber}</p>
-                  <span className={`inline-flex items-center gap-1 mt-2 text-xs font-bold px-2 py-0.5 rounded-full ${sessionUser.status === 'ACTIVO' ? 'bg-green-900/60 text-green-300' : 'bg-red-900/60 text-red-300'}`}>
-                    <span className={`w-1.5 h-1.5 rounded-full ${sessionUser.status === 'ACTIVO' ? 'bg-green-400' : 'bg-red-400'}`} />
-                    {sessionUser.status || '—'}
-                  </span>
-                </div>
-                <div className="px-5 py-3 space-y-2.5 border-b border-gray-700/50">
-                  {[
-                    ['Fecha de colegiación', sessionUser.fechaColegiacion],
-                    ['Último pago', sessionUser.ultimoPago],
-                    ['Cuota congreso anual', sessionUser.cuotaCongreso],
-                  ].map(([label, val]) => (
-                    <div key={label} className="flex justify-between items-center">
-                      <span className="text-gray-400 text-xs">{label}</span>
-                      <span className="text-gray-200 text-xs font-medium">{val || '—'}</span>
-                    </div>
-                  ))}
-                </div>
-                <div className="px-5 py-3">
-                  <p className="text-gray-500 text-xs uppercase tracking-wider mb-2">Créditos académicos {new Date().getFullYear()}</p>
-                  {profileCredits.loading ? (
-                    <div className="flex items-center gap-2 text-gray-400 text-sm"><Loader2 size={14} className="animate-spin" /> Cargando…</div>
-                  ) : (
-                    <div className="flex gap-4">
-                      <div className="flex-1 bg-blue-900/20 rounded-xl p-3 text-center">
-                        <p className="text-blue-300 font-bold text-xl">{profileCredits.creditos ?? '—'}</p>
-                        <p className="text-gray-400 text-xs mt-0.5">Créditos</p>
+                {!sessionUser.isGuest && (<>
+                  <div className="bg-gradient-to-br from-blue-900/40 to-purple-900/20 px-5 py-4 border-b border-gray-700">
+                    <p className="text-white font-bold text-base leading-tight">{sessionUser.name}</p>
+                    <p className="text-gray-400 text-xs mt-0.5">No. {sessionUser.collegiateNumber}</p>
+                    {sessionUser.status ? (
+                      <span className={`inline-flex items-center gap-1 mt-2 text-xs font-bold px-2 py-0.5 rounded-full ${sessionUser.status === 'ACTIVO' ? 'bg-green-900/60 text-green-300' : 'bg-red-900/60 text-red-300'}`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${sessionUser.status === 'ACTIVO' ? 'bg-green-400' : 'bg-red-400'}`} />
+                        {sessionUser.status}
+                      </span>
+                    ) : null}
+                  </div>
+                  <div className="px-5 py-3 space-y-2.5 border-b border-gray-700/50">
+                    {[
+                      ['Fecha de colegiación', sessionUser.fechaColegiacion],
+                      ['Último pago', sessionUser.ultimoPago],
+                      ['Cuota congreso anual', sessionUser.cuotaCongreso],
+                    ].map(([label, val]) => (
+                      <div key={label} className="flex justify-between items-center">
+                        <span className="text-gray-400 text-xs">{label}</span>
+                        <span className="text-gray-200 text-xs font-medium">{val || '—'}</span>
                       </div>
-                      <div className="flex-1 bg-purple-900/20 rounded-xl p-3 text-center">
-                        <p className="text-purple-300 font-bold text-xl">{profileCredits.actividades ?? '—'}</p>
-                        <p className="text-gray-400 text-xs mt-0.5">Actividades</p>
-                      </div>
-                    </div>
-                  )}
-                </div>
-                <div className="px-5 pb-4">
-                  <button onClick={() => navigateToCreditos(sessionUser)} className="w-full text-xs text-blue-400 hover:text-blue-200 border border-blue-800 hover:border-blue-600 rounded-lg py-2 transition flex items-center justify-center gap-1.5">
-                    <ExternalLink size={11} /> Ver historial completo en Créditos
-                  </button>
-                </div>
+                    ))}
+                  </div>
+                  <div className="px-5 py-3 border-b border-gray-700/50">
+                    {profileCredits.loading ? (
+                      <div className="flex items-center gap-2 text-gray-400 text-sm"><Loader2 size={14} className="animate-spin" /> Cargando…</div>
+                    ) : (() => {
+                      const currentYear = new Date().getFullYear();
+                      const hasCurrentYear = (profileCredits.creditos ?? 0) > 0 || (profileCredits.actividades ?? 0) > 0;
+                      const hasHistoric = (profileCredits.totalCreditosHistorico ?? 0) > 0;
+                      const showYear = hasCurrentYear ? currentYear : (hasHistoric ? 'Histórico' : currentYear);
+                      const cred = hasCurrentYear ? profileCredits.creditos : (hasHistoric ? profileCredits.totalCreditosHistorico : 0);
+                      const act = hasCurrentYear ? profileCredits.actividades : (hasHistoric ? profileCredits.totalActividadesHistorico : 0);
+                      return (
+                        <>
+                          <p className="text-gray-500 text-xs uppercase tracking-wider mb-2">Créditos académicos {showYear}</p>
+                          <div className="flex gap-3">
+                            <div className="flex-1 bg-blue-900/20 rounded-xl p-3 text-center">
+                              <p className="text-blue-300 font-bold text-xl">{cred ?? '—'}</p>
+                              <p className="text-gray-400 text-xs mt-0.5">Créditos</p>
+                            </div>
+                            <div className="flex-1 bg-purple-900/20 rounded-xl p-3 text-center">
+                              <p className="text-purple-300 font-bold text-xl">{act ?? '—'}</p>
+                              <p className="text-gray-400 text-xs mt-0.5">Actividades</p>
+                            </div>
+                          </div>
+                        </>
+                      );
+                    })()}
+                  </div>
+                  <div className="px-5 py-3">
+                    <button onClick={() => { navigateToCreditos(sessionUser); setShowProfile(false); }} className="w-full text-xs text-blue-400 hover:text-blue-200 border border-blue-800 hover:border-blue-600 rounded-lg py-2 transition flex items-center justify-center gap-1.5 mb-2">
+                      <ExternalLink size={11} /> Ver historial completo en Créditos
+                    </button>
+                    <button onClick={() => { localStorage.removeItem('cpg_session'); if (supabase) supabase.auth.signOut().catch(() => {}); setSessionUser(null); setShowProfile(false); }} className="w-full text-xs text-red-500 hover:text-red-300 hover:bg-red-900/20 border border-red-900/50 hover:border-red-700 rounded-lg py-2 transition flex items-center justify-center gap-1.5">
+                      <LogOut size={11} /> Cerrar sesión
+                    </button>
+                  </div>
+                </>)}
+                {sessionUser.isGuest && (
+                  <div className="px-5 py-4">
+                    <p className="text-gray-300 text-sm font-medium mb-3">Modo invitado</p>
+                    <button onClick={() => { setSessionUser(null); setShowProfile(false); }} className="w-full text-xs text-red-500 hover:text-red-300 hover:bg-red-900/20 border border-red-900/50 hover:border-red-700 rounded-lg py-2 transition flex items-center justify-center gap-1.5">
+                      <LogOut size={11} /> Cerrar sesión
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>
