@@ -595,7 +595,7 @@ function LoginColModal({ onSession }) {
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailInput.trim())) { setError('Correo electrónico inválido.'); return; }
     if (!passwordInput || passwordInput.length < 6) { setError('La contraseña debe tener al menos 6 caracteres.'); return; }
     if (!supabase) {
-      onSession({ name: cpgData.name, collegiateNumber: cpgData.colegiado, status: cpgData.status, isGuest: false, email: emailInput.trim() });
+      onSession({ name: cpgData.name, collegiateNumber: cpgData.colegiado, status: cpgData.status, isGuest: false, email: emailInput.trim(), fechaColegiacion: cpgData.fecha_colegiacion || '', ultimoPago: cpgData.ultimo_pago || '', cuotaCongreso: cpgData.cuota_congreso || '' });
       return;
     }
     setLoading(true); setError('');
@@ -649,7 +649,7 @@ function LoginColModal({ onSession }) {
           setLoading(false); return;
         }
       }
-      onSession({ name: cpgData.name, collegiateNumber: cpgData.colegiado, status: cpgData.status, isGuest: false, email: emailInput.trim() });
+      onSession({ name: cpgData.name, collegiateNumber: cpgData.colegiado, status: cpgData.status, isGuest: false, email: emailInput.trim(), fechaColegiacion: cpgData.fecha_colegiacion || '', ultimoPago: cpgData.ultimo_pago || '', cuotaCongreso: cpgData.cuota_congreso || '' });
     } catch (e) {
       setError('Error de autenticación: ' + e.message);
     } finally { setLoading(false); }
@@ -1127,6 +1127,37 @@ export default function App() {
   const [showPasswordReset, setShowPasswordReset] = useState(false);
   // ── Entrega 2: estados para comisiones y asistencia ──
   const [commissions, setCommissions] = useState([]);
+  const [showProfile, setShowProfile] = useState(false);
+  const [profileCredits, setProfileCredits] = useState({ creditos: null, actividades: null, loading: false });
+
+  const fetchProfileCredits = useCallback(async () => {
+    if (!supabase || !sessionUser || sessionUser.isGuest) return;
+    setProfileCredits(p => ({ ...p, loading: true }));
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { setProfileCredits({ creditos: null, actividades: null, loading: false }); return; }
+      const currentYear = new Date().getFullYear();
+      const { data } = await supabase
+        .from('registros')
+        .select('creditos, fecha, created_at')
+        .eq('usuario_id', user.id);
+      const yearRows = (data || []).filter(r => {
+        const y = new Date(r.fecha || r.created_at || '').getFullYear();
+        return y === currentYear;
+      });
+      const totalCred = yearRows.reduce((acc, r) => acc + (Number(r.creditos) || 0), 0);
+      setProfileCredits({ creditos: Math.round(totalCred * 100) / 100, actividades: yearRows.length, loading: false });
+    } catch { setProfileCredits({ creditos: null, actividades: null, loading: false }); }
+  }, [sessionUser]);
+
+  useEffect(() => {
+    if (!showProfile) return;
+    const handler = (e) => {
+      if (!e.target.closest('[data-profile-panel]')) setShowProfile(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showProfile]);
 
   const certCodeFromUrl = new URLSearchParams(window.location.search).get('cert');
   const attendFromUrl = new URLSearchParams(window.location.search).get('attend') === '1';
@@ -1204,7 +1235,7 @@ export default function App() {
               { collegiate_number: collegiateNumber, email: googleEmail, name: data.name },
               { onConflict: 'collegiate_number' }
             );
-            const user = { name: data.name, collegiateNumber: collegiateNumber, status: data.status, isGuest: false, email: googleEmail };
+            const user = { name: data.name, collegiateNumber: collegiateNumber, status: data.status, isGuest: false, email: googleEmail, fechaColegiacion: data.fecha_colegiacion || '', ultimoPago: data.ultimo_pago || '', cuotaCongreso: data.cuota_congreso || '' };
             localStorage.setItem('cpg_session', JSON.stringify(user));
             setSessionUser(user);
           } catch {}
@@ -1489,10 +1520,64 @@ export default function App() {
             </button>
           )}
 
-          <div className="flex items-center gap-2 bg-gray-800/60 border border-gray-700 rounded-full px-3 py-1.5">
-            <div className={'w-2 h-2 rounded-full ' + (sessionUser.isGuest ? 'bg-gray-400' : 'bg-green-400')} />
-            <span className="text-sm text-gray-200 font-medium">{sessionUser.isGuest ? 'Invitado' : 'Bienvenido, ' + firstName}</span>
-            <button onClick={() => setSessionUser(null)} className="text-gray-500 hover:text-red-400 transition ml-1" title="Cerrar sesión"><X size={14} /></button>
+          <div className="relative" data-profile-panel>
+            <button
+              onClick={() => { setShowProfile(p => { if (!p) fetchProfileCredits(); return !p; }); }}
+              className="flex items-center gap-2 bg-gray-800/60 border border-gray-700 rounded-full px-3 py-1.5 hover:bg-gray-700/60 hover:border-gray-500 transition cursor-pointer"
+              title="Ver perfil"
+            >
+              <div className={'w-2 h-2 rounded-full ' + (sessionUser.isGuest ? 'bg-gray-400' : 'bg-green-400')} />
+              <span className="text-sm text-gray-200 font-medium">{sessionUser.isGuest ? 'Invitado' : 'Bienvenido, ' + firstName}</span>
+              <ChevronDown size={13} className={'text-gray-500 transition-transform ' + (showProfile ? 'rotate-180' : '')} />
+            </button>
+            <button onClick={() => { setSessionUser(null); setShowProfile(false); }} className="text-gray-500 hover:text-red-400 transition ml-1 p-1" title="Cerrar sesión"><X size={14} /></button>
+
+            {showProfile && !sessionUser.isGuest && (
+              <div className="absolute right-0 top-full mt-2 w-80 bg-[#1a1a2e] border border-gray-700 rounded-2xl shadow-2xl shadow-black/60 z-[200] overflow-hidden">
+                <div className="bg-gradient-to-br from-blue-900/40 to-purple-900/20 px-5 py-4 border-b border-gray-700">
+                  <p className="text-white font-bold text-base leading-tight">{sessionUser.name}</p>
+                  <p className="text-gray-400 text-xs mt-0.5">No. {sessionUser.collegiateNumber}</p>
+                  <span className={`inline-flex items-center gap-1 mt-2 text-xs font-bold px-2 py-0.5 rounded-full ${sessionUser.status === 'ACTIVO' ? 'bg-green-900/60 text-green-300' : 'bg-red-900/60 text-red-300'}`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${sessionUser.status === 'ACTIVO' ? 'bg-green-400' : 'bg-red-400'}`} />
+                    {sessionUser.status || '—'}
+                  </span>
+                </div>
+                <div className="px-5 py-3 space-y-2.5 border-b border-gray-700/50">
+                  {[
+                    ['Fecha de colegiación', sessionUser.fechaColegiacion],
+                    ['Último pago', sessionUser.ultimoPago],
+                    ['Cuota congreso anual', sessionUser.cuotaCongreso],
+                  ].map(([label, val]) => (
+                    <div key={label} className="flex justify-between items-center">
+                      <span className="text-gray-400 text-xs">{label}</span>
+                      <span className="text-gray-200 text-xs font-medium">{val || '—'}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="px-5 py-3">
+                  <p className="text-gray-500 text-xs uppercase tracking-wider mb-2">Créditos académicos {new Date().getFullYear()}</p>
+                  {profileCredits.loading ? (
+                    <div className="flex items-center gap-2 text-gray-400 text-sm"><Loader2 size={14} className="animate-spin" /> Cargando…</div>
+                  ) : (
+                    <div className="flex gap-4">
+                      <div className="flex-1 bg-blue-900/20 rounded-xl p-3 text-center">
+                        <p className="text-blue-300 font-bold text-xl">{profileCredits.creditos ?? '—'}</p>
+                        <p className="text-gray-400 text-xs mt-0.5">Créditos</p>
+                      </div>
+                      <div className="flex-1 bg-purple-900/20 rounded-xl p-3 text-center">
+                        <p className="text-purple-300 font-bold text-xl">{profileCredits.actividades ?? '—'}</p>
+                        <p className="text-gray-400 text-xs mt-0.5">Actividades</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <div className="px-5 pb-4">
+                  <button onClick={() => navigateToCreditos(sessionUser)} className="w-full text-xs text-blue-400 hover:text-blue-200 border border-blue-800 hover:border-blue-600 rounded-lg py-2 transition flex items-center justify-center gap-1.5">
+                    <ExternalLink size={11} /> Ver historial completo en Créditos
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
           {isAdmin ? (
             <button onClick={handleLogout} className="flex items-center gap-2 bg-red-600 hover:bg-red-700 px-3 py-1.5 rounded text-sm font-medium transition"><LogOut size={15} /> Salir</button>
