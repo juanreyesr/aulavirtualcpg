@@ -496,28 +496,30 @@ function LoginColModal({ onSession }) {
   }, []);
 
   const handleVerifyCollegiado = async () => {
+    // TEMPORAL: verificación CPG desactivada (servicio del colegio no disponible)
     const val = colegiadoInput.trim();
-    if (!val) { setError('Ingresa tu número de colegiado.'); return; }
+    if (!val || !/^\d+$/.test(val)) { setError('Ingresa un número de colegiado válido (solo números).'); return; }
     setLoading(true); setError('');
     try {
-      const data = await consultarColegiado(val);
-      setCpgData(data);
+      let existingName = '';
       setRegisteredEmail(null);
       setResetSent(false);
       if (supabase) {
         const { data: profile } = await supabase
           .from('cpg_user_profiles')
-          .select('email')
+          .select('email, name')
           .eq('collegiate_number', val)
           .maybeSingle();
         if (profile?.email) {
           setRegisteredEmail(profile.email);
           setAuthMode('login');
+          existingName = profile.name || '';
         }
       }
+      setCpgData({ colegiado: val, name: existingName, status: 'DESCONOCIDO' });
       setStep('auth');
     } catch (e) {
-      setError(e.message || 'No se encontró el colegiado.');
+      setError(e.message || 'Error al procesar.');
     } finally { setLoading(false); }
   };
 
@@ -651,10 +653,10 @@ function LoginColModal({ onSession }) {
 
           {step === 'auth' && cpgData && (
             <>
-              <div className="bg-green-900/20 border border-green-700/40 rounded-xl p-4 mb-6">
-                <p className="text-green-400 text-xs font-bold uppercase tracking-wider mb-1">✓ Colegiado verificado</p>
-                <p className="text-white font-bold">{cpgData.name}</p>
-                <p className="text-gray-400 text-sm">No. {cpgData.colegiado} · <span className={`font-semibold ${cpgData.status === 'ACTIVO' ? 'text-green-400' : 'text-red-400'}`}>{cpgData.status}</span></p>
+              <div className="bg-blue-900/20 border border-blue-700/40 rounded-xl p-4 mb-6">
+                <p className="text-blue-400 text-xs font-bold uppercase tracking-wider mb-1">Número de colegiado</p>
+                {cpgData.name && <p className="text-white font-bold">{cpgData.name}</p>}
+                <p className="text-gray-400 text-sm">No. {cpgData.colegiado}</p>
               </div>
 
               {registeredEmail ? (
@@ -2176,19 +2178,8 @@ function PlayerView({ video, viewCounts, onBack, sessionUser, userProfile, setUs
     );
   }
 
-  const handleStartQuiz = async () => {
-    setLookingUpStatus(true);
-    try {
-      const res = await fetch(EDGE_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: sessionUser.collegiateNumber }) });
-      const data = await res.json();
-      if (data?.status) {
-        const s = String(data.status).toUpperCase();
-        setUserProfile(prev => ({ ...prev, status: s }));
-      }
-    } catch (err) {
-      console.error('[CPG] Error consultando colegiado:', err);
-    }
-    setLookingUpStatus(false);
+  const handleStartQuiz = () => {
+    // TEMPORAL: consulta CPG desactivada (servicio no disponible)
     setShowQuiz(true);
   };
 
@@ -2376,14 +2367,8 @@ function CertificateView({ video, userProfile, sessionUser, onBack, certTemplate
       if (sessionStatus && sessionStatus !== 'DESCONOCIDO' && sessionStatus !== 'INVITADO') {
         setResolvedStatus(sessionStatus); return;
       }
-      const collegiateNum = userProfile.collegiateNumber || sessionUser?.collegiateNumber;
-      if (!collegiateNum || collegiateNum === '0000') return;
-      try {
-        const res = await fetch(EDGE_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: collegiateNum }) });
-        const data = await res.json();
-        const apiStatus = String(data?.status || '').toUpperCase().trim();
-        if (apiStatus && apiStatus !== 'DESCONOCIDO') setResolvedStatus(apiStatus);
-      } catch {}
+      // TEMPORAL: consulta CPG desactivada (servicio no disponible)
+      // El status se toma del perfil/sesión existente sin verificar contra CPG
     };
     tryResolve();
   }, [userProfile.status, userProfile.collegiateNumber]);
@@ -3744,18 +3729,8 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
   const EMPTY_ACTIVITY_FORM = { title: '', organizer: '', date: '', time: '', horas: '', location: '', registrationLink: '', meetingLink: '', isFull: false, participants: '', costType: 'free', cost: '', scholarshipPct: '', scholarshipAmt: '', hasCommissions: false, commissions: [] };
   const [activityForm, setActivityForm] = useState(EMPTY_ACTIVITY_FORM);
 
-  const handleCollegiateBlur = async () => {
-    const num = manualProfile.collegiateNumber.trim();
-    if (!num || num.length < 3) return;
-    setLookingUpStatus(true);
-    try {
-      const res = await fetch(EDGE_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: num }) });
-      const data = await res.json();
-      if (data?.status && data.status !== 'DESCONOCIDO') {
-        setManualProfile(prev => ({ ...prev, status: data.status, name: prev.name || data.name || '' }));
-      }
-    } catch {}
-    setLookingUpStatus(false);
+  const handleCollegiateBlur = () => {
+    // TEMPORAL: consulta CPG desactivada (servicio no disponible)
   };
 
   // ── CAMBIO 5: handleEdit preserva platform ──
