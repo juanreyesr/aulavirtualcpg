@@ -2159,6 +2159,8 @@ function PlayerView({ video, viewCounts, onBack, sessionUser, userProfile, setUs
   const [lookingUpStatus, setLookingUpStatus] = useState(false);
   const viewCount = viewCounts[video.id] || 0;
 
+  useEffect(() => { window.scrollTo({ top: 0, behavior: 'instant' }); }, []);
+
   // ── Scroll al tope al abrir quiz o certificado ──
   useEffect(() => {
     if (showQuiz || showCert) window.scrollTo({ top: 0, behavior: 'smooth' });
