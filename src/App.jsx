@@ -2348,6 +2348,7 @@ function CertificateView({ video, userProfile, sessionUser, onBack, certTemplate
   const [imageLoaded, setImageLoaded] = useState(false);
   const [resolvedStatus, setResolvedStatus] = useState('');
   const [saved, setSaved] = useState(false);
+  const [editableName, setEditableName] = useState(userProfile.name || sessionUser?.name || '');
 
   const tpl = { ...DEFAULT_CERT_CONFIG, ...certTemplate };
   const currentDate = new Date();
@@ -2374,8 +2375,9 @@ function CertificateView({ video, userProfile, sessionUser, onBack, certTemplate
   }, [userProfile.status, userProfile.collegiateNumber]);
 
   useEffect(() => {
-    if (!supabase || saved || !resolvedStatus) return;
+    if (!supabase || saved) return;
     if (!collegiateNum || collegiateNum === '0000') return;
+    if (!imageLoaded) return;
     setSaved(true);
     // Construir snapshot de comisiones firmantes del curso (si tiene)
     const certCommissions = (video.hasCommissions && video.commissions && commissions.length > 0)
@@ -2393,8 +2395,8 @@ function CertificateView({ video, userProfile, sessionUser, onBack, certTemplate
       supabase.from('cpg_certificates').insert({
         certificate_code: certificateCode,
         collegiate_number: collegiateNum,
-        recipient_name: userProfile.name,
-        status: resolvedStatus,
+        recipient_name: editableName || userProfile.name || '',
+        status: resolvedStatus || 'DESCONOCIDO',
         video_id: video.id,
         video_title: video.title,
         video_duration: String(video.duration || ''),
@@ -2409,7 +2411,15 @@ function CertificateView({ video, userProfile, sessionUser, onBack, certTemplate
 
   const handleDownloadPDF = async () => {
     if (!certRef.current || !imageLoaded) { alert('Espera a que la plantilla del certificado cargue completamente.'); return; }
+    if (!editableName.trim()) { alert('Ingresa tu nombre completo antes de descargar el certificado.'); return; }
     setIsGenerating(true);
+    // Guardar nombre actualizado en el perfil
+    if (supabase && collegiateNum && collegiateNum !== '0000' && editableName.trim()) {
+      supabase.from('cpg_user_profiles').upsert(
+        { collegiate_number: collegiateNum, name: editableName.trim() },
+        { onConflict: 'collegiate_number' }
+      ).then(() => {});
+    }
     try {
       const canvas = await html2canvas(certRef.current, {
         scale: 3, useCORS: true, allowTaint: true, backgroundColor: '#f5f5f0', logging: false, imageTimeout: 15000,
@@ -2418,7 +2428,7 @@ function CertificateView({ video, userProfile, sessionUser, onBack, certTemplate
       const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'letter' });
       const imgData = canvas.toDataURL('image/png', 1.0);
       pdf.addImage(imgData, 'PNG', 0, 0, pdf.internal.pageSize.getWidth(), pdf.internal.pageSize.getHeight());
-      pdf.save('Certificado_' + userProfile.name.replace(/\s+/g, '_') + '_' + certificateCode + '.pdf');
+      pdf.save('Certificado_' + (editableName || userProfile.name || 'CPG').replace(/\s+/g, '_') + '_' + certificateCode + '.pdf');
     } catch (error) { console.error('Error generando PDF:', error); alert('Hubo un error al generar el PDF.'); }
     finally { setIsGenerating(false); }
   };
@@ -2431,6 +2441,17 @@ function CertificateView({ video, userProfile, sessionUser, onBack, certTemplate
           {isGenerating ? <><Loader2 size={16} className="animate-spin" /> Generando...</> : <><Download size={16} /> Descargar PDF</>}
         </button>
       </div>
+      <div className="print:hidden w-full max-w-md px-2">
+        <label className="block text-gray-400 text-xs uppercase tracking-wider mb-1.5">Nombre en el certificado</label>
+        <input
+          type="text"
+          value={editableName}
+          onChange={e => setEditableName(e.target.value)}
+          placeholder="Ingresa tu nombre completo"
+          className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2.5 text-white focus:border-blue-500 outline-none transition text-sm"
+        />
+        {!editableName && <p className="text-yellow-400 text-xs mt-1">⚠ Ingresa tu nombre para que aparezca en el certificado.</p>}
+      </div>
       <div className="flex items-center gap-2 bg-gray-800/60 border border-gray-700 rounded-full px-3 py-1 text-[11px] text-gray-400 print:hidden overflow-hidden max-w-full">
         <Shield size={10} className="text-green-400 shrink-0" />
         <span className="font-mono truncate">{certificateCode}</span>
@@ -2440,8 +2461,8 @@ function CertificateView({ video, userProfile, sessionUser, onBack, certTemplate
         <CertScaledPreview certRef={certRef} imageLoaded={imageLoaded}>
           <CertificateCanvas
             certRef={certRef} tpl={tpl} onImageLoaded={() => setImageLoaded(true)}
-            recipientName={userProfile.name} statusText={resolvedStatus}
-            collegiateNumber={userProfile.collegiateNumber} videoTitle={video.title}
+            recipientName={editableName} statusText={resolvedStatus}
+            collegiateNumber={userProfile.collegiateNumber || collegiateNum} videoTitle={video.title}
             videoDuration={String(video.duration || '')} dateFormatted={dateFormatted}
             certificateCode={certificateCode} qrUrl={qrUrl}
             commissionsSnapshot={(video.hasCommissions && video.commissions && commissions.length > 0) ? commissions.filter(c => video.commissions.includes(c.id)) : []}
