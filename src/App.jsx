@@ -1134,14 +1134,31 @@ export default function App() {
     if (!supabase || !sessionUser || sessionUser.isGuest) return;
     setProfileCredits(p => ({ ...p, loading: true }));
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { setProfileCredits({ creditos: null, actividades: null, loading: false }); return; }
       const currentYear = new Date().getFullYear();
-      const { data } = await supabase
-        .from('registros')
-        .select('creditos, fecha, created_at')
-        .eq('usuario_id', user.id);
-      const yearRows = (data || []).filter(r => {
+      let rows = null;
+
+      // Intento 1: por usuario_id de Supabase auth
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const { data } = await supabase
+            .from('registros')
+            .select('creditos, fecha, created_at')
+            .eq('usuario_id', user.id);
+          if (data && data.length > 0) rows = data;
+        }
+      } catch {}
+
+      // Intento 2: por colegiado_numero (si el 1 falló o no devolvió datos)
+      if (!rows || rows.length === 0) {
+        const { data } = await supabase
+          .from('registros')
+          .select('creditos, fecha, created_at')
+          .eq('colegiado_numero', sessionUser.collegiateNumber);
+        if (data && data.length > 0) rows = data;
+      }
+
+      const yearRows = (rows || []).filter(r => {
         const y = new Date(r.fecha || r.created_at || '').getFullYear();
         return y === currentYear;
       });
@@ -1158,6 +1175,26 @@ export default function App() {
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, [showProfile]);
+
+  // Auto-enriquecer datos CPG si la sesión guardada no los tiene (sesión anterior al fix)
+  useEffect(() => {
+    if (!sessionUser || sessionUser.isGuest || sessionUser.collegiateNumber === '100000') return;
+    if ('fechaColegiacion' in sessionUser) return; // ya tiene los campos (aunque sean vacíos)
+    const enrich = async () => {
+      try {
+        const data = await consultarColegiado(sessionUser.collegiateNumber);
+        const updated = {
+          ...sessionUser,
+          fechaColegiacion: data.fecha_colegiacion || '',
+          ultimoPago: data.ultimo_pago || '',
+          cuotaCongreso: data.cuota_congreso || '',
+        };
+        localStorage.setItem('cpg_session', JSON.stringify(updated));
+        setSessionUser(updated);
+      } catch {}
+    };
+    enrich();
+  }, [sessionUser?.collegiateNumber]);
 
   const certCodeFromUrl = new URLSearchParams(window.location.search).get('cert');
   const attendFromUrl = new URLSearchParams(window.location.search).get('attend') === '1';
@@ -1249,7 +1286,10 @@ export default function App() {
               // Verificar/enriquecer con perfil existente
               const { data: profile } = await supabase.from('cpg_user_profiles').select('name').eq('collegiate_number', ssoColegiado).maybeSingle();
               const nombre = profile?.name || ssoNombre;
-              const user = { name: nombre, collegiateNumber: ssoColegiado, isGuest: false, email: session.user.email };
+              // Preservar datos CPG si ya existían en la sesión guardada
+              let prevCpg = {};
+              try { const prev = JSON.parse(localStorage.getItem('cpg_session') || '{}'); if (prev.collegiateNumber === ssoColegiado) prevCpg = { fechaColegiacion: prev.fechaColegiacion, ultimoPago: prev.ultimoPago, cuotaCongreso: prev.cuotaCongreso }; } catch {}
+              const user = { name: nombre, collegiateNumber: ssoColegiado, isGuest: false, email: session.user.email, fechaColegiacion: prevCpg.fechaColegiacion || '', ultimoPago: prevCpg.ultimoPago || '', cuotaCongreso: prevCpg.cuotaCongreso || '' };
               await supabase.from('cpg_user_profiles').upsert(
                 { collegiate_number: ssoColegiado, email: session.user.email, name: nombre },
                 { onConflict: 'collegiate_number' }
