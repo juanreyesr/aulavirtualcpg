@@ -204,7 +204,7 @@ async function navigateToCreditos(sessionUser) {
   if (!session) return;
   const hash = `access_token=${session.access_token}&refresh_token=${session.refresh_token}&token_type=bearer&expires_in=${session.expires_in || 3600}&type=magiclink`;
   const query = sessionUser?.collegiateNumber ? `?sso_colegiado=${encodeURIComponent(sessionUser.collegiateNumber)}&sso_nombre=${encodeURIComponent(sessionUser.name || '')}` : '';
-  window.open(`${CREDITOS_URL}/${query}#${hash}`, '_blank');
+  window.location.href = `${CREDITOS_URL}/${query}#${hash}`;
 }
 
 
@@ -494,9 +494,11 @@ function maskEmail(email) {
 }
 
 function LoginColModal({ onSession }) {
+  const GUEST_COLEGIADO = '100000';
   const [step, setStep] = useState('collegiate');
   const [colegiadoInput, setColegiadoInput] = useState('');
   const [nameInput, setNameInput] = useState('');
+  const [guestName, setGuestName] = useState('');
   const [emailInput, setEmailInput] = useState('');
   const [passwordInput, setPasswordInput] = useState('');
   const [authMode, setAuthMode] = useState('login');
@@ -505,6 +507,8 @@ function LoginColModal({ onSession }) {
   const [cpgData, setCpgData] = useState(null);
   const [registeredEmail, setRegisteredEmail] = useState(null);
   const [resetSent, setResetSent] = useState(false);
+  const [signUpSent, setSignUpSent] = useState(false);
+  const [emailNotConfirmed, setEmailNotConfirmed] = useState(false);
   const [lookingUp, setLookingUp] = useState(false);
   const [existingUser, setExistingUser] = useState(null); // { name, email } si ya está registrado
 
@@ -542,12 +546,22 @@ function LoginColModal({ onSession }) {
   const handleVerifyCollegiado = async () => {
     const val = colegiadoInput.trim();
     if (!val) { setError('Ingresa tu número de colegiado.'); return; }
+
+    // Colegiado de prueba: salta verificación CPG y pide nombre
+    if (val === GUEST_COLEGIADO) {
+      setError(''); setGuestName('');
+      setStep('guestname');
+      return;
+    }
+
     setLoading(true); setError('');
     try {
       const data = await consultarColegiado(val);
       setCpgData(data);
       setRegisteredEmail(null);
       setResetSent(false);
+      setSignUpSent(false);
+      setEmailNotConfirmed(false);
       if (supabase) {
         const { data: profile } = await supabase
           .from('cpg_user_profiles')
@@ -587,19 +601,25 @@ function LoginColModal({ onSession }) {
     setLoading(true); setError('');
     try {
       if (authMode === 'register') {
-        const { data: existing } = await supabase
-          .from('cpg_user_profiles')
-          .select('email')
-          .eq('collegiate_number', cpgData.colegiado)
-          .maybeSingle();
-        if (existing?.email) {
-          setRegisteredEmail(existing.email);
-          setAuthMode('login');
-          setError('');
-          setLoading(false);
-          return;
+        if (cpgData.colegiado !== GUEST_COLEGIADO) {
+          const { data: existing } = await supabase
+            .from('cpg_user_profiles')
+            .select('email')
+            .eq('collegiate_number', cpgData.colegiado)
+            .maybeSingle();
+          if (existing?.email) {
+            setRegisteredEmail(existing.email);
+            setAuthMode('login');
+            setError('');
+            setLoading(false);
+            return;
+          }
         }
-        const { error: signUpErr } = await supabase.auth.signUp({ email: emailInput.trim(), password: passwordInput });
+        const { data: signUpData, error: signUpErr } = await supabase.auth.signUp({
+          email: emailInput.trim(),
+          password: passwordInput,
+          options: { emailRedirectTo: APP_URL },
+        });
         if (signUpErr) {
           if (signUpErr.message.includes('already registered')) {
             setError('Este correo ya está registrado. Selecciona "Ingresar".');
@@ -610,11 +630,21 @@ function LoginColModal({ onSession }) {
           { collegiate_number: cpgData.colegiado, email: emailInput.trim(), name: cpgData.name },
           { onConflict: 'collegiate_number' }
         );
+        if (!signUpData?.session) {
+          setSignUpSent(true);
+          setRegisteredEmail(emailInput.trim());
+          setLoading(false);
+          return;
+        }
       } else {
         const { error: signInErr } = await supabase.auth.signInWithPassword({ email: emailInput.trim(), password: passwordInput });
         if (signInErr) {
           if (signInErr.message.includes('Invalid') || signInErr.message.includes('not found')) {
             setError('Contraseña incorrecta. Si olvidaste tu contraseña, usa "Recuperar contraseña".');
+          } else if (signInErr.message.toLowerCase().includes('not confirmed') || signInErr.message.toLowerCase().includes('email not confirmed')) {
+            setEmailNotConfirmed(true);
+            setRegisteredEmail(emailInput.trim());
+            setError('Debes confirmar tu correo antes de ingresar. Revisa tu bandeja de entrada (incluyendo spam).');
           } else { setError(signInErr.message); }
           setLoading(false); return;
         }
@@ -636,6 +666,17 @@ function LoginColModal({ onSession }) {
     if (resetErr) { setError('No se pudo enviar el correo: ' + resetErr.message); return; }
     setResetSent(true);
     setRegisteredEmail(emailInput.trim());
+  };
+
+  const handleResendConfirmation = async () => {
+    const email = registeredEmail || emailInput.trim();
+    if (!email || !supabase) return;
+    setLoading(true); setError('');
+    const { error } = await supabase.auth.resend({ type: 'signup', email });
+    setLoading(false);
+    if (error) { setError('Error al reenviar: ' + error.message); return; }
+    setSignUpSent(true);
+    setEmailNotConfirmed(false);
   };
 
   const handleGoogle = async () => {
@@ -703,6 +744,49 @@ function LoginColModal({ onSession }) {
             </>
           )}
 
+          {step === 'guestname' && (
+            <>
+              <div className="bg-yellow-900/20 border border-yellow-600/40 rounded-xl p-4 mb-5">
+                <p className="text-yellow-400 text-xs font-bold uppercase tracking-wider mb-1">Acceso de prueba</p>
+                <p className="text-gray-300 text-sm">Colegiado No. <span className="text-white font-bold">{GUEST_COLEGIADO}</span> — acceso completo sin verificación CPG.</p>
+              </div>
+              <h2 className="text-white font-bold text-lg mb-1">¿Cuál es tu nombre?</h2>
+              <p className="text-gray-400 text-sm mb-4">Ingresa tu nombre completo para continuar.</p>
+              {error && <div className="mb-4 bg-red-500/10 border border-red-500/30 rounded-lg px-4 py-3 text-sm text-red-300 flex items-start gap-2"><XCircle size={16} className="mt-0.5 flex-shrink-0" />{error}</div>}
+              <div className="mb-4">
+                <label className="block text-gray-400 text-xs mb-1.5 uppercase tracking-wider">Nombre completo</label>
+                <input
+                  type="text"
+                  value={guestName}
+                  onChange={e => { setGuestName(e.target.value); setError(''); }}
+                  onKeyDown={e => { if (e.key === 'Enter') {
+                    if (!guestName.trim()) { setError('Ingresa tu nombre.'); return; }
+                    setCpgData({ colegiado: GUEST_COLEGIADO, name: guestName.trim(), status: 'ACTIVO' });
+                    setStep('auth');
+                  }}}
+                  className="w-full bg-black border border-gray-700 rounded-lg p-3 text-white focus:border-blue-500 outline-none transition"
+                  placeholder="Ej: María García"
+                  maxLength={120}
+                  autoFocus
+                />
+              </div>
+              <button
+                onClick={() => {
+                  if (!guestName.trim()) { setError('Ingresa tu nombre.'); return; }
+                  setCpgData({ colegiado: GUEST_COLEGIADO, name: guestName.trim(), status: 'ACTIVO' });
+                  setStep('auth');
+                }}
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg transition flex items-center justify-center gap-2 mb-3"
+              >
+                Continuar →
+              </button>
+              <button onClick={() => { setStep('collegiate'); setError(''); }} className="w-full text-gray-500 hover:text-gray-300 text-sm py-2 transition">
+                ← Cambiar número de colegiado
+              </button>
+            </>
+          )}
+
+
           {step === 'auth' && cpgData && (
             <>
               <div className="bg-green-900/20 border border-green-700/40 rounded-xl p-4 mb-6">
@@ -711,7 +795,24 @@ function LoginColModal({ onSession }) {
                 <p className="text-gray-400 text-sm">No. {cpgData.colegiado} · <span className={`font-semibold ${cpgData.status === 'ACTIVO' ? 'text-green-400' : 'text-red-400'}`}>{cpgData.status}</span></p>
               </div>
 
-              {registeredEmail ? (
+              {(signUpSent || emailNotConfirmed) ? (
+                <div className="text-center py-4">
+                  <div className="w-14 h-14 bg-blue-800/30 border border-blue-600/40 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <Mail size={28} className="text-blue-400" />
+                  </div>
+                  <h2 className="text-white font-bold text-lg mb-2">Revisa tu correo</h2>
+                  <p className="text-gray-400 text-sm mb-1">Enviamos un enlace de confirmación a:</p>
+                  <p className="text-blue-300 font-mono text-sm mb-3">{maskEmail(registeredEmail || emailInput)}</p>
+                  <p className="text-gray-500 text-xs mb-1">Haz clic en el enlace del correo para activar tu cuenta.</p>
+                  <p className="text-gray-600 text-xs mb-5">Si no lo ves, revisa la carpeta de spam o correo no deseado.</p>
+                  <button onClick={handleResendConfirmation} disabled={loading} className="w-full bg-gray-800 hover:bg-gray-700 border border-gray-600 text-gray-300 hover:text-white font-medium py-3 rounded-lg transition flex items-center justify-center gap-2 text-sm mb-3">
+                    {loading ? <Loader2 size={16} className="animate-spin" /> : <><Mail size={16} /> Reenviar correo de confirmación</>}
+                  </button>
+                  <button onClick={() => { setSignUpSent(false); setEmailNotConfirmed(false); setAuthMode('login'); }} className="text-gray-500 hover:text-gray-300 text-sm transition">
+                    ← Ya confirmé, quiero ingresar
+                  </button>
+                </div>
+              ) : registeredEmail ? (
                 resetSent ? (
                   <div className="text-center py-4">
                     <div className="w-14 h-14 bg-green-800/30 border border-green-600/40 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -1378,7 +1479,7 @@ export default function App() {
           <a href="https://gestionescaeduc.vercel.app/" target="_blank" rel="noreferrer" className="hidden md:flex items-center gap-1 text-xs text-gray-300 hover:text-white border border-gray-600 px-3 py-1.5 rounded-full hover:bg-gray-800 transition"><ExternalLink size={12} /> Avales CAEDUC</a>
           {!sessionUser.isGuest
             ? <button onClick={() => navigateToCreditos(sessionUser)} className="hidden md:flex items-center gap-1 text-xs text-blue-300 hover:text-white border border-blue-700 px-3 py-1.5 rounded-full hover:bg-blue-900/40 transition font-medium" title="Ir a Créditos Académicos (sesión compartida)"><ExternalLink size={12} /> Créditos Académicos</button>
-            : <a href={CREDITOS_URL} target="_blank" rel="noreferrer" className="hidden md:flex items-center gap-1 text-xs text-gray-300 hover:text-white border border-gray-600 px-3 py-1.5 rounded-full hover:bg-gray-800 transition"><ExternalLink size={12} /> Créditos Académicos</a>
+            : <a href={CREDITOS_URL} className="hidden md:flex items-center gap-1 text-xs text-gray-300 hover:text-white border border-gray-600 px-3 py-1.5 rounded-full hover:bg-gray-800 transition"><ExternalLink size={12} /> Créditos Académicos</a>
           }
           <a href="https://colegiodepsicologos.org.gt" target="_blank" rel="noreferrer" className="hidden md:flex items-center gap-1 text-xs text-gray-300 hover:text-white border border-gray-600 px-3 py-1.5 rounded-full hover:bg-gray-800 transition"><ExternalLink size={12} /> Sitio Oficial</a>
 
