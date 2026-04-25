@@ -1759,8 +1759,69 @@ function HistoryView({ sessionUser, onBack, onReprintCert }) {
   );
 }
 
+// ── CONTEXTO de escala para el editor interactivo ──
+const CertScaleContext = React.createContext(1);
+
+// ── Caja arrastrable y redimensionable (solo activa en modo editor interactivo) ──
+function DragResizeBox({ x = 0, y = 0, w, h, onChange, interactive, children, anchor = 'topleft', label }) {
+  const scale = React.useContext(CertScaleContext) || 1;
+  const [drag, setDrag] = React.useState(null);
+  const start = (e, mode) => {
+    if (!interactive) return;
+    e.stopPropagation();
+    e.preventDefault();
+    setDrag({ mode, sx: e.clientX, sy: e.clientY, x, y, w, h });
+  };
+  React.useEffect(() => {
+    if (!drag) return;
+    const move = (e) => {
+      const dx = (e.clientX - drag.sx) / scale;
+      const dy = (e.clientY - drag.sy) / scale;
+      if (drag.mode === 'drag') {
+        onChange({ x: Math.round(drag.x + dx), y: Math.round(drag.y + dy) });
+      } else if (drag.mode === 'resize') {
+        // anchor=bottomright invierte el drag para mantener punto fijo
+        const sx = anchor === 'bottomright' ? -1 : 1;
+        const newW = Math.max(40, Math.round(drag.w + dx * sx));
+        const newH = Math.max(30, Math.round(drag.h + dy * sx));
+        onChange({ w: newW, h: newH });
+      }
+    };
+    const up = () => setDrag(null);
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+    return () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); };
+  }, [drag, scale, onChange, anchor]);
+
+  // En anchor=bottomright (firma/sello/qr): x/y NEGATIVO mueve el bloque hacia adentro (izq/arriba)
+  const tx = anchor === 'bottomright' ? -x : x;
+  const ty = anchor === 'bottomright' ? -y : y;
+  const handlePos = anchor === 'bottomright'
+    ? { left: -10, top: -10, cursor: 'nwse-resize' }
+    : { right: -10, bottom: -10, cursor: 'nwse-resize' };
+
+  return (
+    <div
+      style={{ transform: `translate(${tx}px, ${ty}px)`, position: 'relative', display: 'inline-block', cursor: interactive ? (drag?.mode === 'drag' ? 'grabbing' : 'grab') : 'default' }}
+      onMouseDown={(e) => start(e, 'drag')}
+    >
+      {children}
+      {interactive && (
+        <>
+          <div style={{ position: 'absolute', inset: 0, border: '2px dashed #6366f1', background: 'rgba(99,102,241,0.06)', pointerEvents: 'none' }} />
+          {label && <div style={{ position: 'absolute', top: -22, left: 0, fontSize: 11, fontWeight: 700, color: '#6366f1', background: 'white', padding: '1px 6px', borderRadius: 4, border: '1px solid #6366f1', whiteSpace: 'nowrap' }}>{label}</div>}
+          <div
+            onMouseDown={(e) => start(e, 'resize')}
+            style={{ position: 'absolute', width: 18, height: 18, background: '#6366f1', borderRadius: '50%', border: '2px solid white', boxShadow: '0 2px 4px rgba(0,0,0,0.3)', ...handlePos }}
+          />
+        </>
+      )}
+    </div>
+  );
+}
+
 // ── CERTIFICADO CANVAS COMPARTIDO — v2 con firmas múltiples ──
-function CertificateCanvas({ certRef, onImageLoaded, tpl, recipientName, statusText, collegiateNumber, videoTitle, videoDuration, dateFormatted, certificateCode, qrUrl, commissionsSnapshot = [] }) {
+function CertificateCanvas({ certRef, onImageLoaded, tpl, recipientName, statusText, collegiateNumber, videoTitle, videoDuration, dateFormatted, certificateCode, qrUrl, commissionsSnapshot = [], interactive = false, onLayoutChange }) {
   const [imagesReady, setImagesReady] = useState(0);
   const commissionImages = commissionsSnapshot.filter(c => c.signature_url).length;
   const totalImages = [tpl.logoCpgUrl, tpl.logoCaeducUrl, tpl.signatureUrl, tpl.sealUrl, tpl.backgroundUrl].filter(Boolean).length + commissionImages;
@@ -1927,70 +1988,126 @@ function CertificateCanvas({ certRef, onImageLoaded, tpl, recipientName, statusT
           const startX = useTwoRows
             ? Math.max(sigAreaLeft, Math.floor((1056 - 180 - rowWidth) / 2))
             : Math.max(sigAreaLeft, Math.floor((1056 - rowWidth) / 2));
+          const isFirstRow = rowIdx === 0;
+          const sigX = isFirstRow ? (L.signature?.x || 0) : 0;
+          const sigY = isFirstRow ? (L.signature?.y || 0) : 0;
+
+          const rowInner = (
+            <div style={{ display: 'flex', alignItems: 'flex-end', gap: sigBlockGap + 'px' }}>
+              {rowSigners.map((signer, idx) => (
+                <div key={idx} style={{ textAlign: 'center', width: sigBlockW + 'px' }}>
+                  {signer.signature_url ? (
+                    <img
+                      src={signer.signature_url}
+                      alt={`Firma ${signer.commission_name}`}
+                      crossOrigin="anonymous"
+                      style={{
+                        maxWidth: (sigBlockW - 10) + 'px',
+                        maxHeight: sigImgH + 'px',
+                        objectFit: 'contain',
+                        margin: '0 auto 4px',
+                        display: 'block'
+                      }}
+                      onLoad={handleImgLoad}
+                      onError={(e) => { e.target.style.display='none'; handleImgLoad(); }}
+                    />
+                  ) : (
+                    <div style={{ height: sigImgH + 'px' }} />
+                  )}
+                  <div style={{ borderTop: '1px solid #444', paddingTop: '4px', width: (sigBlockW - 20) + 'px', margin: '0 auto' }}>
+                    <p style={{ fontSize: (L.coordName?.fontSize || (useTwoRows ? 11 : 13)) + 'px', fontWeight: 'bold', color: '#1a1a2e', lineHeight: '1.15', margin: 0 }}>{signer.signer_name}</p>
+                    <p style={{ fontSize: (L.coordTitle?.fontSize || (useTwoRows ? 9 : 11)) + 'px', color: '#555', lineHeight: '1.1', margin: '1px 0 0' }}>{signer.signer_title}</p>
+                    <p style={{ fontSize: (useTwoRows ? 8 : 10) + 'px', color: '#888', fontStyle: 'italic', lineHeight: '1.1', margin: '1px 0 0' }}>{signer.commission_name}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          );
 
           return (
             <div key={rowIdx} className="absolute" style={{ bottom: rowY + 'px', left: startX + 'px' }}>
-              <div style={{ display: 'flex', alignItems: 'flex-end', gap: sigBlockGap + 'px' }}>
-                {rowSigners.map((signer, idx) => (
-                  <div key={idx} style={{ textAlign: 'center', width: sigBlockW + 'px' }}>
-                    {signer.signature_url ? (
-                      <img
-                        src={signer.signature_url}
-                        alt={`Firma ${signer.commission_name}`}
-                        crossOrigin="anonymous"
-                        style={{
-                          maxWidth: (sigBlockW - 10) + 'px',
-                          maxHeight: sigImgH + 'px',
-                          objectFit: 'contain',
-                          margin: '0 auto 4px',
-                          display: 'block'
-                        }}
-                        onLoad={handleImgLoad}
-                        onError={(e) => { e.target.style.display='none'; handleImgLoad(); }}
-                      />
-                    ) : (
-                      <div style={{ height: sigImgH + 'px' }} />
-                    )}
-                    <div style={{ borderTop: '1px solid #444', paddingTop: '4px', width: (sigBlockW - 20) + 'px', margin: '0 auto' }}>
-                      <p style={{ fontSize: (L.coordName?.fontSize || (useTwoRows ? 11 : 13)) + 'px', fontWeight: 'bold', color: '#1a1a2e', lineHeight: '1.15', margin: 0 }}>{signer.signer_name}</p>
-                      <p style={{ fontSize: (L.coordTitle?.fontSize || (useTwoRows ? 9 : 11)) + 'px', color: '#555', lineHeight: '1.1', margin: '1px 0 0' }}>{signer.signer_title}</p>
-                      <p style={{ fontSize: (useTwoRows ? 8 : 10) + 'px', color: '#888', fontStyle: 'italic', lineHeight: '1.1', margin: '1px 0 0' }}>{signer.commission_name}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
+              {interactive && isFirstRow && onLayoutChange ? (
+                <DragResizeBox
+                  x={sigX} y={sigY}
+                  w={L.signature?.w || 300} h={L.signature?.h || 90}
+                  onChange={(p) => {
+                    if ('x' in p) onLayoutChange({ 'signature.x': p.x, 'signature.y': p.y });
+                    else onLayoutChange({ 'signature.w': p.w, 'signature.h': p.h });
+                  }}
+                  interactive={true}
+                  label="Firma"
+                >
+                  {rowInner}
+                </DragResizeBox>
+              ) : (
+                isFirstRow ? (
+                  <div style={{ transform: `translate(${sigX}px, ${sigY}px)` }}>{rowInner}</div>
+                ) : rowInner
+              )}
             </div>
           );
         })}
 
-        {/* ── SELLO y QR ── */}
-        {useTwoRows ? (
-          <div className="absolute" style={{ right: '40px', bottom: bottomY + 'px' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
-              {tpl.sealUrl && (
-                <img src={tpl.sealUrl} alt="Sello" crossOrigin="anonymous" style={{ width: sealW + 'px', height: sealH + 'px', objectFit: 'contain', opacity: 0.85 }} onLoad={handleImgLoad} onError={(e) => { e.target.style.display='none'; handleImgLoad(); }} />
+        {/* ── SELLO ── */}
+        {tpl.sealUrl && (() => {
+          const sealOffsetGap = useTwoRows ? 8 : 6;
+          // Sello base: por encima del QR, anclado a la derecha
+          const sealBaseBottom = bottomY + qrH + 32 + sealOffsetGap;
+          const sealX = L.seal?.x || 0;
+          const sealY = L.seal?.y || 0;
+          const sealImg = (
+            <img src={tpl.sealUrl} alt="Sello" crossOrigin="anonymous" style={{ width: sealW + 'px', height: sealH + 'px', objectFit: 'contain', opacity: 0.85, display: 'block' }} onLoad={handleImgLoad} onError={(e) => { e.target.style.display='none'; handleImgLoad(); }} />
+          );
+          return (
+            <div className="absolute" style={{ right: '40px', bottom: sealBaseBottom + 'px' }}>
+              {interactive && onLayoutChange ? (
+                <DragResizeBox
+                  x={sealX} y={sealY} w={sealW} h={sealH}
+                  onChange={(p) => {
+                    if ('x' in p) onLayoutChange({ 'seal.x': p.x, 'seal.y': p.y });
+                    else onLayoutChange({ 'seal.w': p.w, 'seal.h': p.h });
+                  }}
+                  interactive={true} anchor="bottomright" label="Sello"
+                >
+                  {sealImg}
+                </DragResizeBox>
+              ) : (
+                <div style={{ transform: `translate(${-sealX}px, ${-sealY}px)` }}>{sealImg}</div>
               )}
-              <div style={{ textAlign: 'center' }}>
-                <img src={qrUrl} alt="QR" crossOrigin="anonymous" style={{ width: qrW + 'px', height: qrH + 'px', display: 'block', margin: '0 auto' }} />
-                <p style={{ fontSize: '8px', color: '#555', marginTop: '2px', fontFamily: "'Courier New', monospace", letterSpacing: '0.3px', fontWeight: 'bold' }}>{certificateCode}</p>
-                <p style={{ fontSize: '7px', color: '#999', marginTop: '1px' }}>Escanea para verificar</p>
-              </div>
             </div>
-          </div>
-        ) : (
-          <div className="absolute" style={{ right: '40px', bottom: bottomY + 'px' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}>
-              {tpl.sealUrl && (
-                <img src={tpl.sealUrl} alt="Sello" crossOrigin="anonymous" style={{ width: sealW + 'px', height: sealH + 'px', objectFit: 'contain', opacity: 0.85 }} onLoad={handleImgLoad} onError={(e) => { e.target.style.display='none'; handleImgLoad(); }} />
+          );
+        })()}
+
+        {/* ── QR ── */}
+        {(() => {
+          const qrX = L.qr?.x || 0;
+          const qrY = L.qr?.y || 0;
+          const qrBlock = (
+            <div style={{ textAlign: 'center' }}>
+              <img src={qrUrl} alt="QR" crossOrigin="anonymous" style={{ width: qrW + 'px', height: qrH + 'px', display: 'block', margin: '0 auto' }} />
+              <p style={{ fontSize: (useTwoRows ? '8px' : '9px'), color: '#555', marginTop: (useTwoRows ? '2px' : '3px'), fontFamily: "'Courier New', monospace", letterSpacing: '0.3px', fontWeight: 'bold' }}>{certificateCode}</p>
+              <p style={{ fontSize: (useTwoRows ? '7px' : '8px'), color: '#999', marginTop: '1px' }}>Escanea para verificar</p>
+            </div>
+          );
+          return (
+            <div className="absolute" style={{ right: '40px', bottom: bottomY + 'px' }}>
+              {interactive && onLayoutChange ? (
+                <DragResizeBox
+                  x={qrX} y={qrY} w={qrW} h={qrH}
+                  onChange={(p) => {
+                    if ('x' in p) onLayoutChange({ 'qr.x': p.x, 'qr.y': p.y });
+                    else onLayoutChange({ 'qr.w': p.w, 'qr.h': p.h });
+                  }}
+                  interactive={true} anchor="bottomright" label="QR"
+                >
+                  {qrBlock}
+                </DragResizeBox>
+              ) : (
+                <div style={{ transform: `translate(${-qrX}px, ${-qrY}px)` }}>{qrBlock}</div>
               )}
-              <div style={{ textAlign: 'center' }}>
-                <img src={qrUrl} alt="QR" crossOrigin="anonymous" style={{ width: qrW + 'px', height: qrH + 'px', display: 'block', margin: '0 auto' }} />
-                <p style={{ fontSize: '9px', color: '#555', marginTop: '3px', fontFamily: "'Courier New', monospace", letterSpacing: '0.3px', fontWeight: 'bold' }}>{certificateCode}</p>
-                <p style={{ fontSize: '8px', color: '#999', marginTop: '1px' }}>Escanea para verificar</p>
-              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
       </div>
     </div>
   );
@@ -2799,7 +2916,7 @@ function CertificateView({ video, userProfile, sessionUser, onBack, certTemplate
 }
 
 // ── CERT SCALED PREVIEW ──
-function CertScaledPreview({ certRef, imageLoaded, children }) {
+function CertScaledPreview({ certRef, imageLoaded, children, interactive = false }) {
   const [scale, setScale] = React.useState(() => Math.min(1, (typeof window !== 'undefined' ? window.innerWidth - 32 : 1056) / 1056));
   const wrapperRef = React.useRef(null);
 
@@ -2822,8 +2939,10 @@ function CertScaledPreview({ certRef, imageLoaded, children }) {
       {/* 1. Scaled visual preview — rendered FIRST (decorative only, user sees this) */}
       <div className="w-full flex justify-center overflow-hidden">
         <div style={{ width: Math.floor(1056 * scale) + 'px', height: Math.floor(816 * scale) + 'px', position: 'relative', overflow: 'hidden', flexShrink: 0 }}>
-          <div style={{ transform: 'scale(' + scale + ')', transformOrigin: 'top left', width: '1056px', height: '816px', position: 'absolute', top: 0, left: 0, pointerEvents: 'none' }}>
-            {children}
+          <div style={{ transform: 'scale(' + scale + ')', transformOrigin: 'top left', width: '1056px', height: '816px', position: 'absolute', top: 0, left: 0, pointerEvents: interactive ? 'auto' : 'none' }}>
+            <CertScaleContext.Provider value={scale}>
+              {children}
+            </CertScaleContext.Provider>
           </div>
         </div>
       </div>
@@ -3290,6 +3409,7 @@ function CertTemplateAdmin({ certTemplate, onSave }) {
   const [uploading, setUploading] = useState('');
   const [saveMsg, setSaveMsg] = useState('');
   const [layoutOpen, setLayoutOpen] = useState(false);
+  const [interactiveEdit, setInteractiveEdit] = useState(true);
   const previewRef = useRef(null);
 
   useEffect(() => { setForm({ ...DEFAULT_CERT_CONFIG, ...certTemplate }); }, [certTemplate]);
@@ -3307,9 +3427,27 @@ function CertTemplateAdmin({ certTemplate, onSave }) {
   const setL = (path, val) => {
     const keys = path.split('.');
     const next = JSON.parse(JSON.stringify(L));
-    if (keys.length === 2) next[keys[0]][keys[1]] = val;
-    else next[keys[0]] = val;
+    if (keys.length === 2) {
+      if (!next[keys[0]]) next[keys[0]] = {};
+      next[keys[0]][keys[1]] = val;
+    } else next[keys[0]] = val;
     setForm(prev => ({ ...prev, layout: next }));
+  };
+  // Aplica varios cambios de layout a la vez (usado por el editor interactivo drag/resize)
+  const setLBatch = (patch) => {
+    setForm(prev => {
+      const baseLayout = prev.layout || {};
+      const merged = { ...baseLayout };
+      Object.entries(patch).forEach(([path, val]) => {
+        const keys = path.split('.');
+        if (keys.length === 2) {
+          merged[keys[0]] = { ...(merged[keys[0]] || {}), [keys[1]]: val };
+        } else {
+          merged[keys[0]] = val;
+        }
+      });
+      return { ...prev, layout: merged };
+    });
   };
 
   const handleSave = async () => {
@@ -3439,8 +3577,17 @@ function CertTemplateAdmin({ certTemplate, onSave }) {
           <div className="mt-3 bg-black/40 border border-gray-800 rounded-xl overflow-hidden">
             {/* Preview en vivo */}
             <div className="border-b border-gray-800 bg-gray-950 p-3">
-              <p className="text-[11px] text-gray-500 mb-2 text-center tracking-wide uppercase">Vista previa — se actualiza al mover los controles</p>
-              <CertScaledPreview certRef={previewRef} imageLoaded={true}>
+              <div className="flex items-center justify-between mb-2 gap-2 flex-wrap">
+                <p className="text-[11px] text-gray-500 tracking-wide uppercase">Vista previa — arrastra firma, sello y QR para reposicionarlos · usa el círculo para redimensionar</p>
+                <button
+                  type="button"
+                  onClick={() => setInteractiveEdit(p => !p)}
+                  className={`text-[11px] font-bold px-3 py-1 rounded-full border transition ${interactiveEdit ? 'bg-indigo-600 border-indigo-400 text-white' : 'bg-gray-800 border-gray-700 text-gray-300 hover:bg-gray-700'}`}
+                >
+                  {interactiveEdit ? '✓ Edición interactiva' : 'Activar edición interactiva'}
+                </button>
+              </div>
+              <CertScaledPreview certRef={previewRef} imageLoaded={true} interactive={interactiveEdit}>
                 <CertificateCanvas
                   certRef={previewRef} tpl={form} onImageLoaded={() => {}}
                   recipientName="Nombre Completo del Profesional"
@@ -3450,6 +3597,8 @@ function CertTemplateAdmin({ certTemplate, onSave }) {
                   certificateCode="CPG-20260322-0000"
                   qrUrl={getCertQrUrl('CPG-20260322-0000')}
                   commissionsSnapshot={[]}
+                  interactive={interactiveEdit}
+                  onLayoutChange={setLBatch}
                 />
               </CertScaledPreview>
             </div>
