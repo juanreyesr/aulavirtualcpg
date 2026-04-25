@@ -17,6 +17,7 @@ const ADMIN_CREDENTIALS = {
 };
 
 const EDGE_URL = 'https://ilyospunwucdojrnfgti.supabase.co/functions/v1/consultar-colegiado';
+const CREDITOS_EDGE_URL = 'https://ilyospunwucdojrnfgti.supabase.co/functions/v1/consultar-creditos';
 const ADMIN_EDGE_URL = 'https://ilyospunwucdojrnfgti.supabase.co/functions/v1/manage-admin-user';
 const APP_URL = 'https://aulavirtualcpg.org';
 const CREDITOS_URL = 'https://caeducgt.org';
@@ -1134,42 +1135,27 @@ export default function App() {
     if (!supabase || !sessionUser || sessionUser.isGuest) return;
     setProfileCredits(p => ({ ...p, loading: true }));
     try {
-      const currentYear = new Date().getFullYear();
-      let rows = null;
-
-      // Intento 1: por sesión activa → usuario_id
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.user) {
-          const { data } = await supabase
-            .from('registros')
-            .select('creditos, fecha, created_at')
-            .eq('usuario_id', session.user.id);
-          if (data) rows = data;
-        }
-      } catch {}
-
-      // Intento 2: por colegiado_numero como fallback
-      if (!rows) {
-        const { data } = await supabase
-          .from('registros')
-          .select('creditos, fecha, created_at')
-          .eq('colegiado_numero', sessionUser.collegiateNumber);
-        if (data) rows = data;
-      }
-
-      const allRows = rows || [];
-      const yearRows = allRows.filter(r => {
-        const y = new Date(r.fecha || r.created_at || '').getFullYear();
-        return y === currentYear;
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token || supabase.supabaseKey;
+      const res = await fetch(CREDITOS_EDGE_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+          'apikey': supabase.supabaseKey,
+        },
+        body: JSON.stringify({ colegiado_numero: sessionUser.collegiateNumber }),
       });
-      const totalCred = yearRows.reduce((acc, r) => acc + (Number(r.creditos) || 0), 0);
-      const totalAll = allRows.reduce((acc, r) => acc + (Number(r.creditos) || 0), 0);
+      if (!res.ok) {
+        setProfileCredits({ creditos: null, actividades: null, loading: false });
+        return;
+      }
+      const data = await res.json();
       setProfileCredits({
-        creditos: Math.round(totalCred * 100) / 100,
-        actividades: yearRows.length,
-        totalCreditosHistorico: Math.round(totalAll * 100) / 100,
-        totalActividadesHistorico: allRows.length,
+        creditos: data.creditos_anio ?? 0,
+        actividades: data.actividades_anio ?? 0,
+        totalCreditosHistorico: data.creditos_historico ?? 0,
+        totalActividadesHistorico: data.actividades_historico ?? 0,
         loading: false,
       });
     } catch { setProfileCredits({ creditos: null, actividades: null, loading: false }); }
