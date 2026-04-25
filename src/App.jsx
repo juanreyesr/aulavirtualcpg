@@ -1392,25 +1392,6 @@ export default function App() {
     logAuditAuto('cert_template_saved', 'cert_template', '1');
   };
 
-  // Sincronizar info del firmante en cpg_cert_config cuando cargan las comisiones
-  useEffect(() => {
-    if (!supabase || !isAdmin || commissions.length === 0) return;
-    const primaryComm = commissions.find(c => c.active) || commissions[0];
-    if (!primaryComm) return;
-    // Solo actualizar si falta alguno de los campos
-    const hasSigner = certTemplate._signerName && certTemplate._signerTitle;
-    if (hasSigner) return;
-    const merged = {
-      ...certTemplate,
-      _signerName: primaryComm.signer_name || '',
-      _signerTitle: primaryComm.signer_title || '',
-      _commissionName: primaryComm.commission_name || '',
-    };
-    setCertTemplate(merged);
-    supabase.from('cpg_cert_config').upsert({ id: 1, config: merged, updated_at: new Date().toISOString() }, { onConflict: 'id' }).then(() => {
-      console.log('[certConfig] firmante sincronizado:', primaryComm.signer_name);
-    });
-  }, [commissions, isAdmin]); // eslint-disable-line
 
   useEffect(() => {
     const interval = setInterval(loadLiveSession, 30000);
