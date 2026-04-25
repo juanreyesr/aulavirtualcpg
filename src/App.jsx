@@ -4291,6 +4291,31 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
   const [questions, setQuestions] = useState([]);
   const EMPTY_ACTIVITY_FORM = { title: '', organizer: '', date: '', time: '', horas: '', location: '', registrationLink: '', meetingLink: '', isFull: false, participants: '', costType: 'free', cost: '', scholarshipPct: '', scholarshipAmt: '', hasCommissions: false, commissions: [] };
   const [activityForm, setActivityForm] = useState(EMPTY_ACTIVITY_FORM);
+  const [syncMsg, setSyncMsg] = useState('');
+
+  // Backfill: actualiza video_duration y video_title en certificados que tienen horas vacías
+  const syncCertHours = React.useCallback(async (showMsg = false) => {
+    if (!supabase || !videos.length) return;
+    try {
+      const allSources = [
+        ...videos.filter(v => v.duration).map(v => ({ id: String(v.id), title: v.title || '', duration: String(v.duration) })),
+        ...activities.filter(a => a.horas).map(a => ({ id: String(a.id), title: a.title || '', duration: String(a.horas) })),
+      ];
+      let updated = 0;
+      for (const src of allSources) {
+        const { error } = await supabase
+          .from('cpg_certificates')
+          .update({ video_duration: src.duration, video_title: src.title })
+          .eq('video_id', src.id)
+          .or('video_duration.is.null,video_duration.eq.');
+        if (!error) updated++;
+      }
+      if (showMsg) { setSyncMsg(`✓ Sincronizado: ${updated} actividades/videos procesados`); setTimeout(() => setSyncMsg(''), 4000); }
+    } catch (e) { if (showMsg) { setSyncMsg('Error al sincronizar: ' + e.message); setTimeout(() => setSyncMsg(''), 5000); } }
+  }, [videos, activities]);
+
+  // Ejecutar backfill automáticamente al abrir el panel
+  React.useEffect(() => { syncCertHours(false); }, [syncCertHours]);
 
   const handleCollegiateBlur = async () => {
     const num = manualProfile.collegiateNumber.trim();
@@ -4758,10 +4783,18 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
                 <input type="text" value={certsFilter} onChange={e => setCertsFilter(e.target.value)} placeholder="Filtrar por colegiado, nombre o curso..." className="w-full bg-black border border-gray-700 rounded-lg pl-8 pr-4 py-2 text-sm text-white focus:border-yellow-500 outline-none" />
               </div>
               <button onClick={() => setShowBulkCert(true)} className="flex items-center gap-2 bg-yellow-600 hover:bg-yellow-700 px-4 py-2 rounded-lg text-sm font-bold text-white transition shrink-0"><Award size={16} /> Emitir masivamente</button>
-              <div className="flex gap-2 shrink-0">
+              <div className="flex gap-2 shrink-0 flex-wrap">
                 <button onClick={() => { setCertsLoaded(false); loadAdminCerts(); }} className="flex items-center gap-2 bg-gray-700 hover:bg-gray-600 px-3 py-2 rounded-lg text-sm font-semibold transition">
                   <Loader2 size={14} className={certsLoading ? 'animate-spin' : ''} /> Actualizar
                 </button>
+                <button
+                  onClick={() => syncCertHours(true)}
+                  title="Actualiza las horas y el título en todos los certificados que los tienen vacíos"
+                  className="flex items-center gap-2 bg-indigo-700 hover:bg-indigo-600 px-3 py-2 rounded-lg text-sm font-semibold transition text-white"
+                >
+                  ⟳ Sincronizar horas
+                </button>
+                {syncMsg && <span className="text-xs self-center text-indigo-300">{syncMsg}</span>}
               </div>
             </div>
 
