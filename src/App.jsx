@@ -202,12 +202,25 @@ async function consultarColegiado(id) {
 }
 
 async function navigateToCreditos(sessionUser) {
-  if (!supabase) return;
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session) return;
+  const base = CREDITOS_URL.endsWith('/') ? CREDITOS_URL : CREDITOS_URL + '/';
+  const query = sessionUser?.collegiateNumber
+    ? `?sso_colegiado=${encodeURIComponent(sessionUser.collegiateNumber)}&sso_nombre=${encodeURIComponent(sessionUser.name || '')}`
+    : '';
+  // Si por cualquier razón no hay sesión utilizable, navegamos igual.
+  // El botón siempre debe llevar al usuario a la otra app.
+  let session = null;
+  if (supabase) {
+    try {
+      ({ data: { session } } = await supabase.auth.getSession());
+      if (!session) {
+        try { await supabase.auth.refreshSession(); } catch {}
+        ({ data: { session } } = await supabase.auth.getSession());
+      }
+    } catch {}
+  }
+  if (!session) { window.location.href = `${base}${query}`; return; }
   const hash = `access_token=${session.access_token}&refresh_token=${session.refresh_token}&token_type=bearer&expires_in=${session.expires_in || 3600}&type=magiclink`;
-  const query = sessionUser?.collegiateNumber ? `?sso_colegiado=${encodeURIComponent(sessionUser.collegiateNumber)}&sso_nombre=${encodeURIComponent(sessionUser.name || '')}` : '';
-  window.location.href = `${CREDITOS_URL}/${query}#${hash}`;
+  window.location.href = `${base}${query}#${hash}`;
 }
 
 
