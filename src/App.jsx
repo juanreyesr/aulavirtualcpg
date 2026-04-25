@@ -4348,8 +4348,18 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
     const next = { ...editingActivity, ...activityForm };
     try {
       const exists = activities.some(a => a.id === next.id);
+      const prev = activities.find(a => a.id === next.id);
       await onActivitiesChange(exists ? activities.map(a => a.id === next.id ? next : a) : [...activities, next]);
       logAuditAuto(exists ? 'activity_updated' : 'activity_created', 'activity', String(next.id), { title: next.title });
+      // Si cambió horas o título, propagar a certificados ya emitidos para esta actividad
+      if (exists && prev && supabase && (String(prev.horas || '') !== String(next.horas || '') || String(prev.title || '') !== String(next.title || ''))) {
+        try {
+          await supabase.from('cpg_certificates').update({
+            video_duration: String(next.horas || ''),
+            video_title: next.title || '',
+          }).eq('video_id', String(next.id));
+        } catch (err) { console.warn('No se pudieron actualizar certificados de actividad:', err); }
+      }
       setEditingActivity(null);
       setActivityForm(EMPTY_ACTIVITY_FORM);
     } catch (e) { setActivityError('No se pudo guardar: ' + e.message); }
