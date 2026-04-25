@@ -574,6 +574,9 @@ function LoginColModal({ onSession }) {
         if (profile?.email) {
           setRegisteredEmail(profile.email);
           setAuthMode('login');
+        } else {
+          // Primera vez: que el modo por defecto sea "Crear cuenta"
+          setAuthMode('register');
         }
       }
       setStep('auth');
@@ -874,13 +877,29 @@ function LoginColModal({ onSession }) {
                 )
               ) : (
                 <>
-                  <div className="flex bg-gray-900 border border-gray-700 rounded-xl p-1 mb-5">
-                    <button onClick={() => { setAuthMode('login'); setError(''); }} className={`flex-1 py-2 rounded-lg text-sm font-semibold transition ${authMode === 'login' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'}`}>Ingresar</button>
-                    <button onClick={() => { setAuthMode('register'); setError(''); }} className={`flex-1 py-2 rounded-lg text-sm font-semibold transition ${authMode === 'register' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'}`}>Crear cuenta</button>
-                  </div>
-                  <h2 className="text-white font-bold text-lg mb-1">{authMode === 'login' ? 'Bienvenido de nuevo' : 'Crea tu cuenta'}</h2>
-                  <p className="text-gray-400 text-sm mb-5">{authMode === 'login' ? 'Ingresa con tu correo y contraseña.' : 'Registra tu correo para acceder al aula virtual.'}</p>
+                  {authMode === 'register' ? (
+                    <div className="bg-blue-900/30 border border-blue-500/40 rounded-xl p-4 mb-5">
+                      <p className="text-blue-300 text-xs font-bold uppercase tracking-wider mb-1">⚠ Necesitas crear tu cuenta</p>
+                      <p className="text-gray-200 text-sm">Tu colegiado <span className="text-white font-bold">{cpgData.colegiado}</span> aún no está vinculado a una cuenta. Elige cómo crearla:</p>
+                    </div>
+                  ) : (
+                    <h2 className="text-white font-bold text-lg mb-3">Ingresa a tu cuenta</h2>
+                  )}
+
                   {error && <div className="mb-4 bg-red-500/10 border border-red-500/30 rounded-lg px-4 py-3 text-sm text-red-300 flex items-start gap-2"><XCircle size={16} className="mt-0.5 flex-shrink-0" />{error}</div>}
+
+                  {/* Google primero — más visible */}
+                  <button onClick={handleGoogle} disabled={loading} className="w-full bg-white hover:bg-gray-100 text-gray-800 font-semibold py-3 rounded-lg transition flex items-center justify-center gap-2 mb-3 text-sm shadow-md">
+                    <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.14 0 5.95 1.08 8.17 2.84l6.1-6.1C34.46 3.19 29.5 1 24 1 14.82 1 7.07 6.48 3.64 14.24l7.1 5.52C12.5 13.37 17.77 9.5 24 9.5z"/><path fill="#4285F4" d="M46.52 24.5c0-1.64-.15-3.22-.42-4.75H24v9h12.67c-.55 2.97-2.2 5.48-4.67 7.17l7.18 5.57C43.32 37.3 46.52 31.36 46.52 24.5z"/><path fill="#FBBC05" d="M10.74 28.24A14.54 14.54 0 0 1 9.5 24c0-1.48.26-2.91.7-4.24l-7.1-5.52A23.94 23.94 0 0 0 0 24c0 3.87.93 7.52 2.57 10.74l8.17-6.5z"/><path fill="#34A853" d="M24 47c5.5 0 10.12-1.82 13.49-4.94l-7.18-5.57C28.6 37.84 26.42 38.5 24 38.5c-6.23 0-11.5-3.87-13.26-9.26l-8.17 6.5C6.07 43.52 14.82 47 24 47z"/></svg>
+                    {authMode === 'register' ? 'Crear cuenta con Google' : 'Continuar con Google'}
+                  </button>
+
+                  <div className="flex items-center gap-3 my-3">
+                    <div className="flex-1 h-px bg-gray-700" />
+                    <span className="text-xs text-gray-500">{authMode === 'register' ? 'o usa tu correo' : 'o'}</span>
+                    <div className="flex-1 h-px bg-gray-700" />
+                  </div>
+
                   <div className="mb-3">
                     <label className="block text-gray-400 text-xs mb-1.5 uppercase tracking-wider">Correo electrónico</label>
                     <input type="email" value={emailInput} onChange={e => { setEmailInput(e.target.value); setError(''); }} onKeyDown={e => e.key === 'Enter' && handleEmailAuth()} className="w-full bg-black border border-gray-700 rounded-lg p-3 text-white focus:border-blue-500 outline-none transition" placeholder="tucorreo@ejemplo.com" />
@@ -890,23 +909,26 @@ function LoginColModal({ onSession }) {
                     <input type="password" value={passwordInput} onChange={e => { setPasswordInput(e.target.value); setError(''); }} onKeyDown={e => e.key === 'Enter' && handleEmailAuth()} className="w-full bg-black border border-gray-700 rounded-lg p-3 text-white focus:border-blue-500 outline-none transition" placeholder="••••••••" />
                   </div>
                   <button onClick={handleEmailAuth} disabled={loading} className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 disabled:cursor-not-allowed text-white font-bold py-3 rounded-lg transition flex items-center justify-center gap-2 mb-3">
-                    {loading ? <><Loader2 size={18} className="animate-spin" /> Procesando...</> : <><Mail size={18} /> {authMode === 'login' ? 'Ingresar' : 'Crear cuenta e ingresar'}</>}
+                    {loading ? <><Loader2 size={18} className="animate-spin" /> Procesando...</> : <><Mail size={18} /> {authMode === 'login' ? 'Ingresar' : 'Crear cuenta con correo'}</>}
                   </button>
-                  <button onClick={handleGoogle} disabled={loading} className="w-full bg-white hover:bg-gray-100 text-gray-800 font-semibold py-3 rounded-lg transition flex items-center justify-center gap-2 mb-3 text-sm">
-                    <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.14 0 5.95 1.08 8.17 2.84l6.1-6.1C34.46 3.19 29.5 1 24 1 14.82 1 7.07 6.48 3.64 14.24l7.1 5.52C12.5 13.37 17.77 9.5 24 9.5z"/><path fill="#4285F4" d="M46.52 24.5c0-1.64-.15-3.22-.42-4.75H24v9h12.67c-.55 2.97-2.2 5.48-4.67 7.17l7.18 5.57C43.32 37.3 46.52 31.36 46.52 24.5z"/><path fill="#FBBC05" d="M10.74 28.24A14.54 14.54 0 0 1 9.5 24c0-1.48.26-2.91.7-4.24l-7.1-5.52A23.94 23.94 0 0 0 0 24c0 3.87.93 7.52 2.57 10.74l8.17-6.5z"/><path fill="#34A853" d="M24 47c5.5 0 10.12-1.82 13.49-4.94l-7.18-5.57C28.6 37.84 26.42 38.5 24 38.5c-6.23 0-11.5-3.87-13.26-9.26l-8.17 6.5C6.07 43.52 14.82 47 24 47z"/></svg>
-                    Continuar con Google
-                  </button>
+
                   {authMode === 'login' && (
                     <button onClick={handlePasswordResetNormal} disabled={loading} className="w-full text-gray-500 hover:text-gray-300 text-sm py-2 transition flex items-center justify-center gap-1.5 mb-1">
                       <KeyRound size={14} /> Olvidé mi contraseña
                     </button>
                   )}
-                  {authMode === 'login' && (
-                    <button onClick={() => { setAuthMode('register'); setError(''); }} className="w-full text-gray-600 hover:text-gray-400 text-xs py-1 transition mb-2">
+
+                  {/* Toggle al modo opuesto, abajo y discreto */}
+                  {authMode === 'register' ? (
+                    <button onClick={() => { setAuthMode('login'); setError(''); }} className="w-full text-gray-400 hover:text-gray-200 text-sm py-2 transition mt-1">
+                      ¿Ya tienes cuenta? Inicia sesión →
+                    </button>
+                  ) : (
+                    <button onClick={() => { setAuthMode('register'); setError(''); }} className="w-full text-gray-400 hover:text-gray-200 text-sm py-2 transition mt-1">
                       ¿Primera vez? Crear cuenta →
                     </button>
                   )}
-                  <button onClick={() => { setStep('collegiate'); setError(''); }} className="w-full text-gray-500 hover:text-gray-300 text-sm py-2 transition">
+                  <button onClick={() => { setStep('collegiate'); setError(''); setRegisteredEmail(null); }} className="w-full text-gray-500 hover:text-gray-300 text-sm py-2 transition">
                     ← Cambiar número de colegiado
                   </button>
                 </>
@@ -1175,7 +1197,9 @@ export default function App() {
   // Auto-enriquecer datos CPG si la sesión guardada no los tiene (sesión anterior al fix)
   useEffect(() => {
     if (!sessionUser || sessionUser.isGuest || sessionUser.collegiateNumber === '100000') return;
-    if ('fechaColegiacion' in sessionUser) return; // ya tiene los campos (aunque sean vacíos)
+    // Re-consultar al CPG si falta cualquiera de los datos (sesiones antiguas no tienen cuotaCongreso)
+    const hasAll = sessionUser.fechaColegiacion && sessionUser.ultimoPago && sessionUser.cuotaCongreso;
+    if (hasAll) return;
     const enrich = async () => {
       try {
         const data = await consultarColegiado(sessionUser.collegiateNumber);
