@@ -91,8 +91,8 @@ const DEFAULT_CERT_CONFIG = {
     coordName:  { fontSize: 16 },
     coordTitle: { fontSize: 13 },
     coordBlock: { x: 0, y: 0 },
-    seal:       { w: 130, x: 0, y: 0 },
-    qr:         { w: 110 },
+    seal:       { w: 130, h: 130, x: 0, y: 0 },
+    qr:         { w: 110, h: 110 },
     bottomY:    25,
     bottomGap:  60,
   },
@@ -1663,7 +1663,7 @@ export default function App() {
         {view === 'admin' && isAdmin && <AdminDashboard videos={videos} viewCounts={viewCounts} totalViews={totalViews} activities={activities} liveSession={liveSession} onSaveLiveSession={saveLiveSession} onVideosChange={persistVideos} onActivitiesChange={persistActivities} onGenerateCertificate={handleManualCertificate} certTemplate={certTemplate} onSaveCertConfig={saveCertConfig} siteLogos={siteLogos} onSaveSiteLogos={saveSiteLogos} adminRole={adminRole} commissions={commissions} />}
         {view === 'certificate' && manualCertificate && <div className="min-h-screen bg-[#141414] pt-20 px-4 md:px-16 pb-12"><CertificateView video={manualCertificate.video} userProfile={manualCertificate.profile} onBack={handleCloseManualCertificate} certTemplate={certTemplate} commissions={commissions} /></div>}
         {view === 'history' && !sessionUser.isGuest && !reprintCert && <HistoryView sessionUser={sessionUser} onBack={() => setView('home')} onReprintCert={(cert) => setReprintCert(cert)} />}
-        {view === 'history' && reprintCert && <div className="min-h-screen bg-[#141414] pt-20 px-4 md:px-16 pb-12"><CertificateReprintView cert={reprintCert} onBack={() => setReprintCert(null)} certTemplate={certTemplate} /></div>}
+        {view === 'history' && reprintCert && <div className="min-h-screen bg-[#141414] pt-20 px-4 md:px-16 pb-12"><CertificateReprintView cert={reprintCert} onBack={() => setReprintCert(null)} certTemplate={certTemplate} videos={videos} /></div>}
       </div>
 
       <footer className="py-12 px-10 bg-black/80 text-gray-500 text-sm border-t border-gray-800 mt-10">
@@ -1808,7 +1808,8 @@ function CertificateCanvas({ certRef, onImageLoaded, tpl, recipientName, statusT
   const sigAreaLeft = 60;
   const sigAreaWidth = 700;
   const sigBlockGap = 10;
-  const maxSigWidth = useTwoRows ? 165 : 210;
+  const sigCustomW = L.signature?.w || 300;
+  const maxSigWidth = useTwoRows ? Math.min(165, Math.round(sigCustomW * 0.55)) : Math.min(sigCustomW, 500);
   const sigBlockW = Math.min(maxSigWidth, Math.floor((sigAreaWidth - sigBlockGap * (perRow - 1)) / perRow));
   // Altura de firma: usa L.signature.h y escala según número de firmantes
   const baseImgH = L.signature?.h || 90;
@@ -1823,8 +1824,10 @@ function CertificateCanvas({ certRef, onImageLoaded, tpl, recipientName, statusT
   const row1Y = useTwoRows ? bottomY + sigBlockH + 15 : bottomY;
   const row2Y = bottomY;
 
-  const qrSize = useTwoRows ? 85 : (L.qr.w || 110);
-  const sealSize = useTwoRows ? 85 : (L.seal.w || 130);
+  const qrW = useTwoRows ? 85 : (L.qr.w || 110);
+  const qrH = useTwoRows ? 85 : (L.qr.h || L.qr.w || 110);
+  const sealW = useTwoRows ? 85 : (L.seal.w || 130);
+  const sealH = useTwoRows ? 85 : (L.seal.h || L.seal.w || 130);
 
   return (
     <div ref={certRef} className="relative" style={{ width: '1056px', height: '816px', fontFamily: "'Georgia', 'Times New Roman', serif", background: '#f0ede8', overflow: 'hidden' }}>
@@ -1965,10 +1968,10 @@ function CertificateCanvas({ certRef, onImageLoaded, tpl, recipientName, statusT
           <div className="absolute" style={{ right: '40px', bottom: bottomY + 'px' }}>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
               {tpl.sealUrl && (
-                <img src={tpl.sealUrl} alt="Sello" crossOrigin="anonymous" style={{ width: sealSize + 'px', height: sealSize + 'px', objectFit: 'contain', opacity: 0.85 }} onLoad={handleImgLoad} onError={(e) => { e.target.style.display='none'; handleImgLoad(); }} />
+                <img src={tpl.sealUrl} alt="Sello" crossOrigin="anonymous" style={{ width: sealW + 'px', height: sealH + 'px', objectFit: 'contain', opacity: 0.85 }} onLoad={handleImgLoad} onError={(e) => { e.target.style.display='none'; handleImgLoad(); }} />
               )}
               <div style={{ textAlign: 'center' }}>
-                <img src={qrUrl} alt="QR" crossOrigin="anonymous" style={{ width: qrSize + 'px', height: qrSize + 'px', display: 'block', margin: '0 auto' }} />
+                <img src={qrUrl} alt="QR" crossOrigin="anonymous" style={{ width: qrW + 'px', height: qrH + 'px', display: 'block', margin: '0 auto' }} />
                 <p style={{ fontSize: '8px', color: '#555', marginTop: '2px', fontFamily: "'Courier New', monospace", letterSpacing: '0.3px', fontWeight: 'bold' }}>{certificateCode}</p>
                 <p style={{ fontSize: '7px', color: '#999', marginTop: '1px' }}>Escanea para verificar</p>
               </div>
@@ -1978,10 +1981,10 @@ function CertificateCanvas({ certRef, onImageLoaded, tpl, recipientName, statusT
           <div className="absolute" style={{ right: '40px', bottom: bottomY + 'px' }}>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}>
               {tpl.sealUrl && (
-                <img src={tpl.sealUrl} alt="Sello" crossOrigin="anonymous" style={{ width: sealSize + 'px', height: sealSize + 'px', objectFit: 'contain', opacity: 0.85 }} onLoad={handleImgLoad} onError={(e) => { e.target.style.display='none'; handleImgLoad(); }} />
+                <img src={tpl.sealUrl} alt="Sello" crossOrigin="anonymous" style={{ width: sealW + 'px', height: sealH + 'px', objectFit: 'contain', opacity: 0.85 }} onLoad={handleImgLoad} onError={(e) => { e.target.style.display='none'; handleImgLoad(); }} />
               )}
               <div style={{ textAlign: 'center' }}>
-                <img src={qrUrl} alt="QR" crossOrigin="anonymous" style={{ width: qrSize + 'px', height: qrSize + 'px', display: 'block', margin: '0 auto' }} />
+                <img src={qrUrl} alt="QR" crossOrigin="anonymous" style={{ width: qrW + 'px', height: qrH + 'px', display: 'block', margin: '0 auto' }} />
                 <p style={{ fontSize: '9px', color: '#555', marginTop: '3px', fontFamily: "'Courier New', monospace", letterSpacing: '0.3px', fontWeight: 'bold' }}>{certificateCode}</p>
                 <p style={{ fontSize: '8px', color: '#999', marginTop: '1px' }}>Escanea para verificar</p>
               </div>
@@ -1995,7 +1998,12 @@ function CertificateCanvas({ certRef, onImageLoaded, tpl, recipientName, statusT
 
 
 // ── REIMPRESIÓN DE CERTIFICADO DESDE HISTORIAL ────────────────
-function CertificateReprintView({ cert, onBack, certTemplate }) {
+function CertificateReprintView({ cert, onBack, certTemplate, videos = [] }) {
+  // Buscar duración actual del video (si existe) para reflejar correcciones posteriores
+  const currentVideo = videos.find(v => v.id === cert.video_id);
+  const effectiveDuration = (currentVideo && currentVideo.duration)
+    ? String(currentVideo.duration)
+    : (cert.video_duration || '');
   const certRef = useRef(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [imageLoaded, setImageLoaded] = useState(false);
@@ -2041,7 +2049,7 @@ function CertificateReprintView({ cert, onBack, certTemplate }) {
             certRef={certRef} tpl={tpl} onImageLoaded={() => setImageLoaded(true)}
             recipientName={cert.recipient_name} statusText={statusText}
           collegiateNumber={cert.collegiate_number} videoTitle={cert.video_title}
-          videoDuration={cert.video_duration || ''} dateFormatted={dateFormatted}
+          videoDuration={effectiveDuration} dateFormatted={dateFormatted}
           certificateCode={cert.certificate_code} qrUrl={qrUrl}
           commissionsSnapshot={cert.commissions_snapshot || []}
           />
@@ -3456,12 +3464,15 @@ function CertTemplateAdmin({ certTemplate, onSave }) {
                   Firmas, Sello y QR
                 </p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6">
-                  <SliderControl label="Altura de firma" value={getLayoutVal('signature.h')} min={40} max={130} step={5} onChange={v => setL('signature.h', v)} />
+                  <SliderControl label="Ancho de firma" value={getLayoutVal('signature.w')} min={150} max={500} step={5} onChange={v => setL('signature.w', v)} />
+                  <SliderControl label="Altura de firma" value={getLayoutVal('signature.h')} min={40} max={180} step={5} onChange={v => setL('signature.h', v)} />
                   <SliderControl label="Tamaño de nombre (coordinador)" value={getLayoutVal('coordName.fontSize')} min={10} max={24} step={1} onChange={v => setL('coordName.fontSize', v)} />
                   <SliderControl label="Tamaño de cargo" value={getLayoutVal('coordTitle.fontSize')} min={8} max={20} step={1} onChange={v => setL('coordTitle.fontSize', v)} />
                   <SliderControl label="Espacio desde la parte inferior" value={getLayoutVal('bottomY')} min={10} max={120} step={2} onChange={v => setL('bottomY', v)} />
-                  <SliderControl label="Tamaño del sello" value={getLayoutVal('seal.w')} min={60} max={200} step={5} onChange={v => setL('seal.w', v)} />
-                  <SliderControl label="Tamaño del QR" value={getLayoutVal('qr.w')} min={60} max={160} step={5} onChange={v => setL('qr.w', v)} />
+                  <SliderControl label="Ancho del sello" value={getLayoutVal('seal.w')} min={60} max={220} step={5} onChange={v => setL('seal.w', v)} />
+                  <SliderControl label="Alto del sello" value={getLayoutVal('seal.h')} min={60} max={220} step={5} onChange={v => setL('seal.h', v)} />
+                  <SliderControl label="Ancho del QR" value={getLayoutVal('qr.w')} min={60} max={180} step={5} onChange={v => setL('qr.w', v)} />
+                  <SliderControl label="Alto del QR" value={getLayoutVal('qr.h')} min={60} max={180} step={5} onChange={v => setL('qr.h', v)} />
                 </div>
               </div>
 
@@ -4096,8 +4107,18 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
     setSaveError('');
     try {
       const isNew = !videos.some(v => v.id === nv.id);
+      const prev = videos.find(v => v.id === nv.id);
       await onVideosChange(isNew ? [...videos, nv] : videos.map(v => v.id === nv.id ? nv : v));
       logAuditAuto(isNew ? 'video_created' : 'video_updated', 'video', String(nv.id), { title: nv.title });
+      // Si cambió la duración u el título, propagar a certificados ya emitidos
+      if (!isNew && prev && supabase && (String(prev.duration || '') !== String(nv.duration || '') || String(prev.title || '') !== String(nv.title || ''))) {
+        try {
+          await supabase.from('cpg_certificates').update({
+            video_duration: String(nv.duration || ''),
+            video_title: nv.title || '',
+          }).eq('video_id', String(nv.id));
+        } catch (err) { console.warn('No se pudieron actualizar certificados:', err); }
+      }
       setEditingVideo(null);
     } catch (e) { setSaveError('No se pudieron guardar los cambios: ' + e.message); }
   };
