@@ -88,6 +88,8 @@ const DEFAULT_CERT_CONFIG = {
     motto:      { top: 568, fontSize: 17 },
     date:       { top: 600, fontSize: 13 },
     signature:  { w: 300, h: 90, x: 0, y: 0 },
+    sigLine:    { w: 0, x: 0, y: 0 },
+    sigText:    { x: 0, y: 0 },
     coordName:  { fontSize: 16 },
     coordTitle: { fontSize: 13 },
     coordBlock: { x: 0, y: 0 },
@@ -1992,58 +1994,116 @@ function CertificateCanvas({ certRef, onImageLoaded, tpl, recipientName, statusT
           const sigX = isFirstRow ? (L.signature?.x || 0) : 0;
           const sigY = isFirstRow ? (L.signature?.y || 0) : 0;
 
+          // Offsets independientes para imagen / línea / texto (solo aplican al primer renglón)
+          const lineX = isFirstRow ? (L.sigLine?.x || 0) : 0;
+          const lineY = isFirstRow ? (L.sigLine?.y || 0) : 0;
+          const lineWCustom = isFirstRow ? (L.sigLine?.w || 0) : 0;
+          const txtX = isFirstRow ? (L.sigText?.x || 0) : 0;
+          const txtY = isFirstRow ? (L.sigText?.y || 0) : 0;
+
           const rowInner = (
             <div style={{ display: 'flex', alignItems: 'flex-end', gap: sigBlockGap + 'px' }}>
-              {rowSigners.map((signer, idx) => (
-                <div key={idx} style={{ textAlign: 'center', width: sigBlockW + 'px' }}>
-                  {signer.signature_url ? (
-                    <img
-                      src={signer.signature_url}
-                      alt={`Firma ${signer.commission_name}`}
-                      crossOrigin="anonymous"
-                      style={{
-                        maxWidth: (sigBlockW - 10) + 'px',
-                        maxHeight: sigImgH + 'px',
-                        objectFit: 'contain',
-                        margin: '0 auto 4px',
-                        display: 'block'
-                      }}
-                      onLoad={handleImgLoad}
-                      onError={(e) => { e.target.style.display='none'; handleImgLoad(); }}
-                    />
-                  ) : (
-                    <div style={{ height: sigImgH + 'px' }} />
-                  )}
-                  <div style={{ borderTop: '1px solid #444', paddingTop: '4px', width: (sigBlockW - 20) + 'px', margin: '0 auto' }}>
+              {rowSigners.map((signer, idx) => {
+                const showHandlesHere = interactive && isFirstRow && idx === 0 && onLayoutChange;
+                const lineWidth = lineWCustom > 0 ? lineWCustom : (sigBlockW - 20);
+
+                // Imagen de la firma
+                const sigImg = signer.signature_url ? (
+                  <img
+                    src={signer.signature_url}
+                    alt={`Firma ${signer.commission_name}`}
+                    crossOrigin="anonymous"
+                    style={{
+                      maxWidth: (sigBlockW - 10) + 'px',
+                      maxHeight: sigImgH + 'px',
+                      objectFit: 'contain',
+                      margin: '0 auto',
+                      display: 'block'
+                    }}
+                    onLoad={handleImgLoad}
+                    onError={(e) => { e.target.style.display='none'; handleImgLoad(); }}
+                  />
+                ) : (
+                  <div style={{ height: sigImgH + 'px', width: '1px' }} />
+                );
+
+                // Línea
+                const lineEl = (
+                  <div style={{ borderTop: '1px solid #444', width: lineWidth + 'px', margin: '0 auto', height: '1px' }} />
+                );
+
+                // Texto coordinador
+                const textEl = (
+                  <div style={{ paddingTop: '4px', width: (sigBlockW - 20) + 'px', margin: '0 auto', textAlign: 'center' }}>
                     <p style={{ fontSize: (L.coordName?.fontSize || (useTwoRows ? 11 : 13)) + 'px', fontWeight: 'bold', color: '#1a1a2e', lineHeight: '1.15', margin: 0 }}>{signer.signer_name}</p>
                     <p style={{ fontSize: (L.coordTitle?.fontSize || (useTwoRows ? 9 : 11)) + 'px', color: '#555', lineHeight: '1.1', margin: '1px 0 0' }}>{signer.signer_title}</p>
                     <p style={{ fontSize: (useTwoRows ? 8 : 10) + 'px', color: '#888', fontStyle: 'italic', lineHeight: '1.1', margin: '1px 0 0' }}>{signer.commission_name}</p>
                   </div>
-                </div>
-              ))}
+                );
+
+                return (
+                  <div key={idx} style={{ textAlign: 'center', width: sigBlockW + 'px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                    {/* Firma (imagen) */}
+                    {showHandlesHere ? (
+                      <DragResizeBox
+                        x={sigX} y={sigY}
+                        w={L.signature?.w || 300} h={L.signature?.h || 90}
+                        onChange={(p) => {
+                          if ('x' in p) onLayoutChange({ 'signature.x': p.x, 'signature.y': p.y });
+                          else onLayoutChange({ 'signature.w': p.w, 'signature.h': p.h });
+                        }}
+                        interactive={true} label="Firma"
+                      >
+                        {sigImg}
+                      </DragResizeBox>
+                    ) : (
+                      <div style={{ transform: `translate(${sigX}px, ${sigY}px)` }}>{sigImg}</div>
+                    )}
+
+                    {/* Línea bajo la firma */}
+                    {showHandlesHere ? (
+                      <div style={{ marginTop: '4px' }}>
+                        <DragResizeBox
+                          x={lineX} y={lineY}
+                          w={lineWidth} h={1}
+                          onChange={(p) => {
+                            if ('x' in p) onLayoutChange({ 'sigLine.x': p.x, 'sigLine.y': p.y });
+                            else onLayoutChange({ 'sigLine.w': p.w });
+                          }}
+                          interactive={true} label="Línea"
+                        >
+                          {lineEl}
+                        </DragResizeBox>
+                      </div>
+                    ) : (
+                      <div style={{ marginTop: '4px', transform: `translate(${lineX}px, ${lineY}px)` }}>{lineEl}</div>
+                    )}
+
+                    {/* Texto del coordinador */}
+                    {showHandlesHere ? (
+                      <DragResizeBox
+                        x={txtX} y={txtY}
+                        w={sigBlockW - 20} h={48}
+                        onChange={(p) => {
+                          if ('x' in p) onLayoutChange({ 'sigText.x': p.x, 'sigText.y': p.y });
+                          // resize de texto: lo ignoramos (el tamaño de fuente se ajusta con sliders)
+                        }}
+                        interactive={true} label="Texto"
+                      >
+                        {textEl}
+                      </DragResizeBox>
+                    ) : (
+                      <div style={{ transform: `translate(${txtX}px, ${txtY}px)` }}>{textEl}</div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           );
 
           return (
             <div key={rowIdx} className="absolute" style={{ bottom: rowY + 'px', left: startX + 'px' }}>
-              {interactive && isFirstRow && onLayoutChange ? (
-                <DragResizeBox
-                  x={sigX} y={sigY}
-                  w={L.signature?.w || 300} h={L.signature?.h || 90}
-                  onChange={(p) => {
-                    if ('x' in p) onLayoutChange({ 'signature.x': p.x, 'signature.y': p.y });
-                    else onLayoutChange({ 'signature.w': p.w, 'signature.h': p.h });
-                  }}
-                  interactive={true}
-                  label="Firma"
-                >
-                  {rowInner}
-                </DragResizeBox>
-              ) : (
-                isFirstRow ? (
-                  <div style={{ transform: `translate(${sigX}px, ${sigY}px)` }}>{rowInner}</div>
-                ) : rowInner
-              )}
+              {rowInner}
             </div>
           );
         })}
