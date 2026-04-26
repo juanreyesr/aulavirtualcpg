@@ -1317,16 +1317,32 @@ export default function App() {
             const ssoNombre = decodeURIComponent(params.get('sso_nombre') || '');
             if (ssoColegiado) {
               // Verificar/enriquecer con perfil existente
-              const { data: profile } = await supabase.from('cpg_user_profiles').select('name').eq('collegiate_number', ssoColegiado).maybeSingle();
+              const { data: profile } = await supabase.from('cpg_user_profiles').select('name, email').eq('collegiate_number', ssoColegiado).maybeSingle();
               const nombre = profile?.name || ssoNombre;
               // Preservar datos CPG si ya existían en la sesión guardada
               let prevCpg = {};
               try { const prev = JSON.parse(localStorage.getItem('cpg_session') || '{}'); if (prev.collegiateNumber === ssoColegiado) prevCpg = { status: prev.status, fechaColegiacion: prev.fechaColegiacion, ultimoPago: prev.ultimoPago, cuotaCongreso: prev.cuotaCongreso }; } catch {}
               const user = { name: nombre, collegiateNumber: ssoColegiado, isGuest: false, email: session.user.email, status: prevCpg.status || '', fechaColegiacion: prevCpg.fechaColegiacion || '', ultimoPago: prevCpg.ultimoPago || '', cuotaCongreso: prevCpg.cuotaCongreso || '' };
-              await supabase.from('cpg_user_profiles').upsert(
-                { collegiate_number: ssoColegiado, email: session.user.email, name: nombre },
-                { onConflict: 'collegiate_number' }
-              );
+              // Salvaguarda: NO sobrescribir el correo vinculado si ya existe otro registrado
+              // para este colegiado (típicamente cuando un admin con cuenta institucional
+              // navega entre apps llevando un sso_colegiado del usuario regular).
+              const existingEmail = profile?.email || '';
+              const sameEmail = existingEmail.toLowerCase() === (session.user.email || '').toLowerCase();
+              if (!existingEmail) {
+                await supabase.from('cpg_user_profiles').upsert(
+                  { collegiate_number: ssoColegiado, email: session.user.email, name: nombre },
+                  { onConflict: 'collegiate_number' }
+                );
+              } else if (sameEmail) {
+                // Mismo correo: solo actualizar el nombre si cambió.
+                if (nombre && nombre !== profile?.name) {
+                  await supabase.from('cpg_user_profiles')
+                    .update({ name: nombre })
+                    .eq('collegiate_number', ssoColegiado);
+                }
+              } else {
+                console.warn('[SSO] Colegiado', ssoColegiado, 'ya está vinculado a otro correo; no se sobrescribe.');
+              }
               localStorage.setItem('cpg_session', JSON.stringify(user));
               setSessionUser(user);
               window.history.replaceState(null, '', window.location.pathname);
