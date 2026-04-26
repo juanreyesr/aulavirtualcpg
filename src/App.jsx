@@ -1685,7 +1685,14 @@ export default function App() {
             )}
           </div>
           {isAdmin ? (
-            <button onClick={handleLogout} className="flex items-center gap-2 bg-red-600 hover:bg-red-700 px-3 py-1.5 rounded text-sm font-medium transition"><LogOut size={15} /> Salir</button>
+            <>
+              {view !== 'admin' && (
+                <button onClick={() => setView('admin')} className="flex items-center gap-2 bg-amber-600 hover:bg-amber-700 px-3 py-1.5 rounded text-sm font-medium transition" title="Volver al panel de administración">
+                  <Shield size={15} /> Panel admin
+                </button>
+              )}
+              <button onClick={handleLogout} className="flex items-center gap-2 bg-red-600 hover:bg-red-700 px-3 py-1.5 rounded text-sm font-medium transition" title="Cerrar sesión administrativa"><LogOut size={15} /> Salir</button>
+            </>
           ) : (
             <button onClick={() => setView('login')} className="text-gray-400 hover:text-white transition p-2" title="Acceso Administrativo"><Lock size={17} /></button>
           )}
