@@ -3898,6 +3898,97 @@ function LogoManagerModal({ siteLogos, onSave, onClose }) {
 
 
 // ══════════════════════════════════════════════════════════════
+// ██ VERIFICAR Y ACTIVAR CUENTAS DE USUARIOS                  ██
+// ══════════════════════════════════════════════════════════════
+function UserVerifyManager({ currentAdminRole }) {
+  const [email, setEmail] = useState('');
+  const [status, setStatus] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const isSuperAdmin = currentAdminRole === 'super_admin';
+
+  if (!isSuperAdmin) {
+    return (
+      <div className="p-6">
+        <p className="text-gray-400">Solo los administradores con rol <span className="text-white font-bold">Super Admin</span> pueden verificar y activar cuentas.</p>
+      </div>
+    );
+  }
+
+  const handleCheck = async () => {
+    const trimmed = email.trim();
+    if (!trimmed) { setStatus('Ingresa el correo del usuario.'); return; }
+    setLoading(true); setStatus('Consultando...');
+    try {
+      const { data, error } = await supabase.rpc('check_user_status', { target_email: trimmed });
+      if (error) { setStatus('Error: ' + error.message); }
+      else { setStatus(data?.message || JSON.stringify(data)); }
+    } catch (e) { setStatus('Error: ' + (e?.message || e)); }
+    setLoading(false);
+  };
+
+  const handleActivate = async () => {
+    const trimmed = email.trim();
+    if (!trimmed) { setStatus('Ingresa el correo del usuario.'); return; }
+    if (!confirm('¿Activar la cuenta de ' + trimmed + '?\nEsta acción confirma su correo sin necesidad de verificación.')) return;
+    setLoading(true); setStatus('Activando...');
+    try {
+      const { data, error } = await supabase.rpc('activate_user_by_email', { target_email: trimmed });
+      if (error) { setStatus('Error: ' + error.message); }
+      else { setStatus(data?.message || 'Usuario activado.'); }
+    } catch (e) { setStatus('Error: ' + (e?.message || e)); }
+    setLoading(false);
+  };
+
+  return (
+    <div className="p-6 space-y-4">
+      <p className="text-sm text-gray-400">
+        Consulta el estado de verificación de una cuenta o actívala manualmente si el usuario no recibió el correo de confirmación.
+      </p>
+      <div className="flex gap-3 items-end">
+        <div className="flex-1">
+          <label className="block text-xs text-gray-400 mb-1">Correo electrónico del usuario</label>
+          <input
+            type="email"
+            value={email}
+            onChange={e => { setEmail(e.target.value); setStatus(''); }}
+            onKeyDown={e => { if (e.key === 'Enter') handleCheck(); }}
+            placeholder="usuario@ejemplo.com"
+            className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2.5 text-white text-sm focus:border-blue-500 outline-none"
+          />
+        </div>
+        <button
+          onClick={handleCheck}
+          disabled={loading}
+          className="flex items-center gap-2 bg-blue-700 hover:bg-blue-600 disabled:opacity-50 px-4 py-2.5 rounded-lg text-sm font-bold transition"
+        >
+          {loading ? <Loader2 size={15} className="animate-spin" /> : <Search size={15} />}
+          Verificar
+        </button>
+        <button
+          onClick={handleActivate}
+          disabled={loading}
+          className="flex items-center gap-2 bg-green-700 hover:bg-green-600 disabled:opacity-50 px-4 py-2.5 rounded-lg text-sm font-bold transition"
+        >
+          {loading ? <Loader2 size={15} className="animate-spin" /> : <UserCheck size={15} />}
+          Activar cuenta
+        </button>
+      </div>
+      {status && (
+        <div className={`rounded-lg px-4 py-3 text-sm border ${
+          status.startsWith('Error') ? 'bg-red-900/30 border-red-700 text-red-300' :
+          status.includes('NO está') ? 'bg-yellow-900/30 border-yellow-700 text-yellow-300' :
+          status.includes('activado') || status.includes('ya está activo') || status.includes('verificado') ? 'bg-green-900/30 border-green-700 text-green-300' :
+          'bg-gray-800 border-gray-700 text-gray-300'
+        }`}>
+          {status}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════
 // ██ GESTIÓN DE USUARIOS ADMINISTRATIVOS                      ██
 // ══════════════════════════════════════════════════════════════
 function AdminUsersManager({ currentAdminRole }) {
@@ -4334,6 +4425,7 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
   const [showCertTemplateSection, setShowCertTemplateSection] = useState(false);
   const [showLogoManager, setShowLogoManager] = useState(false);
   const [showAdminUsersSection, setShowAdminUsersSection] = useState(false);
+  const [showUserVerifySection, setShowUserVerifySection] = useState(false);
   const [showAuditLogSection, setShowAuditLogSection] = useState(false);
   const [showBulkCert, setShowBulkCert] = useState(false);
   const [showAttendanceReport, setShowAttendanceReport] = useState(false);
@@ -5025,6 +5117,23 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
           <span className="text-gray-400 text-lg">{showAuditLogSection ? '▲' : '▼'}</span>
         </button>
         {showAuditLogSection && <div className="border-t border-gray-800"><AuditLogViewer /></div>}
+      </div>
+      )}
+
+      {/* ── VERIFICAR Y ACTIVAR CUENTAS DE USUARIOS (solo Super Admin) ── */}
+      {adminRole === 'super_admin' && (
+      <div className="bg-[#1b1b1b] border border-gray-800 rounded-2xl mb-6 overflow-hidden">
+        <button type="button" onClick={() => setShowUserVerifySection(v => !v)} className="w-full flex items-center justify-between px-6 py-4 hover:bg-white/5 transition">
+          <div className="flex items-center gap-3">
+            <div className="bg-teal-600 p-2 rounded-lg"><UserCheck size={18} className="text-white" /></div>
+            <div className="text-left">
+              <h2 className="text-xl font-bold text-white">Verificar y activar cuentas de usuarios</h2>
+              <p className="text-xs text-gray-400">Consultar estado de cuenta o activar manualmente sin correo de verificación</p>
+            </div>
+          </div>
+          <span className="text-gray-400 text-lg">{showUserVerifySection ? '▲' : '▼'}</span>
+        </button>
+        {showUserVerifySection && <div className="border-t border-gray-800"><UserVerifyManager currentAdminRole={adminRole} /></div>}
       </div>
       )}
 
