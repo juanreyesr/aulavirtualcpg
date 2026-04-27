@@ -2431,46 +2431,52 @@ function HomeView({ videos, viewCounts, recentVideos, categories, upcomingVideos
         </div>
       )}
 
-      {!activeCategory && heroVideo && (
-        <div className={`relative h-[50vh] w-full overflow-hidden ${isGuest ? '' : 'mt-[57px]'}`}>
-          <div className="absolute inset-0">
-            <img src={getVideoThumbnail(heroVideo)} alt={heroVideo.title} className="w-full h-full object-cover opacity-60 scale-105" onError={(e) => { const t = e.currentTarget; const s = t.dataset.fallbackStage || 'hqdefault'; if (s === 'hqdefault') { t.dataset.fallbackStage = 'mqdefault'; t.src = getYouTubeThumbnail(heroVideo.youtubeId, 'mqdefault'); return; } t.src = getYouTubeThumbnail(''); }} />
-            <div className="absolute inset-0 bg-gradient-to-r from-[#141414] via-[#141414]/60 to-transparent" />
-            <div className="absolute inset-0 bg-gradient-to-t from-[#141414] via-transparent to-transparent" />
-          </div>
-          <div className="absolute bottom-0 left-0 p-6 md:p-12 max-w-xl z-10 flex flex-col gap-3">
-            <span className="text-yellow-500 font-bold tracking-wider text-xs uppercase bg-black/50 w-fit px-2 py-1 rounded border border-yellow-500/30">Destacado</span>
-            <h1 className="text-2xl md:text-4xl font-bold text-white drop-shadow-xl leading-tight">{heroVideo.title}</h1>
-            <p className="text-gray-200 text-sm md:text-base line-clamp-2 drop-shadow-md">{heroVideo.description}</p>
-            <button onClick={() => onVideoSelect(heroVideo)} className="bg-white text-black px-6 py-2.5 rounded hover:bg-gray-200 font-bold flex items-center gap-2 transition transform hover:scale-105 text-sm w-fit"><Play fill="black" size={18} /> Ver Ahora</button>
+      {!activeCategory ? (
+        <div className={`flex flex-col md:flex-row items-stretch ${isGuest ? '' : 'mt-[57px]'}`}>
+          {/* ── Destacado (mitad izquierda en desktop) ── */}
+          {heroVideo && (
+            <div className="relative w-full md:w-1/2 h-[50vh] overflow-hidden shrink-0">
+              <div className="absolute inset-0">
+                <img src={getVideoThumbnail(heroVideo)} alt={heroVideo.title} className="w-full h-full object-cover opacity-60 scale-105" onError={(e) => { const t = e.currentTarget; const s = t.dataset.fallbackStage || 'hqdefault'; if (s === 'hqdefault') { t.dataset.fallbackStage = 'mqdefault'; t.src = getYouTubeThumbnail(heroVideo.youtubeId, 'mqdefault'); return; } t.src = getYouTubeThumbnail(''); }} />
+                <div className="absolute inset-0 bg-gradient-to-r from-[#141414] via-[#141414]/60 to-transparent" />
+                <div className="absolute inset-0 bg-gradient-to-t from-[#141414] via-transparent to-transparent" />
+              </div>
+              <div className="absolute bottom-0 left-0 p-6 md:p-10 max-w-lg z-10 flex flex-col gap-3">
+                <span className="text-yellow-500 font-bold tracking-wider text-xs uppercase bg-black/50 w-fit px-2 py-1 rounded border border-yellow-500/30">Destacado</span>
+                <h1 className="text-2xl md:text-3xl font-bold text-white drop-shadow-xl leading-tight">{heroVideo.title}</h1>
+                <p className="text-gray-200 text-sm line-clamp-2 drop-shadow-md">{heroVideo.description}</p>
+                <button onClick={() => onVideoSelect(heroVideo)} className="bg-white text-black px-6 py-2.5 rounded hover:bg-gray-200 font-bold flex items-center gap-2 transition transform hover:scale-105 text-sm w-fit"><Play fill="black" size={18} /> Ver Ahora</button>
+              </div>
+            </div>
+          )}
+          {/* ── Calendario (mitad derecha en desktop) ── */}
+          <div className={`${heroVideo ? 'md:w-1/2' : 'w-full'} flex items-center p-5 md:p-8 bg-[#0f0f0f]`}>
+            <div className="bg-[#1c1c1c] border border-gray-800 rounded-2xl p-5 md:p-7 w-full shadow-[0_0_30px_rgba(59,130,246,0.15)] flex flex-col gap-5">
+              <div>
+                <p className="text-sm uppercase tracking-[0.25em] text-blue-400">Calendario de capacitación</p>
+                <h2 className="text-xl md:text-2xl font-bold text-white mt-1">Actividades programadas</h2>
+                <p className="text-gray-400 mt-1 text-sm">Consulta las fechas, organizadores y enlaces de inscripción.</p>
+              </div>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <button type="button" onClick={() => setShowCalendar(true)}
+                  className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl font-semibold flex items-center gap-2 text-sm">
+                  <CalendarDays size={18} /> Ver calendario
+                </button>
+                <button type="button" onClick={() => setShowSyncModal(true)}
+                  className="bg-emerald-700 hover:bg-emerald-600 border border-emerald-600/60 text-white px-5 py-2.5 rounded-xl font-semibold flex items-center gap-2 text-sm">
+                  <CalendarDays size={16} /> Agregar a mi calendario
+                </button>
+              </div>
+            </div>
           </div>
         </div>
+      ) : (
+        <div className={isGuest ? '' : 'mt-[57px]'} />
       )}
-      {activeCategory && <div className={isGuest ? '' : 'mt-[57px]'} />}
 
       <div className="md:hidden px-6 mt-4 relative">
         <Search size={14} className="absolute left-9 top-3 text-gray-500 pointer-events-none" />
         <input type="text" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="w-full bg-gray-800 border border-gray-700 rounded-full pl-8 pr-4 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500" placeholder="Buscar cursos..." />
-      </div>
-
-      <div className="px-8 md:px-16 mt-8">
-        <div className="bg-[#1c1c1c] border border-gray-800 rounded-2xl p-5 md:p-7 flex flex-col md:flex-row items-start md:items-center justify-between gap-5 shadow-[0_0_30px_rgba(59,130,246,0.15)]">
-          <div>
-            <p className="text-sm uppercase tracking-[0.25em] text-blue-400">Calendario de capacitación</p>
-            <h2 className="text-xl md:text-2xl font-bold text-white mt-1">Actividades programadas</h2>
-            <p className="text-gray-400 mt-1 max-w-2xl text-sm">Consulta las fechas, organizadores y enlaces de inscripción.</p>
-          </div>
-          <div className="flex flex-col sm:flex-row gap-2 shrink-0">
-            <button type="button" onClick={() => setShowCalendar(true)}
-              className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl font-semibold flex items-center gap-2 text-sm">
-              <CalendarDays size={18} /> Ver calendario
-            </button>
-            <button type="button" onClick={() => setShowSyncModal(true)}
-              className="bg-emerald-700 hover:bg-emerald-600 border border-emerald-600/60 text-white px-5 py-2.5 rounded-xl font-semibold flex items-center gap-2 text-sm">
-              <CalendarDays size={16} /> Agregar a mi calendario
-            </button>
-          </div>
-        </div>
       </div>
 
       {showCalendar && (
