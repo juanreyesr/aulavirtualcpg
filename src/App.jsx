@@ -2640,6 +2640,31 @@ function HomeView({ videos, viewCounts, recentVideos, categories, upcomingVideos
           </div>
         </div>
       )}
+      {!activeCategory && (
+        <div className="pl-8 md:pl-16 pr-8 mt-10 mb-2">
+          <h2 className="text-xl md:text-2xl font-bold mb-1 text-white">Busca tus cursos por categoría</h2>
+          <p className="text-sm text-gray-500 mb-5">Selecciona una categoría para ver todos sus cursos</p>
+          <div className="flex flex-wrap gap-3">
+            {categories.map(cat => {
+              const count = videos.filter(v => v.category === cat).length;
+              return (
+                <button
+                  key={cat}
+                  type="button"
+                  onClick={() => setActiveCategory(cat)}
+                  className="group flex items-center gap-2.5 bg-[#1c1c1c] hover:bg-blue-600 border border-gray-700 hover:border-blue-500 px-4 py-2.5 rounded-xl text-sm font-medium text-gray-200 hover:text-white transition-all duration-200 hover:shadow-lg hover:shadow-blue-900/30 hover:-translate-y-0.5"
+                >
+                  <span>{cat}</span>
+                  <span className="bg-gray-700 group-hover:bg-blue-500 text-gray-300 group-hover:text-white text-xs font-bold px-2 py-0.5 rounded-full transition-colors">
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       <div className="pl-8 md:pl-16 mt-8">
         {activeCategory && (
           <div className="flex flex-wrap items-center gap-4 mb-6">
