@@ -3,7 +3,7 @@ import {
   Play, CheckCircle, XCircle, LogOut, Plus, Trash2, Award,
   ChevronLeft, ChevronDown, Lock, ExternalLink, X, CalendarDays, Eye,
   Download, Loader2, UserCheck, UserX, Edit2, Users, Radio, Wifi, Video,
-  Search, Mail, Shield, History, QrCode, KeyRound, Upload, Image, Type, Settings
+  Search, Mail, Shield, History, QrCode, KeyRound, Upload, Image, Type, Settings, Printer
 } from 'lucide-react';
 import { supabase } from './supabaseClient';
 import html2canvas from 'html2canvas';
@@ -3728,7 +3728,7 @@ function CertTemplateAdmin({ certTemplate, onSave }) {
       {/* PRESIDENTA */}
       <div>
         <h3 className="text-white font-bold text-lg mb-1 flex items-center gap-2"><Shield size={18} className="text-pink-400" /> Presidenta Junta Directiva</h3>
-        <p className="text-xs text-gray-500 mb-3">Su firma puede activarse individualmente en cada Acreditación de Voluntario que generes.</p>
+        <p className="text-xs text-gray-500 mb-3">Su firma puede activarse individualmente en cada Acreditación Especial que generes.</p>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className="block text-sm text-gray-400 mb-1">Nombre</label>
@@ -5162,6 +5162,13 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
                                   {c.verify_url && (
                                     <a href={c.verify_url} target="_blank" rel="noreferrer" className="p-1.5 bg-blue-900/40 hover:bg-blue-900/70 text-blue-300 rounded" title="Ver verificación"><ExternalLink size={13} /></a>
                                   )}
+                                  {c.verify_url && (
+                                    <a href={c.verify_url} target="_blank" rel="noreferrer"
+                                      onClick={e => { e.preventDefault(); const w = window.open(c.verify_url, '_blank'); if (w) setTimeout(() => w.print(), 1200); }}
+                                      className="p-1.5 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded" title="Imprimir certificado">
+                                      <Printer size={13} />
+                                    </a>
+                                  )}
                                   <button onClick={() => handleDeleteCert(c.id)} className="p-1.5 bg-red-900/40 hover:bg-red-900/70 text-red-300 rounded" title="Eliminar registro"><Trash2 size={13} /></button>
                                 </div>
                               </td>
@@ -5180,15 +5187,15 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
 
 
 
-      {/* ── ACREDITACIONES DE VOLUNTARIO ── */}
+      {/* ── ACREDITACIONES ESPECIALES ── */}
       {adminRole === 'super_admin' && (
       <div className="bg-[#1b1b1b] border border-gray-800 rounded-2xl mb-6 overflow-hidden">
         <button type="button" onClick={() => setShowVolunteerCertSection(v => !v)} className="w-full flex items-center justify-between px-6 py-4 hover:bg-white/5 transition">
           <div className="flex items-center gap-3">
             <div className="bg-yellow-600 p-2 rounded-lg"><Award size={18} className="text-white" /></div>
             <div className="text-left">
-              <h2 className="text-xl font-bold text-white">Acreditaciones de Voluntario</h2>
-              <p className="text-xs text-gray-400">Genera acreditaciones especiales de comisiones — diferente al diploma de curso</p>
+              <h2 className="text-xl font-bold text-white">Acreditaciones Especiales</h2>
+              <p className="text-xs text-gray-400">Genera acreditaciones especiales de comisiones — voluntarios, talleres, formaciones</p>
             </div>
           </div>
           <span className="text-gray-400 text-lg">{showVolunteerCertSection ? '▲' : '▼'}</span>
