@@ -15,6 +15,7 @@ const EDGE_URL     = 'https://ilyospunwucdojrnfgti.supabase.co/functions/v1/cons
 const CANVAS_W     = 1056;
 const CANVAS_H     = 816;
 const SETTINGS_KEY = 'special_cert_settings';
+const LS_KEY       = 'cpg_special_cert_v2'; // localStorage key
 
 const getCertQrUrl = (code) =>
   `https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(`${APP_URL}/?cert=${code}`)}&bgcolor=ffffff&color=1a1a2e&margin=4`;
@@ -336,24 +337,45 @@ export default function VolunteerAccreditationManager({ certTemplate }) {
     });
   }, []);
 
-  // ── Load saved settings via RPC (bypasa RLS) ──
-  useEffect(() => {
-    if (!supabase) return;
-    supabase.rpc('get_cpg_setting', { p_key: SETTINGS_KEY }).then(({ data, error }) => {
-      if (error || !data) return;
-      if (data.positions) {
-        // Merge para preservar fs2 de DEFAULT si el guardado anterior no lo tenía
-        const merged = {};
-        Object.keys(DEFAULT_POSITIONS).forEach(id => {
-          merged[id] = { ...DEFAULT_POSITIONS[id], ...data.positions[id] };
-        });
-        setPositions(merged);
-      }
-      if (data.formDefaults) {
-        setForm(prev => ({ ...DEFAULT_FORM, ...data.formDefaults, recipientName: '', collegiateNumber: '' }));
-      }
-    });
+  // ── Aplicar configuración guardada ──
+  const applySettings = useCallback((saved) => {
+    if (!saved) return;
+    if (saved.positions) {
+      const merged = {};
+      Object.keys(DEFAULT_POSITIONS).forEach(id => {
+        merged[id] = { ...DEFAULT_POSITIONS[id], ...(saved.positions[id] || {}) };
+      });
+      setPositions(merged);
+    }
+    if (saved.formDefaults) {
+      setForm(prev => ({ ...DEFAULT_FORM, ...saved.formDefaults, recipientName: '', collegiateNumber: '' }));
+    }
   }, []);
+
+  // ── Cargar ajustes: localStorage (primario) + Supabase (backup cross-device) ──
+  useEffect(() => {
+    // 1. localStorage — siempre disponible, instantáneo
+    try {
+      const raw = localStorage.getItem(LS_KEY);
+      if (raw) { applySettings(JSON.parse(raw)); }
+    } catch {}
+
+    // 2. Supabase — por si se guardó desde otro dispositivo
+    if (supabase) {
+      supabase.rpc('get_cpg_setting', { p_key: SETTINGS_KEY })
+        .then(({ data }) => {
+          if (data) {
+            try {
+              const parsed = typeof data === 'string' ? JSON.parse(data) : data;
+              applySettings(parsed);
+              // Sincronizar al localStorage local
+              localStorage.setItem(LS_KEY, JSON.stringify(parsed));
+            } catch {}
+          }
+        })
+        .catch(() => {});
+    }
+  }, [applySettings]);
 
   const selectedCommissions = availableCommissions.filter(c => form.selectedCommissions.includes(c.id));
   const setField = (k, v) => setForm(p => ({ ...p, [k]: v }));
@@ -393,9 +415,8 @@ export default function VolunteerAccreditationManager({ certTemplate }) {
     setForm(p => ({ ...p, recipientName: '', collegiateNumber: '' }));
   };
 
-  // ── Save layout + form defaults via RPC (bypasa RLS) ──
+  // ── Guardar: localStorage primario (siempre funciona) + Supabase backup ──
   const saveLayout = async () => {
-    if (!supabase) return;
     setSavingLayout(true);
     try {
       const formDefaults = {
@@ -404,13 +425,21 @@ export default function VolunteerAccreditationManager({ certTemplate }) {
         bodyText: form.bodyText, includePresident: form.includePresident,
         selectedCommissions: form.selectedCommissions, trainings: form.trainings,
       };
-      const { error } = await supabase.rpc('save_cpg_setting', {
-        p_key: SETTINGS_KEY,
-        p_value: { positions, formDefaults },
-      });
-      if (error) throw error;
-      setMsg({ type: 'success', text: '✓ Estilo y datos guardados. Se cargarán automáticamente la próxima vez.' });
-      setTimeout(() => setMsg(null), 4000);
+      const payload = { positions, formDefaults };
+
+      // Primario: localStorage — síncrono, nunca falla
+      localStorage.setItem(LS_KEY, JSON.stringify(payload));
+
+      // Backup: Supabase — asíncrono, best-effort (para sincronizar entre dispositivos)
+      if (supabase) {
+        supabase.rpc('save_cpg_setting', {
+          p_key: SETTINGS_KEY,
+          p_value: JSON.stringify(payload),
+        }).catch(() => {});
+      }
+
+      setMsg({ type: 'success', text: '✓ Estilo y datos guardados correctamente.' });
+      setTimeout(() => setMsg(null), 3000);
     } catch (e) { setMsg({ type: 'error', text: 'Error al guardar: ' + e.message }); }
     setSavingLayout(false);
   };
