@@ -47,12 +47,21 @@ const DEFAULT_POSITIONS = {
 
 const EMPTY_TRAINING = { title: '', dateRange: '', modality: 'Virtual', hours: '', aval: '', placeDate: '' };
 const DEFAULT_FORM = {
+  // ── Textos del diploma (todos editables) ──
+  caeducLine:         'La Comisión de Acreditación y Educación Continua mediante el Aula Virtual',
+  commissionPrefix:   'en conjunto con la',          // prefijo antes de cada comisión adicional
+  conferText:         'confieren la siguiente:',      // línea antes del título
   certTitle:          'Acreditación de Voluntario',
   totalHours:         '',
+  validLabel:         'válido de',                   // "válido de {from} a {to}"
+  haceConstarLabel:   'y hace constar que el/la voluntario/a:',
+  collegiateLabel:    'Con número de colegiado activo:',
+  dateLabel:          'Emitido el',
+  // ── Configuración ──
   commissionName:     'Comisión de Atención en Crisis y Apoyo Psicosocial CICAPS',
   validFrom:          'abril 2026',
   validTo:            'abril 2027',
-  bodyText:           'Por medio de esta acreditación, se hace constar que el voluntario concluyó las siguientes capacitaciones en Salud Mental para la respuesta a emergencias y desastres.',
+  bodyText:           'Concluyó las siguientes capacitaciones en Salud Mental para la respuesta a emergencias y desastres para lograr dicha acreditación por parte de la Comisión de Atención en Crisis y Apoyo Psicosocial CICAPS',
   includePresident:   false,
   selectedCommissions:[],
   trainings:          [{ ...EMPTY_TRAINING }, { ...EMPTY_TRAINING }],
@@ -121,17 +130,25 @@ function SpecialCertCanvas({ certRef, tpl, data, positions: P, certCode, dateFor
 
       {/* Título y comisiones */}
       <div style={{ position: 'absolute', left: P.titleBlock.x, top: P.titleBlock.y, width: P.titleBlock.w, textAlign: 'center' }}>
-        <div style={commStyle}>La Comisión de Acreditación y Educación Continua mediante el Aula Virtual</div>
+        {/* Línea CAEDUC */}
+        <div style={commStyle}>{data.caeducLine || 'La Comisión de Acreditación y Educación Continua mediante el Aula Virtual'}</div>
+        {/* Comisiones adicionales */}
         {selectedCommissions.map((c, i) => (
           <div key={c.id} style={commStyle}>
-            {i === 0 ? 'en conjunto con la' : 'y la'} {c.commission_name}
+            {data.commissionPrefix || 'en conjunto con la'} {c.commission_name}
           </div>
         ))}
-        <div style={{ fontSize: fs('titleBlock'), fontWeight: 700, color: '#1e5c8b', marginTop: 8, letterSpacing: '0.03em', wordWrap: 'break-word' }}>
+        {/* "confieren la siguiente:" — transición hacia el título */}
+        <div style={{ fontSize: fs2('titleBlock'), color: '#555', fontStyle: 'italic', lineHeight: 1.4, textAlign: 'center', marginTop: 6 }}>
+          {data.conferText || 'confieren la siguiente:'}
+        </div>
+        {/* Título principal */}
+        <div style={{ fontSize: fs('titleBlock'), fontWeight: 700, color: '#1e5c8b', marginTop: 4, letterSpacing: '0.03em', wordWrap: 'break-word' }}>
           {data.certTitle || 'Acreditación de Voluntario'}
         </div>
+        {/* Validez + horas */}
         <div style={{ fontSize: fs2('titleBlock'), color: '#666', marginTop: 4, textAlign: 'center' }}>
-          válido de {data.validFrom} a {data.validTo}
+          {data.validLabel || 'válido de'} {data.validFrom} a {data.validTo}
           {data.totalHours && (
             <span style={{ marginLeft: 10, fontWeight: 700, color: '#1e5c8b' }}>· {data.totalHours} horas acreditadas</span>
           )}
@@ -140,12 +157,14 @@ function SpecialCertCanvas({ certRef, tpl, data, positions: P, certCode, dateFor
 
       {/* Nombre del acreditado */}
       <div style={{ position: 'absolute', left: P.recipientBlock.x, top: P.recipientBlock.y, width: P.recipientBlock.w, textAlign: 'center' }}>
-        <div style={{ fontSize: fs2('recipientBlock'), color: '#555' }}>hace constar que el/la voluntario/a:</div>
+        <div style={{ fontSize: fs2('recipientBlock'), color: '#555' }}>
+          {data.haceConstarLabel || 'y hace constar que el/la voluntario/a:'}
+        </div>
         <div style={{ fontSize: fs('recipientBlock'), fontStyle: 'italic', fontWeight: 700, color: '#1a1a2e', marginTop: 3, lineHeight: 1.1, wordWrap: 'break-word' }}>
           {data.recipientName || '[Nombre del acreditado]'}
         </div>
         <div style={{ fontSize: fs2('recipientBlock'), color: '#555', marginTop: 3 }}>
-          Con número de colegiado activo: <strong>{data.collegiateNumber || '----'}</strong>
+          {data.collegiateLabel || 'Con número de colegiado activo:'} <strong>{data.collegiateNumber || '----'}</strong>
         </div>
       </div>
 
@@ -205,7 +224,7 @@ function SpecialCertCanvas({ certRef, tpl, data, positions: P, certCode, dateFor
 
       {/* Fecha */}
       <div style={{ position: 'absolute', left: P.dateText.x, top: P.dateText.y, fontSize: fs('dateText'), color: '#888', textAlign: 'center', width: P.dateText.w }}>
-        Emitido el {dateFormatted}
+        {data.dateLabel || 'Emitido el'} {dateFormatted}
       </div>
     </div>
   );
@@ -649,6 +668,76 @@ export default function VolunteerAccreditationManager({ certTemplate }) {
             <label className="block text-xs text-gray-400 mb-1">Texto explicativo del certificado</label>
             <textarea value={form.bodyText} onChange={e => setField('bodyText', e.target.value)} rows={2}
               className="w-full bg-black border border-gray-700 rounded-lg p-2.5 text-white text-sm focus:border-blue-500 outline-none resize-none" />
+          </div>
+        </div>
+      </div>
+
+      {/* ══ TEXTOS DEL DIPLOMA ══ */}
+      <div>
+        <h3 className="text-white font-bold text-sm mb-1">Textos del diploma</h3>
+        <p className="text-xs text-gray-500 mb-3">Edita cada línea de texto que aparece en el certificado. Todos se guardan con "Guardar estilo".</p>
+        <div className="bg-black/20 border border-gray-800 rounded-xl p-4 space-y-3">
+          {/* Fila CAEDUC */}
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">
+              <span className="text-gray-400 font-semibold">Línea 1 —</span> Primera línea (CAEDUC / institución principal)
+            </label>
+            <input value={form.caeducLine} onChange={e => setField('caeducLine', e.target.value)}
+              className="w-full bg-black border border-gray-700 rounded-lg p-2 text-white text-sm focus:border-blue-500 outline-none" />
+          </div>
+          {/* Prefijo de comisiones adicionales */}
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">
+              <span className="text-gray-400 font-semibold">Línea 2 —</span> Prefijo antes de cada comisión adicional
+            </label>
+            <input value={form.commissionPrefix} onChange={e => setField('commissionPrefix', e.target.value)}
+              className="w-full bg-black border border-gray-700 rounded-lg p-2 text-white text-sm focus:border-blue-500 outline-none"
+              placeholder="en conjunto con la" />
+          </div>
+          {/* Texto de transición */}
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">
+              <span className="text-gray-400 font-semibold">Transición —</span> Texto antes del título del diploma
+            </label>
+            <input value={form.conferText} onChange={e => setField('conferText', e.target.value)}
+              className="w-full bg-black border border-gray-700 rounded-lg p-2 text-white text-sm focus:border-blue-500 outline-none"
+              placeholder="confieren la siguiente:" />
+          </div>
+          {/* Prefijo validez */}
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">
+              <span className="text-gray-400 font-semibold">Validez —</span> Etiqueta antes de las fechas (se une: "[validLabel] [desde] a [hasta]")
+            </label>
+            <input value={form.validLabel} onChange={e => setField('validLabel', e.target.value)}
+              className="w-full bg-black border border-gray-700 rounded-lg p-2 text-white text-sm focus:border-blue-500 outline-none"
+              placeholder="válido de" />
+          </div>
+          {/* Etiqueta antes del nombre */}
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">
+              <span className="text-gray-400 font-semibold">Antes del nombre —</span> Texto introductorio al nombre del acreditado
+            </label>
+            <input value={form.haceConstarLabel} onChange={e => setField('haceConstarLabel', e.target.value)}
+              className="w-full bg-black border border-gray-700 rounded-lg p-2 text-white text-sm focus:border-blue-500 outline-none"
+              placeholder="y hace constar que el/la voluntario/a:" />
+          </div>
+          {/* Etiqueta colegiado */}
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">
+              <span className="text-gray-400 font-semibold">Colegiado —</span> Etiqueta antes del número de colegiado
+            </label>
+            <input value={form.collegiateLabel} onChange={e => setField('collegiateLabel', e.target.value)}
+              className="w-full bg-black border border-gray-700 rounded-lg p-2 text-white text-sm focus:border-blue-500 outline-none"
+              placeholder="Con número de colegiado activo:" />
+          </div>
+          {/* Etiqueta de fecha */}
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">
+              <span className="text-gray-400 font-semibold">Fecha —</span> Texto antes de la fecha de emisión
+            </label>
+            <input value={form.dateLabel} onChange={e => setField('dateLabel', e.target.value)}
+              className="w-full bg-black border border-gray-700 rounded-lg p-2 text-white text-sm focus:border-blue-500 outline-none"
+              placeholder="Emitido el" />
           </div>
         </div>
       </div>
