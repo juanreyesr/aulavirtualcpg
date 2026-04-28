@@ -19,11 +19,11 @@ const SETTINGS_KEY = 'special_cert_settings';
 const getCertQrUrl = (code) =>
   `https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(`${APP_URL}/?cert=${code}`)}&bgcolor=ffffff&color=1a1a2e&margin=4`;
 
-// ── Todos los elementos tienen control de tamaño de fuente ──────────────────
+// ── Elementos — titleBlock y recipientBlock tienen textos secundarios (fs2) ──
 const ELEMENTS = [
   { id: 'boardText',       label: 'Junta Directiva',       color: '#c41f6b' },
-  { id: 'titleBlock',      label: 'Título y comisiones',   color: '#3b82f6' },
-  { id: 'recipientBlock',  label: 'Nombre del acreditado', color: '#10b981' },
+  { id: 'titleBlock',      label: 'Título y comisiones',   color: '#3b82f6', hasFs2: true, fs2Label: 'Comisiones / "válido de..."' },
+  { id: 'recipientBlock',  label: 'Nombre del acreditado', color: '#10b981', hasFs2: true, fs2Label: '"Hace constar" / colegiado' },
   { id: 'bodyText',        label: 'Texto descriptivo',     color: '#f59e0b' },
   { id: 'trainingsBlock',  label: 'Capacitaciones',        color: '#8b5cf6' },
   { id: 'signaturesBlock', label: 'Firmas',                color: '#ec4899' },
@@ -34,8 +34,8 @@ const ELEMENTS = [
 
 const DEFAULT_POSITIONS = {
   boardText:       { x: 395, y: 42,  w: 280, h: 38,  fs: 22 },
-  titleBlock:      { x: 50,  y: 155, w: 956, h: 108, fs: 24 },
-  recipientBlock:  { x: 50,  y: 268, w: 956, h: 75,  fs: 28 },
+  titleBlock:      { x: 50,  y: 155, w: 956, h: 108, fs: 24, fs2: 20 },  // fs2: nombres de comisiones + "válido de..."
+  recipientBlock:  { x: 50,  y: 268, w: 956, h: 75,  fs: 28, fs2: 16 },  // fs2: "hace constar" + "con colegiado"
   bodyText:        { x: 50,  y: 348, w: 956, h: 40,  fs: 11 },
   trainingsBlock:  { x: 50,  y: 393, w: 956, h: 215, fs: 11 },
   signaturesBlock: { x: 45,  y: 618, w: 700, h: 140, fs: 11 },
@@ -82,8 +82,9 @@ function SpecialCertCanvas({ certRef, tpl, data, positions: P, certCode, dateFor
   const sigPerRow = signers.length <= 3 ? signers.length : Math.ceil(signers.length / 2);
   const sigRows   = signers.length <= 3 ? [signers] : [signers.slice(0, sigPerRow), signers.slice(sigPerRow)];
 
-  const commStyle = { fontSize: 13, color: '#333', fontStyle: 'italic', lineHeight: 1.5, textAlign: 'center' };
-  const fs = (id) => P[id]?.fs ?? DEFAULT_POSITIONS[id].fs;
+  const fs  = (id) => P[id]?.fs  ?? DEFAULT_POSITIONS[id].fs;
+  const fs2 = (id) => P[id]?.fs2 ?? DEFAULT_POSITIONS[id].fs2 ?? 14;
+  const commStyle = { fontSize: fs2('titleBlock'), color: '#333', fontStyle: 'italic', lineHeight: 1.6, textAlign: 'center' };
 
   return (
     <div ref={certRef} style={{ width: CANVAS_W, height: CANVAS_H, position: 'relative', fontFamily: "'Georgia','Times New Roman',serif", background: '#f0ede8', overflow: 'hidden' }}>
@@ -128,7 +129,7 @@ function SpecialCertCanvas({ certRef, tpl, data, positions: P, certCode, dateFor
         <div style={{ fontSize: fs('titleBlock'), fontWeight: 700, color: '#1e5c8b', marginTop: 8, letterSpacing: '0.03em', wordWrap: 'break-word' }}>
           {data.certTitle || 'Acreditación de Voluntario'}
         </div>
-        <div style={{ fontSize: 12, color: '#666', marginTop: 3, textAlign: 'center' }}>
+        <div style={{ fontSize: fs2('titleBlock'), color: '#666', marginTop: 4, textAlign: 'center' }}>
           válido de {data.validFrom} a {data.validTo}
           {data.totalHours && (
             <span style={{ marginLeft: 10, fontWeight: 700, color: '#1e5c8b' }}>· {data.totalHours} horas acreditadas</span>
@@ -138,11 +139,11 @@ function SpecialCertCanvas({ certRef, tpl, data, positions: P, certCode, dateFor
 
       {/* Nombre del acreditado */}
       <div style={{ position: 'absolute', left: P.recipientBlock.x, top: P.recipientBlock.y, width: P.recipientBlock.w, textAlign: 'center' }}>
-        <div style={{ fontSize: Math.max(9, fs('recipientBlock') * 0.38), color: '#555' }}>hace constar que el/la voluntario/a:</div>
+        <div style={{ fontSize: fs2('recipientBlock'), color: '#555' }}>hace constar que el/la voluntario/a:</div>
         <div style={{ fontSize: fs('recipientBlock'), fontStyle: 'italic', fontWeight: 700, color: '#1a1a2e', marginTop: 3, lineHeight: 1.1, wordWrap: 'break-word' }}>
           {data.recipientName || '[Nombre del acreditado]'}
         </div>
-        <div style={{ fontSize: Math.max(9, fs('recipientBlock') * 0.42), color: '#555', marginTop: 3 }}>
+        <div style={{ fontSize: fs2('recipientBlock'), color: '#555', marginTop: 3 }}>
           Con número de colegiado activo: <strong>{data.collegiateNumber || '----'}</strong>
         </div>
       </div>
@@ -335,16 +336,21 @@ export default function VolunteerAccreditationManager({ certTemplate }) {
     });
   }, []);
 
-  // ── Load saved settings (positions + form defaults) ──
+  // ── Load saved settings via RPC (bypasa RLS) ──
   useEffect(() => {
     if (!supabase) return;
-    supabase.from('cpg_settings').select('value').eq('key', SETTINGS_KEY).maybeSingle().then(({ data }) => {
-      if (!data?.value) return;
-      if (data.value.positions) {
-        setPositions(prev => ({ ...DEFAULT_POSITIONS, ...data.value.positions }));
+    supabase.rpc('get_cpg_setting', { p_key: SETTINGS_KEY }).then(({ data, error }) => {
+      if (error || !data) return;
+      if (data.positions) {
+        // Merge para preservar fs2 de DEFAULT si el guardado anterior no lo tenía
+        const merged = {};
+        Object.keys(DEFAULT_POSITIONS).forEach(id => {
+          merged[id] = { ...DEFAULT_POSITIONS[id], ...data.positions[id] };
+        });
+        setPositions(merged);
       }
-      if (data.value.formDefaults) {
-        setForm(prev => ({ ...DEFAULT_FORM, ...data.value.formDefaults, recipientName: '', collegiateNumber: '' }));
+      if (data.formDefaults) {
+        setForm(prev => ({ ...DEFAULT_FORM, ...data.formDefaults, recipientName: '', collegiateNumber: '' }));
       }
     });
   }, []);
@@ -360,6 +366,9 @@ export default function VolunteerAccreditationManager({ certTemplate }) {
   const onPositionChange = useCallback((id, upd) => setPositions(prev => ({ ...prev, [id]: upd })), []);
   const adjFs = useCallback((id, delta) => setPositions(prev => ({
     ...prev, [id]: { ...prev[id], fs: Math.max(6, (prev[id].fs ?? DEFAULT_POSITIONS[id].fs) + delta) }
+  })), []);
+  const adjFs2 = useCallback((id, delta) => setPositions(prev => ({
+    ...prev, [id]: { ...prev[id], fs2: Math.max(6, (prev[id].fs2 ?? DEFAULT_POSITIONS[id].fs2 ?? 14) + delta) }
   })), []);
 
   // ── Lookup single ──
@@ -384,7 +393,7 @@ export default function VolunteerAccreditationManager({ certTemplate }) {
     setForm(p => ({ ...p, recipientName: '', collegiateNumber: '' }));
   };
 
-  // ── Save layout + form defaults ──
+  // ── Save layout + form defaults via RPC (bypasa RLS) ──
   const saveLayout = async () => {
     if (!supabase) return;
     setSavingLayout(true);
@@ -395,12 +404,12 @@ export default function VolunteerAccreditationManager({ certTemplate }) {
         bodyText: form.bodyText, includePresident: form.includePresident,
         selectedCommissions: form.selectedCommissions, trainings: form.trainings,
       };
-      const { error } = await supabase.from('cpg_settings').upsert(
-        { key: SETTINGS_KEY, value: { positions, formDefaults }, updated_at: new Date().toISOString() },
-        { onConflict: 'key' }
-      );
+      const { error } = await supabase.rpc('save_cpg_setting', {
+        p_key: SETTINGS_KEY,
+        p_value: { positions, formDefaults },
+      });
       if (error) throw error;
-      setMsg({ type: 'success', text: 'Estilo y datos guardados. Se cargarán automáticamente la próxima vez.' });
+      setMsg({ type: 'success', text: '✓ Estilo y datos guardados. Se cargarán automáticamente la próxima vez.' });
       setTimeout(() => setMsg(null), 4000);
     } catch (e) { setMsg({ type: 'error', text: 'Error al guardar: ' + e.message }); }
     setSavingLayout(false);
@@ -831,9 +840,11 @@ export default function VolunteerAccreditationManager({ certTemplate }) {
                       className="w-16 bg-black border border-gray-700 rounded px-1.5 py-0.5 text-white text-xs text-right focus:border-blue-500 outline-none" />
                   </div>
                 ))}
-                {/* Font size control — all elements */}
+                {/* Font size — texto principal */}
                 <div className="pt-1 border-t border-gray-800">
-                  <p className="text-gray-600 text-[10px] mb-1.5">Tamaño de fuente</p>
+                  <p className="text-gray-600 text-[10px] mb-1.5">
+                    {ELEMENTS.find(e => e.id === selectedEl)?.hasFs2 ? 'Título principal' : 'Tamaño de fuente'}
+                  </p>
                   <div className="flex items-center gap-2">
                     <button onClick={() => adjFs(selectedEl, -1)}
                       className="w-7 h-7 flex items-center justify-center bg-gray-800 hover:bg-gray-700 rounded text-white font-bold transition">
@@ -848,6 +859,27 @@ export default function VolunteerAccreditationManager({ certTemplate }) {
                     </button>
                   </div>
                 </div>
+                {/* Font size — textos secundarios (solo titleBlock y recipientBlock) */}
+                {ELEMENTS.find(e => e.id === selectedEl)?.hasFs2 && (
+                  <div className="pt-1 border-t border-gray-800">
+                    <p className="text-gray-600 text-[10px] mb-1.5">
+                      {ELEMENTS.find(e => e.id === selectedEl)?.fs2Label}
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => adjFs2(selectedEl, -1)}
+                        className="w-7 h-7 flex items-center justify-center bg-gray-800 hover:bg-gray-700 rounded text-white font-bold transition">
+                        <Minus size={11}/>
+                      </button>
+                      <span className="flex-1 text-center text-white text-sm font-mono font-bold">
+                        {positions[selectedEl].fs2 ?? DEFAULT_POSITIONS[selectedEl].fs2 ?? 14}
+                      </span>
+                      <button onClick={() => adjFs2(selectedEl, +1)}
+                        className="w-7 h-7 flex items-center justify-center bg-gray-800 hover:bg-gray-700 rounded text-white font-bold transition">
+                        +
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
