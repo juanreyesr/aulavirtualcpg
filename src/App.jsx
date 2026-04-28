@@ -10,6 +10,7 @@ import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import CommissionsManager from './components/CommissionsManager';
 import AttendanceReportView from './components/AttendanceReportView';
+import VolunteerAccreditationManager from './components/VolunteerAccreditationManager';
 
 const ADMIN_CREDENTIALS = {
   email: 'gestor.caeduc@colegiodepsicologos.org.gt',
@@ -68,6 +69,9 @@ const DEFAULT_CERT_CONFIG = {
   boardText: 'Junta Directiva 2025-2027',
   coordinatorName: 'M.A. Juan J. Reyes',
   coordinatorTitle: 'Coordinador CAEDUC',
+  presidenteName: '',
+  presidenteTitle: 'Presidenta Junta Directiva',
+  presidenteSignatureUrl: '',
   logoCpgUrl: '',
   logoCaeducUrl: '',
   signatureUrl: '',
@@ -3708,7 +3712,7 @@ function CertTemplateAdmin({ certTemplate, onSave }) {
 
       {/* COORDINADOR */}
       <div>
-        <h3 className="text-white font-bold text-lg mb-3 flex items-center gap-2"><UserCheck size={18} className="text-yellow-400" /> Coordinador/a</h3>
+        <h3 className="text-white font-bold text-lg mb-3 flex items-center gap-2"><UserCheck size={18} className="text-yellow-400" /> Coordinador/a CAEDUC</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className="block text-sm text-gray-400 mb-1">Nombre</label>
@@ -3717,6 +3721,47 @@ function CertTemplateAdmin({ certTemplate, onSave }) {
           <div>
             <label className="block text-sm text-gray-400 mb-1">Cargo</label>
             <input type="text" value={form.coordinatorTitle || ''} onChange={e => updateField('coordinatorTitle', e.target.value)} className="w-full bg-black border border-gray-700 rounded-lg p-2.5 text-white text-sm focus:border-blue-500 outline-none" />
+          </div>
+        </div>
+      </div>
+
+      {/* PRESIDENTA */}
+      <div>
+        <h3 className="text-white font-bold text-lg mb-1 flex items-center gap-2"><Shield size={18} className="text-pink-400" /> Presidenta Junta Directiva</h3>
+        <p className="text-xs text-gray-500 mb-3">Su firma puede activarse individualmente en cada Acreditación de Voluntario que generes.</p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">Nombre</label>
+            <input type="text" value={form.presidenteName || ''} onChange={e => updateField('presidenteName', e.target.value)}
+              className="w-full bg-black border border-gray-700 rounded-lg p-2.5 text-white text-sm focus:border-blue-500 outline-none"
+              placeholder="Lic./Mgtr. Nombre Completo" />
+          </div>
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">Cargo</label>
+            <input type="text" value={form.presidenteTitle || ''} onChange={e => updateField('presidenteTitle', e.target.value)}
+              className="w-full bg-black border border-gray-700 rounded-lg p-2.5 text-white text-sm focus:border-blue-500 outline-none"
+              placeholder="Presidenta Junta Directiva" />
+          </div>
+          <div className="md:col-span-2">
+            <label className="block text-sm text-gray-400 mb-2">Imagen de firma</label>
+            <div className="flex items-center gap-3 flex-wrap">
+              {form.presidenteSignatureUrl && (
+                <img src={form.presidenteSignatureUrl} alt="Firma presidenta"
+                  className="w-24 h-16 object-contain bg-white/10 rounded-lg border border-gray-700 p-1" />
+              )}
+              <label className="flex items-center gap-2 bg-gray-800 hover:bg-gray-700 border border-gray-600 px-3 py-2 rounded-lg cursor-pointer transition text-sm text-gray-300 hover:text-white">
+                {uploading === 'presidenteSignatureUrl' ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+                {uploading === 'presidenteSignatureUrl' ? 'Subiendo...' : form.presidenteSignatureUrl ? 'Cambiar firma' : 'Subir firma PNG'}
+                <input type="file" accept="image/*" className="hidden"
+                  onChange={e => handleImageUpload('presidenteSignatureUrl', e.target.files?.[0])}
+                  disabled={!!uploading} />
+              </label>
+              {form.presidenteSignatureUrl && (
+                <button onClick={() => { const next = { ...form, presidenteSignatureUrl: '' }; setForm(next); onSave(next); }}
+                  className="text-xs text-red-400 hover:text-red-300 transition">Eliminar</button>
+              )}
+            </div>
+            <p className="text-[11px] text-gray-600 mt-1.5">PNG con fondo transparente. Se guardará para usarla cuando elijas incluirla en acreditaciones.</p>
           </div>
         </div>
       </div>
@@ -4457,6 +4502,7 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
   const [showLogoManager, setShowLogoManager] = useState(false);
   const [showAdminUsersSection, setShowAdminUsersSection] = useState(false);
   const [showUserVerifySection, setShowUserVerifySection] = useState(false);
+  const [showVolunteerCertSection, setShowVolunteerCertSection] = useState(false);
   const [showAuditLogSection, setShowAuditLogSection] = useState(false);
   const [showBulkCert, setShowBulkCert] = useState(false);
   const [showAttendanceReport, setShowAttendanceReport] = useState(false);
@@ -5133,6 +5179,23 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
       </div>
 
 
+
+      {/* ── ACREDITACIONES DE VOLUNTARIO ── */}
+      {adminRole === 'super_admin' && (
+      <div className="bg-[#1b1b1b] border border-gray-800 rounded-2xl mb-6 overflow-hidden">
+        <button type="button" onClick={() => setShowVolunteerCertSection(v => !v)} className="w-full flex items-center justify-between px-6 py-4 hover:bg-white/5 transition">
+          <div className="flex items-center gap-3">
+            <div className="bg-yellow-600 p-2 rounded-lg"><Award size={18} className="text-white" /></div>
+            <div className="text-left">
+              <h2 className="text-xl font-bold text-white">Acreditaciones de Voluntario</h2>
+              <p className="text-xs text-gray-400">Genera acreditaciones especiales de comisiones — diferente al diploma de curso</p>
+            </div>
+          </div>
+          <span className="text-gray-400 text-lg">{showVolunteerCertSection ? '▲' : '▼'}</span>
+        </button>
+        {showVolunteerCertSection && <div className="border-t border-gray-800"><VolunteerAccreditationManager certTemplate={certTemplate} /></div>}
+      </div>
+      )}
 
       {/* ── LOG DE AUDITORÍA (solo Super Admin) ── */}
       {adminRole === 'super_admin' && (
