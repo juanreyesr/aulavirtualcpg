@@ -230,9 +230,10 @@ function SpecialCertCanvas({ certRef, tpl, data, positions: P, certCode, dateFor
   );
 }
 
-// ── Preview interactivo ──────────────────────────────────────────────────────
-function InteractiveCertPreview({ certRef, positions, onPositionChange, selectedEl, onSelectEl, ...canvasProps }) {
+// ── Preview interactivo — usa ref INTERNO para display, NO para PDF ──────────
+function InteractiveCertPreview({ positions, onPositionChange, selectedEl, onSelectEl, ...canvasProps }) {
   const containerRef = useRef(null);
+  const displayRef   = useRef(null); // solo para mostrar, no se usa en html2canvas
   const [cw, setCw] = useState(640);
   const drag = useRef(null);
 
@@ -282,7 +283,7 @@ function InteractiveCertPreview({ certRef, positions, onPositionChange, selected
       onTouchMove={onMove} onTouchEnd={onUp}
     >
       <div style={{ position: 'absolute', top: 0, left: 0, width: CANVAS_W, height: CANVAS_H, transformOrigin: 'top left', transform: `scale(${scale})`, pointerEvents: 'none' }}>
-        <SpecialCertCanvas certRef={certRef} positions={positions} {...canvasProps} />
+        <SpecialCertCanvas certRef={displayRef} positions={positions} {...canvasProps} />
       </div>
       {ELEMENTS.map(({ id, label, color }) => {
         const p = positions[id];
@@ -463,17 +464,20 @@ export default function VolunteerAccreditationManager({ certTemplate }) {
     setSavingLayout(false);
   };
 
-  // ── HTML2canvas helper ──
+  // ── HTML2canvas helper — captura desde el canvas OCULTO (sin transform) ──
   const captureCanvas = () => new Promise((resolve, reject) => {
     setTimeout(async () => {
       try {
+        if (!certRef.current) throw new Error('Canvas no disponible');
         const canvas = await html2canvas(certRef.current, {
-          scale: 3, useCORS: true, allowTaint: true, backgroundColor: '#f0ede8', logging: false,
-          width: CANVAS_W, height: CANVAS_H, windowWidth: CANVAS_W, windowHeight: CANVAS_H, scrollX: 0, scrollY: 0,
+          scale: 2,                   // scale:2 → ~4MB JPEG vs 31MB PNG anterior
+          useCORS: true, allowTaint: true, backgroundColor: '#f0ede8', logging: false,
+          width: CANVAS_W, height: CANVAS_H, windowWidth: CANVAS_W, windowHeight: CANVAS_H,
+          x: 0, y: 0, scrollX: 0, scrollY: 0,
         });
         resolve(canvas);
       } catch (e) { reject(e); }
-    }, 500);
+    }, 600);
   });
 
   // ── Download individual cert ──
@@ -506,7 +510,7 @@ export default function VolunteerAccreditationManager({ certTemplate }) {
       }
       const canvas = await captureCanvas();
       const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'letter' });
-      pdf.addImage(canvas.toDataURL('image/png', 1.0), 'PNG', 0, 0, pdf.internal.pageSize.getWidth(), pdf.internal.pageSize.getHeight());
+      pdf.addImage(canvas.toDataURL('image/jpeg', 0.93), 'JPEG', 0, 0, pdf.internal.pageSize.getWidth(), pdf.internal.pageSize.getHeight());
       pdf.save(`Acreditacion_${singleLookup.name.replace(/\s+/g,'_')}_${code}.pdf`);
       setMsg({ type: 'success', text: '¡Acreditación descargada y guardada en el registro!' });
     } catch (e) { setMsg({ type: 'error', text: 'Error: ' + e.message }); }
@@ -567,16 +571,16 @@ export default function VolunteerAccreditationManager({ certTemplate }) {
         // Render canvas for this recipient
         setForm(prev => ({ ...prev, recipientName: r.name, collegiateNumber: r.num }));
         const canvas = await captureCanvas();
-        const imgData = canvas.toDataURL('image/png', 0.95);
+        const imgData = canvas.toDataURL('image/jpeg', 0.93);
 
         // Individual PDF
         const singlePdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'letter' });
-        singlePdf.addImage(imgData, 'PNG', 0, 0, pw, ph);
+        singlePdf.addImage(imgData, 'JPEG', 0, 0, pw, ph);
         const singleDataUrl = singlePdf.output('datauristring');
 
         // Add page to all-in-one PDF
         if (i > 0) allPdf.addPage();
-        allPdf.addImage(imgData, 'PNG', 0, 0, pw, ph);
+        allPdf.addImage(imgData, 'JPEG', 0, 0, pw, ph);
 
         setBulkResults(prev => prev.map(x => x.num === r.num ? { ...x, generated: true, code, pdfDataUrl: singleDataUrl } : x));
       }
@@ -1002,10 +1006,9 @@ export default function VolunteerAccreditationManager({ certTemplate }) {
             )}
           </div>
 
-          {/* Canvas interactivo */}
+          {/* Canvas interactivo — solo para display, usa ref interno */}
           <div className="flex-1 min-w-0">
             <InteractiveCertPreview
-              certRef={certRef}
               positions={positions}
               onPositionChange={onPositionChange}
               selectedEl={selectedEl}
@@ -1015,15 +1018,29 @@ export default function VolunteerAccreditationManager({ certTemplate }) {
               certCode={certCode}
               dateFormatted={dateFormatted}
               selectedCommissions={selectedCommissions}
-              onImageLoaded={() => setImageLoaded(true)}
+              onImageLoaded={() => {}}
             />
             {!imageLoaded && (
               <div className="flex items-center gap-2 text-yellow-400 text-xs mt-2">
-                <Loader2 size={13} className="animate-spin"/> Cargando vista previa…
+                <Loader2 size={13} className="animate-spin"/> Cargando imágenes…
               </div>
             )}
           </div>
         </div>
+      </div>
+
+      {/* ── Canvas oculto para captura PDF — sin transform, tamaño natural ── */}
+      <div style={{ position: 'fixed', left: -9999, top: -9999, width: CANVAS_W, height: CANVAS_H, pointerEvents: 'none', zIndex: -1 }} aria-hidden="true">
+        <SpecialCertCanvas
+          certRef={certRef}
+          tpl={tpl}
+          data={form}
+          positions={positions}
+          certCode={certCode}
+          dateFormatted={dateFormatted}
+          selectedCommissions={selectedCommissions}
+          onImageLoaded={() => setImageLoaded(true)}
+        />
       </div>
     </div>
   );

@@ -5162,12 +5162,17 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
                                   {c.verify_url && (
                                     <a href={c.verify_url} target="_blank" rel="noreferrer" className="p-1.5 bg-blue-900/40 hover:bg-blue-900/70 text-blue-300 rounded" title="Ver verificación"><ExternalLink size={13} /></a>
                                   )}
-                                  {c.verify_url && (
-                                    <a href={c.verify_url} target="_blank" rel="noreferrer"
-                                      onClick={e => { e.preventDefault(); const w = window.open(c.verify_url, '_blank'); if (w) setTimeout(() => w.print(), 1200); }}
-                                      className="p-1.5 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded" title="Imprimir certificado">
+                                  {/* Reimprimir: solo para certs de video (cert_type distinto de 'volunteer') */}
+                                  {c.cert_type !== 'volunteer' && (
+                                    <button
+                                      onClick={() => {
+                                        const video = videos.find(v => v.id === c.video_id) || { id: c.video_id, title: c.video_title, duration: c.video_duration };
+                                        const profile = { name: c.recipient_name, collegiateNumber: c.collegiate_number, status: c.status };
+                                        onGenerateCertificate(video, profile);
+                                      }}
+                                      className="p-1.5 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded" title="Reimprimir certificado">
                                       <Printer size={13} />
-                                    </a>
+                                    </button>
                                   )}
                                   <button onClick={() => handleDeleteCert(c.id)} className="p-1.5 bg-red-900/40 hover:bg-red-900/70 text-red-300 rounded" title="Eliminar registro"><Trash2 size={13} /></button>
                                 </div>
