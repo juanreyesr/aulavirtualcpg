@@ -59,7 +59,9 @@ export default function CommissionsManager() {
     signer_name: '',
     signer_title: '',
     signature_url: '',
+    logo_url: '',
   });
+  const [uploadingLogo, setUploadingLogo] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState(null);
@@ -84,7 +86,7 @@ export default function CommissionsManager() {
   const activeCount = commissions.filter(c => c.active).length;
 
   const resetForm = () => {
-    setForm({ commission_name: '', signer_name: '', signer_title: '', signature_url: '' });
+    setForm({ commission_name: '', signer_name: '', signer_title: '', signature_url: '', logo_url: '' });
     setEditingId(null);
     setShowForm(false);
   };
@@ -95,6 +97,7 @@ export default function CommissionsManager() {
       signer_name: c.signer_name || '',
       signer_title: c.signer_title || '',
       signature_url: c.signature_url || '',
+      logo_url: c.logo_url || '',
     });
     setEditingId(c.id);
     setShowForm(true);
@@ -114,6 +117,20 @@ export default function CommissionsManager() {
     setUploading(false);
   };
 
+  const handleUploadLogo = async (file) => {
+    if (!file) return;
+    setUploadingLogo(true);
+    try {
+      const url = await uploadCertAsset(file, 'commission-logo');
+      setForm(prev => ({ ...prev, logo_url: url }));
+      setMsg({ type: 'success', text: 'Logo subido correctamente' });
+      setTimeout(() => setMsg(null), 2500);
+    } catch (e) {
+      setMsg({ type: 'error', text: 'Error subiendo logo: ' + e.message });
+    }
+    setUploadingLogo(false);
+  };
+
   const handleSave = async () => {
     if (!form.commission_name.trim() || !form.signer_name.trim() || !form.signer_title.trim()) {
       setMsg({ type: 'error', text: 'Comisión, nombre y cargo son obligatorios.' });
@@ -130,6 +147,7 @@ export default function CommissionsManager() {
         signer_name: form.signer_name.trim(),
         signer_title: form.signer_title.trim(),
         signature_url: form.signature_url || null,
+        logo_url: form.logo_url || null,
         updated_at: new Date().toISOString(),
       };
       if (editingId) {
@@ -293,41 +311,53 @@ export default function CommissionsManager() {
                 placeholder="Coordinador/a"
               />
             </div>
-            <div className="md:col-span-2">
-              <label className="block text-sm text-gray-400 mb-1">Imagen de firma (opcional)</label>
-              <div className="flex items-center gap-3 flex-wrap">
-                {form.signature_url && (
-                  <img
-                    src={form.signature_url}
-                    alt="Firma"
-                    className="w-24 h-16 object-contain bg-white/10 rounded-lg border border-gray-700 p-1"
-                  />
-                )}
-                <label className="flex items-center gap-2 bg-gray-800 hover:bg-gray-700 border border-gray-600 px-3 py-2 rounded-lg cursor-pointer transition text-sm text-gray-300 hover:text-white">
-                  {uploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
-                  {uploading
-                    ? 'Subiendo...'
-                    : form.signature_url ? 'Cambiar imagen' : 'Subir firma PNG'}
-                  <input
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={e => handleUploadSignature(e.target.files?.[0])}
-                    disabled={uploading}
-                  />
-                </label>
-                {form.signature_url && (
-                  <button
-                    onClick={() => setForm({ ...form, signature_url: '' })}
-                    className="text-xs text-red-400 hover:text-red-300 transition"
-                  >
-                    Eliminar
-                  </button>
-                )}
+            {/* Firma + Logo — cada uno en fila completa para máxima visibilidad */}
+            <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4 border border-gray-700/50 rounded-xl p-4 bg-black/20">
+              {/* Firma */}
+              <div>
+                <p className="text-xs text-gray-500 font-semibold uppercase tracking-wide mb-2">Imagen de firma</p>
+                <div className="flex items-center gap-3 flex-wrap">
+                  {form.signature_url && (
+                    <img src={form.signature_url} alt="Firma"
+                      className="w-28 h-16 object-contain bg-white/10 rounded-lg border border-gray-700 p-1" />
+                  )}
+                  <label className="flex items-center gap-2 bg-gray-800 hover:bg-gray-700 border border-gray-600 px-3 py-2 rounded-lg cursor-pointer transition text-sm text-gray-300 hover:text-white">
+                    {uploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+                    {uploading ? 'Subiendo...' : form.signature_url ? 'Cambiar firma' : 'Subir firma PNG'}
+                    <input type="file" accept="image/*" className="hidden"
+                      onChange={e => handleUploadSignature(e.target.files?.[0])} disabled={uploading} />
+                  </label>
+                  {form.signature_url && (
+                    <button onClick={() => setForm({ ...form, signature_url: '' })}
+                      className="text-xs text-red-400 hover:text-red-300 transition">Eliminar</button>
+                  )}
+                </div>
+                <p className="text-[11px] text-gray-600 mt-1">PNG con fondo transparente.</p>
               </div>
-              <p className="text-[11px] text-gray-600 mt-1">
-                PNG con fondo transparente. Si no hay firma, solo se muestra el nombre y cargo.
-              </p>
+              {/* Logo */}
+              <div>
+                <p className="text-xs text-gray-500 font-semibold uppercase tracking-wide mb-2">
+                  Logo de la comisión
+                  <span className="ml-1.5 normal-case text-blue-400 font-normal">— aparece en el certificado</span>
+                </p>
+                <div className="flex items-center gap-3 flex-wrap">
+                  {form.logo_url && (
+                    <img src={form.logo_url} alt="Logo"
+                      className="w-28 h-16 object-contain bg-white/10 rounded-lg border border-gray-700 p-1" />
+                  )}
+                  <label className="flex items-center gap-2 bg-gray-800 hover:bg-gray-700 border border-gray-600 px-3 py-2 rounded-lg cursor-pointer transition text-sm text-gray-300 hover:text-white">
+                    {uploadingLogo ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+                    {uploadingLogo ? 'Subiendo...' : form.logo_url ? 'Cambiar logo' : 'Subir logo PNG'}
+                    <input type="file" accept="image/*" className="hidden"
+                      onChange={e => handleUploadLogo(e.target.files?.[0])} disabled={uploadingLogo} />
+                  </label>
+                  {form.logo_url && (
+                    <button onClick={() => setForm({ ...form, logo_url: '' })}
+                      className="text-xs text-red-400 hover:text-red-300 transition">Eliminar</button>
+                  )}
+                </div>
+                <p className="text-[11px] text-gray-600 mt-1">PNG/SVG recomendado. Posición ajustable en el editor de acreditaciones.</p>
+              </div>
             </div>
           </div>
           <div className="flex gap-2 mt-4">
@@ -372,6 +402,7 @@ export default function CommissionsManager() {
                 <th className="text-left px-4 py-3">Comisión</th>
                 <th className="text-left px-4 py-3">Firmante</th>
                 <th className="text-left px-4 py-3">Firma</th>
+                <th className="text-left px-4 py-3">Logo</th>
                 <th className="text-left px-4 py-3">Estado</th>
                 <th className="px-4 py-3">Acciones</th>
               </tr>
@@ -412,13 +443,18 @@ export default function CommissionsManager() {
                     </td>
                     <td className="px-4 py-3">
                       {c.signature_url ? (
-                        <img
-                          src={c.signature_url}
-                          alt="Firma"
-                          className="w-16 h-10 object-contain bg-white/10 rounded p-0.5"
-                        />
+                        <img src={c.signature_url} alt="Firma"
+                          className="w-16 h-10 object-contain bg-white/10 rounded p-0.5" />
                       ) : (
                         <span className="text-xs text-gray-600 italic">Sin imagen</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      {c.logo_url ? (
+                        <img src={c.logo_url} alt="Logo"
+                          className="w-12 h-10 object-contain bg-white/10 rounded p-0.5" />
+                      ) : (
+                        <span className="text-xs text-gray-600 italic">—</span>
                       )}
                     </td>
                     <td className="px-4 py-3">

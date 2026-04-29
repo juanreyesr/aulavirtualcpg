@@ -1384,7 +1384,14 @@ export default function App() {
     const next = { ...liveSession, ...updates, updated_at: new Date().toISOString() };
     setLiveSession(next);
     if (!supabase) return;
-    await supabase.from('cpg_live_session').upsert({ id: 1, ...next }, { onConflict: 'id' });
+    const { error } = await supabase
+      .from('cpg_live_session')
+      .upsert({ id: 1, ...next }, { onConflict: 'id' });
+    if (error) {
+      console.error('[saveLiveSession] Error guardando en BD:', error.message);
+      // Recargar desde BD para no quedar con estado inconsistente
+      loadLiveSession();
+    }
   };
 
   const registerAttendance = async (extraFields = {}) => {
@@ -4503,6 +4510,8 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
   const [showAdminUsersSection, setShowAdminUsersSection] = useState(false);
   const [showUserVerifySection, setShowUserVerifySection] = useState(false);
   const [showVolunteerCertSection, setShowVolunteerCertSection] = useState(false);
+  const [volunteerReprintCert, setVolunteerReprintCert] = useState(null); // registro completo a reimprimir
+  const volunteerSectionRef = useRef(null);
   const [showAuditLogSection, setShowAuditLogSection] = useState(false);
   const [showBulkCert, setShowBulkCert] = useState(false);
   const [showAttendanceReport, setShowAttendanceReport] = useState(false);
@@ -5162,7 +5171,7 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
                                   {c.verify_url && (
                                     <a href={c.verify_url} target="_blank" rel="noreferrer" className="p-1.5 bg-blue-900/40 hover:bg-blue-900/70 text-blue-300 rounded" title="Ver verificación"><ExternalLink size={13} /></a>
                                   )}
-                                  {/* Reimprimir: solo para certs de video (cert_type distinto de 'volunteer') */}
+                                  {/* Reimprimir: certs de video */}
                                   {c.cert_type !== 'volunteer' && (
                                     <button
                                       onClick={() => {
@@ -5171,6 +5180,18 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
                                         onGenerateCertificate(video, profile);
                                       }}
                                       className="p-1.5 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded" title="Reimprimir certificado">
+                                      <Printer size={13} />
+                                    </button>
+                                  )}
+                                  {/* Reimprimir: acreditaciones especiales */}
+                                  {c.cert_type === 'volunteer' && (
+                                    <button
+                                      onClick={() => {
+                                        setVolunteerReprintCert(c);
+                                        setShowVolunteerCertSection(true);
+                                        setTimeout(() => volunteerSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 150);
+                                      }}
+                                      className="p-1.5 bg-yellow-900/40 hover:bg-yellow-800/60 text-yellow-300 rounded" title="Reimprimir acreditación especial">
                                       <Printer size={13} />
                                     </button>
                                   )}
@@ -5194,7 +5215,7 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
 
       {/* ── ACREDITACIONES ESPECIALES ── */}
       {adminRole === 'super_admin' && (
-      <div className="bg-[#1b1b1b] border border-gray-800 rounded-2xl mb-6 overflow-hidden">
+      <div ref={volunteerSectionRef} className="bg-[#1b1b1b] border border-gray-800 rounded-2xl mb-6 overflow-hidden">
         <button type="button" onClick={() => setShowVolunteerCertSection(v => !v)} className="w-full flex items-center justify-between px-6 py-4 hover:bg-white/5 transition">
           <div className="flex items-center gap-3">
             <div className="bg-yellow-600 p-2 rounded-lg"><Award size={18} className="text-white" /></div>
@@ -5205,7 +5226,15 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
           </div>
           <span className="text-gray-400 text-lg">{showVolunteerCertSection ? '▲' : '▼'}</span>
         </button>
-        {showVolunteerCertSection && <div className="border-t border-gray-800"><VolunteerAccreditationManager certTemplate={certTemplate} /></div>}
+        {showVolunteerCertSection && (
+          <div className="border-t border-gray-800">
+            <VolunteerAccreditationManager
+              certTemplate={certTemplate}
+              reprintCert={volunteerReprintCert}
+              onReprintConsumed={() => setVolunteerReprintCert(null)}
+            />
+          </div>
+        )}
       </div>
       )}
 

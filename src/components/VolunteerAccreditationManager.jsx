@@ -21,7 +21,8 @@ const getCertQrUrl = (code) =>
   `https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(`${APP_URL}/?cert=${code}`)}&bgcolor=ffffff&color=1a1a2e&margin=4`;
 
 // ── Elementos — titleBlock y recipientBlock tienen textos secundarios (fs2) ──
-const ELEMENTS = [
+// Elementos de texto — siguen siendo constantes
+const TEXT_ELEMENTS = [
   { id: 'boardText',       label: 'Junta Directiva',       color: '#c41f6b' },
   { id: 'titleBlock',      label: 'Título y comisiones',   color: '#3b82f6', hasFs2: true, fs2Label: 'Comisiones / "válido de..."' },
   { id: 'recipientBlock',  label: 'Nombre del acreditado', color: '#10b981', hasFs2: true, fs2Label: '"Hace constar" / colegiado' },
@@ -33,10 +34,27 @@ const ELEMENTS = [
   { id: 'dateText',        label: 'Fecha de emisión',      color: '#f97316' },
 ];
 
+// Logos fijos (CPG + CAEDUC) — siempre presentes
+const LOGO_ELEMENTS_STATIC = [
+  { id: 'logoCpg',    label: 'Logo CPG',    color: '#e879f9', isLogo: true },
+  { id: 'logoCaeduc', label: 'Logo CAEDUC', color: '#a78bfa', isLogo: true },
+];
+
 const DEFAULT_POSITIONS = {
+  // ── Logos ──
+  logoCpg:    { x: 42,  y: 12, w: 200, h: 90 },
+  logoCaeduc: { x: 820, y: 12, w: 190, h: 100 },
+  // Logos de comisiones adicionales (hasta 6 slots, defaults en fila central)
+  commLogo_0: { x: 270, y: 15, w: 110, h: 80 },
+  commLogo_1: { x: 390, y: 15, w: 110, h: 80 },
+  commLogo_2: { x: 510, y: 15, w: 110, h: 80 },
+  commLogo_3: { x: 630, y: 15, w: 110, h: 80 },
+  commLogo_4: { x: 270, y: 15, w: 110, h: 80 },
+  commLogo_5: { x: 390, y: 15, w: 110, h: 80 },
+  // ── Texto ──
   boardText:       { x: 395, y: 42,  w: 280, h: 38,  fs: 22 },
-  titleBlock:      { x: 50,  y: 155, w: 956, h: 108, fs: 24, fs2: 20 },  // fs2: nombres de comisiones + "válido de..."
-  recipientBlock:  { x: 50,  y: 268, w: 956, h: 75,  fs: 28, fs2: 16 },  // fs2: "hace constar" + "con colegiado"
+  titleBlock:      { x: 50,  y: 155, w: 956, h: 108, fs: 24, fs2: 20 },
+  recipientBlock:  { x: 50,  y: 268, w: 956, h: 75,  fs: 28, fs2: 16 },
   bodyText:        { x: 50,  y: 348, w: 956, h: 40,  fs: 11 },
   trainingsBlock:  { x: 50,  y: 393, w: 956, h: 215, fs: 11 },
   signaturesBlock: { x: 45,  y: 618, w: 700, h: 140, fs: 11 },
@@ -76,6 +94,7 @@ function SpecialCertCanvas({ certRef, tpl, data, positions: P, certCode, dateFor
     tpl.logoCpgUrl, tpl.logoCaeducUrl, tpl.signatureUrl, tpl.sealUrl,
     ...(data.includePresident && tpl.presidenteSignatureUrl ? [tpl.presidenteSignatureUrl] : []),
     ...selectedCommissions.filter(c => c.signature_url).map(c => c.signature_url),
+    ...selectedCommissions.filter(c => c.logo_url).map(c => c.logo_url),
   ].filter(Boolean);
 
   const onLoad = useCallback(() => setLoaded(p => p + 1), []);
@@ -106,17 +125,31 @@ function SpecialCertCanvas({ certRef, tpl, data, positions: P, certCode, dateFor
       </div>
       <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(ellipse at 75% 75%, rgba(200,195,185,0.2) 0%, transparent 55%)' }} />
 
-      {/* Logos */}
+      {/* Logo CPG — posición desde layout */}
       {tpl.logoCpgUrl && (
         <img src={tpl.logoCpgUrl} alt="CPG" crossOrigin="anonymous"
-          style={{ position: 'absolute', top: 12, left: 42, width: 200, height: 90, objectFit: 'contain' }}
+          style={{ position: 'absolute', left: P.logoCpg.x, top: P.logoCpg.y, width: P.logoCpg.w, height: P.logoCpg.h, objectFit: 'contain' }}
           onLoad={onLoad} onError={onLoad} />
       )}
+      {/* Logo CAEDUC — posición desde layout */}
       {tpl.logoCaeducUrl && (
         <img src={tpl.logoCaeducUrl} alt="CAEDUC" crossOrigin="anonymous"
-          style={{ position: 'absolute', top: 12, right: 40, width: 190, height: 100, objectFit: 'contain' }}
+          style={{ position: 'absolute', left: P.logoCaeduc.x, top: P.logoCaeduc.y, width: P.logoCaeduc.w, height: P.logoCaeduc.h, objectFit: 'contain' }}
           onLoad={onLoad} onError={onLoad} />
       )}
+      {/* Logos de comisiones adicionales — posición desde layout */}
+      {selectedCommissions.map((c, i) => c.logo_url ? (
+        <img key={`commlogo-${i}`} src={c.logo_url} alt={c.commission_name} crossOrigin="anonymous"
+          style={{
+            position: 'absolute',
+            left: (P[`commLogo_${i}`] ?? DEFAULT_POSITIONS[`commLogo_${i}`] ?? DEFAULT_POSITIONS.commLogo_0).x,
+            top:  (P[`commLogo_${i}`] ?? DEFAULT_POSITIONS[`commLogo_${i}`] ?? DEFAULT_POSITIONS.commLogo_0).y,
+            width: (P[`commLogo_${i}`] ?? DEFAULT_POSITIONS[`commLogo_${i}`] ?? DEFAULT_POSITIONS.commLogo_0).w,
+            height:(P[`commLogo_${i}`] ?? DEFAULT_POSITIONS[`commLogo_${i}`] ?? DEFAULT_POSITIONS.commLogo_0).h,
+            objectFit: 'contain',
+          }}
+          onLoad={onLoad} onError={onLoad} />
+      ) : null)}
 
       {/* Junta Directiva */}
       <div style={{ position: 'absolute', left: P.boardText.x, top: P.boardText.y, width: P.boardText.w, textAlign: 'center' }}>
@@ -124,9 +157,6 @@ function SpecialCertCanvas({ certRef, tpl, data, positions: P, certCode, dateFor
           {tpl.boardText || 'Junta Directiva 2025-2027'}
         </span>
       </div>
-
-      {/* Divider */}
-      <div style={{ position: 'absolute', top: 148, left: 42, right: 40, height: 2, background: 'linear-gradient(to right, #1e5c8b, #d63384, #e8c03a)' }} />
 
       {/* Título y comisiones */}
       <div style={{ position: 'absolute', left: P.titleBlock.x, top: P.titleBlock.y, width: P.titleBlock.w, textAlign: 'center' }}>
@@ -231,7 +261,7 @@ function SpecialCertCanvas({ certRef, tpl, data, positions: P, certCode, dateFor
 }
 
 // ── Preview interactivo — usa ref INTERNO para display, NO para PDF ──────────
-function InteractiveCertPreview({ positions, onPositionChange, selectedEl, onSelectEl, ...canvasProps }) {
+function InteractiveCertPreview({ positions, onPositionChange, selectedEl, onSelectEl, elements, ...canvasProps }) {
   const containerRef = useRef(null);
   const displayRef   = useRef(null); // solo para mostrar, no se usa en html2canvas
   const [cw, setCw] = useState(640);
@@ -285,8 +315,8 @@ function InteractiveCertPreview({ positions, onPositionChange, selectedEl, onSel
       <div style={{ position: 'absolute', top: 0, left: 0, width: CANVAS_W, height: CANVAS_H, transformOrigin: 'top left', transform: `scale(${scale})`, pointerEvents: 'none' }}>
         <SpecialCertCanvas certRef={displayRef} positions={positions} {...canvasProps} />
       </div>
-      {ELEMENTS.map(({ id, label, color }) => {
-        const p = positions[id];
+      {elements.map(({ id, label, color }) => {
+        const p = positions[id] ?? DEFAULT_POSITIONS[id] ?? { x: 0, y: 0, w: 100, h: 80 };
         const isSel = selectedEl === id;
         return (
           <div key={id}
@@ -316,7 +346,7 @@ function InteractiveCertPreview({ positions, onPositionChange, selectedEl, onSel
 }
 
 // ── Componente principal ─────────────────────────────────────────────────────
-export default function VolunteerAccreditationManager({ certTemplate }) {
+export default function VolunteerAccreditationManager({ certTemplate, reprintCert, onReprintConsumed }) {
   const [tab, setTab] = useState('individual');
   const [form, setForm] = useState({ ...DEFAULT_FORM });
   // Individual cert lookup
@@ -397,13 +427,29 @@ export default function VolunteerAccreditationManager({ certTemplate }) {
     }
   }, [applySettings]);
 
-  const selectedCommissions = availableCommissions.filter(c => form.selectedCommissions.includes(c.id));
+  // Cuando se viene de una reimpresión, usar el snapshot guardado en BD (firmas exactas del momento de emisión)
+  const [reprintCommissionsSnap, setReprintCommissionsSnap] = useState(null);
+  const selectedCommissions = reprintCommissionsSnap ?? availableCommissions.filter(c => form.selectedCommissions.includes(c.id));
+
+  // Elementos dinámicos: logos fijos + logos de comisiones que tengan logo_url + elementos de texto
+  const elements = [
+    ...LOGO_ELEMENTS_STATIC,
+    ...selectedCommissions.reduce((acc, c, i) => {
+      if (c.logo_url) acc.push({ id: `commLogo_${i}`, label: `Logo: ${(c.commission_name || '').slice(0, 18)}`, color: '#2dd4bf', isLogo: true });
+      return acc;
+    }, []),
+    ...TEXT_ELEMENTS,
+  ];
+
   const setField = (k, v) => setForm(p => ({ ...p, [k]: v }));
-  const toggleCommission = (id) => setForm(p => ({
-    ...p, selectedCommissions: p.selectedCommissions.includes(id)
-      ? p.selectedCommissions.filter(x => x !== id)
-      : [...p.selectedCommissions, id],
-  }));
+  const toggleCommission = (id) => {
+    setReprintCommissionsSnap(null); // salir del modo snapshot al editar comisiones
+    setForm(p => ({
+      ...p, selectedCommissions: p.selectedCommissions.includes(id)
+        ? p.selectedCommissions.filter(x => x !== id)
+        : [...p.selectedCommissions, id],
+    }));
+  };
   const setTraining = (i, k, v) => setForm(p => { const ts = [...p.trainings]; ts[i] = { ...ts[i], [k]: v }; return { ...p, trainings: ts }; });
   const onPositionChange = useCallback((id, upd) => setPositions(prev => ({ ...prev, [id]: upd })), []);
   const adjFs = useCallback((id, delta) => setPositions(prev => ({
@@ -414,8 +460,7 @@ export default function VolunteerAccreditationManager({ certTemplate }) {
   })), []);
 
   // ── Lookup single ──
-  const lookupSingle = async () => {
-    const num = singleNum.trim();
+  const lookupSingleByNum = async (num) => {
     if (!num) return;
     setSingleLooking(true); setSingleLookup(null);
     try {
@@ -430,8 +475,50 @@ export default function VolunteerAccreditationManager({ certTemplate }) {
     setSingleLooking(false);
   };
 
+  const lookupSingle = () => lookupSingleByNum(singleNum.trim());
+
+  // ── Reimpresión desde tabla de admin ──
+  // Carga todos los datos del registro original: no genera código nuevo ni llama al API externo.
+  useEffect(() => {
+    if (!reprintCert) return;
+    const { recipient_name, collegiate_number, certificate_code, status, cert_data, commissions_snapshot } = reprintCert;
+    const num = String(collegiate_number).trim();
+
+    setTab('individual');
+    setSingleNum(num);
+    setSingleLookup({ num, name: recipient_name, status: status || 'ACTIVO' });
+    setSavedCode(certificate_code); // previene crear un registro duplicado al descargar
+    setImageLoaded(false);
+    setMsg({ type: 'info', text: `Reimprimiendo acreditación ${certificate_code}. Los datos son los del registro original.` });
+
+    // Cargar los campos del certificado original
+    setForm(p => ({
+      ...p,
+      recipientName:       recipient_name,
+      collegiateNumber:    num,
+      certTitle:           cert_data?.certTitle           ?? p.certTitle,
+      totalHours:          cert_data?.totalHours          ?? p.totalHours,
+      commissionName:      cert_data?.commissionName      ?? p.commissionName,
+      validFrom:           cert_data?.validFrom           ?? p.validFrom,
+      validTo:             cert_data?.validTo             ?? p.validTo,
+      bodyText:            cert_data?.bodyText            ?? p.bodyText,
+      trainings:           cert_data?.trainings           ?? p.trainings,
+      includePresident:    cert_data?.includePresident    ?? p.includePresident,
+      selectedCommissions: cert_data?.selectedCommissions ?? p.selectedCommissions,
+    }));
+
+    // Usar el snapshot de comisiones exacto (firmas y datos del momento de emisión)
+    if (commissions_snapshot?.length) {
+      setReprintCommissionsSnap(commissions_snapshot);
+    }
+
+    onReprintConsumed?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reprintCert]);
+
   const resetSingle = () => {
     setSingleNum(''); setSingleLookup(null); setSavedCode(null); setImageLoaded(false); setMsg(null);
+    setReprintCommissionsSnap(null);
     setForm(p => ({ ...p, recipientName: '', collegiateNumber: '' }));
   };
 
@@ -503,7 +590,7 @@ export default function VolunteerAccreditationManager({ certTemplate }) {
             bodyText: form.bodyText, trainings: form.trainings,
             includePresident: form.includePresident, selectedCommissions: form.selectedCommissions,
           },
-          commissions_snapshot: selectedCommissions.map(c => ({ id: c.id, commission_name: c.commission_name, signer_name: c.signer_name, signer_title: c.signer_title, signature_url: c.signature_url })),
+          commissions_snapshot: selectedCommissions.map(c => ({ id: c.id, commission_name: c.commission_name, signer_name: c.signer_name, signer_title: c.signer_title, signature_url: c.signature_url, logo_url: c.logo_url || null })),
         });
         if (error && error.code !== '23505') throw error;
         setSavedCode(code);
@@ -564,7 +651,7 @@ export default function VolunteerAccreditationManager({ certTemplate }) {
               bodyText: form.bodyText, trainings: form.trainings,
               includePresident: form.includePresident, selectedCommissions: form.selectedCommissions,
             },
-            commissions_snapshot: selectedCommissions.map(c => ({ id: c.id, commission_name: c.commission_name, signer_name: c.signer_name, signer_title: c.signer_title, signature_url: c.signature_url })),
+            commissions_snapshot: selectedCommissions.map(c => ({ id: c.id, commission_name: c.commission_name, signer_name: c.signer_name, signer_title: c.signer_title, signature_url: c.signature_url, logo_url: c.logo_url || null })),
           }).then(() => {});
         }
 
@@ -616,8 +703,8 @@ export default function VolunteerAccreditationManager({ certTemplate }) {
   return (
     <div className="p-6 space-y-6">
       {msg && (
-        <div className={`rounded-lg px-4 py-3 text-sm flex items-center gap-2 border ${msg.type === 'success' ? 'bg-green-900/20 border-green-700 text-green-300' : 'bg-red-900/20 border-red-700 text-red-300'}`}>
-          {msg.type === 'success' ? <CheckCircle size={15}/> : <XCircle size={15}/>}
+        <div className={`rounded-lg px-4 py-3 text-sm flex items-center gap-2 border ${msg.type === 'success' ? 'bg-green-900/20 border-green-700 text-green-300' : msg.type === 'info' ? 'bg-blue-900/20 border-blue-700 text-blue-300' : 'bg-red-900/20 border-red-700 text-red-300'}`}>
+          {msg.type === 'success' ? <CheckCircle size={15}/> : msg.type === 'info' ? <Printer size={15}/> : <XCircle size={15}/>}
           {msg.text}
         </div>
       )}
@@ -943,67 +1030,76 @@ export default function VolunteerAccreditationManager({ certTemplate }) {
         <div className="flex flex-col lg:flex-row gap-4">
           {/* Sidebar */}
           <div className="lg:w-52 shrink-0 space-y-1">
-            {ELEMENTS.map(({ id, label, color }) => (
+            {elements.map(({ id, label, color, isLogo }) => (
               <button key={id} onClick={() => setSelectedEl(selectedEl === id ? null : id)}
                 className={`w-full text-left px-3 py-2 rounded-lg text-xs font-medium transition flex items-center gap-2 ${selectedEl === id ? 'text-white' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
                 style={{ background: selectedEl === id ? `${color}25` : undefined, borderLeft: selectedEl === id ? `3px solid ${color}` : '3px solid transparent' }}>
-                <Move size={10} style={{ color, flexShrink: 0 }} />{label}
+                {isLogo
+                  ? <svg width="10" height="10" viewBox="0 0 10 10" style={{ color, flexShrink: 0 }}><rect x="0" y="0" width="10" height="7" rx="1" fill={color}/><circle cx="3" cy="3" r="1.2" fill="#fff"/></svg>
+                  : <Move size={10} style={{ color, flexShrink: 0 }} />
+                }
+                {label}
               </button>
             ))}
 
-            {selectedEl && (
-              <div className="mt-2 p-3 bg-black/30 border border-gray-800 rounded-xl text-xs text-gray-400 space-y-2">
-                <p className="text-white font-bold text-[11px]">{ELEMENTS.find(e => e.id === selectedEl)?.label}</p>
-                {['x','y','w','h'].map(k => (
-                  <div key={k} className="flex items-center justify-between gap-2">
-                    <span className="uppercase text-gray-600 w-3">{k}</span>
-                    <input type="number" value={Math.round(positions[selectedEl][k])}
-                      onChange={e => onPositionChange(selectedEl, { ...positions[selectedEl], [k]: Number(e.target.value) })}
-                      className="w-16 bg-black border border-gray-700 rounded px-1.5 py-0.5 text-white text-xs text-right focus:border-blue-500 outline-none" />
-                  </div>
-                ))}
-                {/* Font size — texto principal */}
-                <div className="pt-1 border-t border-gray-800">
-                  <p className="text-gray-600 text-[10px] mb-1.5">
-                    {ELEMENTS.find(e => e.id === selectedEl)?.hasFs2 ? 'Título principal' : 'Tamaño de fuente'}
-                  </p>
-                  <div className="flex items-center gap-2">
-                    <button onClick={() => adjFs(selectedEl, -1)}
-                      className="w-7 h-7 flex items-center justify-center bg-gray-800 hover:bg-gray-700 rounded text-white font-bold transition">
-                      <Minus size={11}/>
-                    </button>
-                    <span className="flex-1 text-center text-white text-sm font-mono font-bold">
-                      {positions[selectedEl].fs ?? DEFAULT_POSITIONS[selectedEl].fs}
-                    </span>
-                    <button onClick={() => adjFs(selectedEl, +1)}
-                      className="w-7 h-7 flex items-center justify-center bg-gray-800 hover:bg-gray-700 rounded text-white font-bold transition">
-                      +
-                    </button>
-                  </div>
-                </div>
-                {/* Font size — textos secundarios (solo titleBlock y recipientBlock) */}
-                {ELEMENTS.find(e => e.id === selectedEl)?.hasFs2 && (
-                  <div className="pt-1 border-t border-gray-800">
-                    <p className="text-gray-600 text-[10px] mb-1.5">
-                      {ELEMENTS.find(e => e.id === selectedEl)?.fs2Label}
-                    </p>
-                    <div className="flex items-center gap-2">
-                      <button onClick={() => adjFs2(selectedEl, -1)}
-                        className="w-7 h-7 flex items-center justify-center bg-gray-800 hover:bg-gray-700 rounded text-white font-bold transition">
-                        <Minus size={11}/>
-                      </button>
-                      <span className="flex-1 text-center text-white text-sm font-mono font-bold">
-                        {positions[selectedEl].fs2 ?? DEFAULT_POSITIONS[selectedEl].fs2 ?? 14}
-                      </span>
-                      <button onClick={() => adjFs2(selectedEl, +1)}
-                        className="w-7 h-7 flex items-center justify-center bg-gray-800 hover:bg-gray-700 rounded text-white font-bold transition">
-                        +
-                      </button>
+            {selectedEl && (() => {
+              const elDef = elements.find(e => e.id === selectedEl);
+              const curPos = positions[selectedEl] ?? DEFAULT_POSITIONS[selectedEl] ?? { x: 0, y: 0, w: 100, h: 80 };
+              return (
+                <div className="mt-2 p-3 bg-black/30 border border-gray-800 rounded-xl text-xs text-gray-400 space-y-2">
+                  <p className="text-white font-bold text-[11px]">{elDef?.label}</p>
+                  {['x','y','w','h'].map(k => (
+                    <div key={k} className="flex items-center justify-between gap-2">
+                      <span className="uppercase text-gray-600 w-3">{k}</span>
+                      <input type="number" value={Math.round(curPos[k] ?? 0)}
+                        onChange={e => onPositionChange(selectedEl, { ...curPos, [k]: Number(e.target.value) })}
+                        className="w-16 bg-black border border-gray-700 rounded px-1.5 py-0.5 text-white text-xs text-right focus:border-blue-500 outline-none" />
                     </div>
-                  </div>
-                )}
-              </div>
-            )}
+                  ))}
+                  {/* Controles de fuente — solo para elementos de texto (no logos) */}
+                  {!elDef?.isLogo && (
+                    <>
+                      <div className="pt-1 border-t border-gray-800">
+                        <p className="text-gray-600 text-[10px] mb-1.5">
+                          {elDef?.hasFs2 ? 'Título principal' : 'Tamaño de fuente'}
+                        </p>
+                        <div className="flex items-center gap-2">
+                          <button onClick={() => adjFs(selectedEl, -1)}
+                            className="w-7 h-7 flex items-center justify-center bg-gray-800 hover:bg-gray-700 rounded text-white font-bold transition">
+                            <Minus size={11}/>
+                          </button>
+                          <span className="flex-1 text-center text-white text-sm font-mono font-bold">
+                            {curPos.fs ?? DEFAULT_POSITIONS[selectedEl]?.fs ?? 12}
+                          </span>
+                          <button onClick={() => adjFs(selectedEl, +1)}
+                            className="w-7 h-7 flex items-center justify-center bg-gray-800 hover:bg-gray-700 rounded text-white font-bold transition">
+                            +
+                          </button>
+                        </div>
+                      </div>
+                      {elDef?.hasFs2 && (
+                        <div className="pt-1 border-t border-gray-800">
+                          <p className="text-gray-600 text-[10px] mb-1.5">{elDef.fs2Label}</p>
+                          <div className="flex items-center gap-2">
+                            <button onClick={() => adjFs2(selectedEl, -1)}
+                              className="w-7 h-7 flex items-center justify-center bg-gray-800 hover:bg-gray-700 rounded text-white font-bold transition">
+                              <Minus size={11}/>
+                            </button>
+                            <span className="flex-1 text-center text-white text-sm font-mono font-bold">
+                              {curPos.fs2 ?? DEFAULT_POSITIONS[selectedEl]?.fs2 ?? 14}
+                            </span>
+                            <button onClick={() => adjFs2(selectedEl, +1)}
+                              className="w-7 h-7 flex items-center justify-center bg-gray-800 hover:bg-gray-700 rounded text-white font-bold transition">
+                              +
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              );
+            })()}
           </div>
 
           {/* Canvas interactivo — solo para display, usa ref interno */}
@@ -1013,6 +1109,7 @@ export default function VolunteerAccreditationManager({ certTemplate }) {
               onPositionChange={onPositionChange}
               selectedEl={selectedEl}
               onSelectEl={setSelectedEl}
+              elements={elements}
               tpl={tpl}
               data={form}
               certCode={certCode}
@@ -1029,8 +1126,8 @@ export default function VolunteerAccreditationManager({ certTemplate }) {
         </div>
       </div>
 
-      {/* ── Canvas oculto para captura PDF — sin transform, tamaño natural ── */}
-      <div style={{ position: 'fixed', left: -9999, top: -9999, width: CANVAS_W, height: CANVAS_H, pointerEvents: 'none', zIndex: -1 }} aria-hidden="true">
+      {/* ── Canvas oculto para captura PDF — en 0,0 detrás del contenido, sin transform ── */}
+      <div style={{ position: 'fixed', left: 0, top: 0, width: CANVAS_W, height: CANVAS_H, pointerEvents: 'none', zIndex: -9999 }} aria-hidden="true">
         <SpecialCertCanvas
           certRef={certRef}
           tpl={tpl}
