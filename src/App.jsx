@@ -273,6 +273,8 @@ const getCertQrUrl = (code) => {
 function CertificateVerifyView({ code }) {
   const [status, setStatus] = useState('loading');
   const [cert, setCert] = useState(null);
+  const [liveStatus, setLiveStatus] = useState(null);
+  const [fetchingLive, setFetchingLive] = useState(false);
 
   useEffect(() => {
     const verify = async () => {
@@ -286,6 +288,20 @@ function CertificateVerifyView({ code }) {
         if (error || !data) { setStatus('not_found'); return; }
         setCert(data);
         setStatus('found');
+        // Consultar estado actual del CPG en tiempo real
+        if (data.collegiate_number && data.collegiate_number !== '0000') {
+          setFetchingLive(true);
+          try {
+            const res = await fetch(EDGE_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: String(data.collegiate_number).trim() }) });
+            const cpgData = await res.json();
+            const apiStatus = String(cpgData?.status || '').toUpperCase().trim();
+            if (apiStatus && apiStatus !== 'DESCONOCIDO') {
+              setLiveStatus(apiStatus);
+              await supabase.from('cpg_certificates').update({ status: apiStatus }).eq('certificate_code', code);
+            }
+          } catch {}
+          setFetchingLive(false);
+        }
       } catch {
         setStatus('error');
       }
@@ -3163,9 +3179,10 @@ function QuestionEditor({ question, idx, onQuestionChange }) {
 // ── LIVE ADMIN PANEL ──────────────────────────────
 function LiveAdminPanel({ liveSession, onSave, onOpenAttendance, commissions = [], activities = [] }) {
   const PLATFORMS = [
-    { id: 'youtube', label: 'YouTube Live', hint: 'Pega la URL del video en vivo', color: 'border-red-600 bg-red-900/20 text-red-300' },
-    { id: 'zoom',    label: 'Zoom',         hint: 'Pega el enlace de invitación de Zoom', color: 'border-blue-600 bg-blue-900/20 text-blue-300' },
-    { id: 'meet',    label: 'Google Meet',  hint: 'Pega el enlace de Google Meet', color: 'border-green-600 bg-green-900/20 text-green-300' },
+    { id: 'youtube', label: 'YouTube Live',   hint: 'Pega la URL del video en vivo',               color: 'border-red-600 bg-red-900/20 text-red-300' },
+    { id: 'zoom',    label: 'Zoom',            hint: 'Pega el enlace de invitación de Zoom',         color: 'border-blue-600 bg-blue-900/20 text-blue-300' },
+    { id: 'meet',    label: 'Google Meet',     hint: 'Pega el enlace de Google Meet',                color: 'border-green-600 bg-green-900/20 text-green-300' },
+    { id: 'teams',   label: 'Microsoft Teams', hint: 'Pega el enlace de reunión de Microsoft Teams', color: 'border-purple-600 bg-purple-900/20 text-purple-300' },
   ];
   const EMPTY_LIVE_FORM = { title: '', platform: 'youtube', url: '', hasCommissions: false, commissions: [] };
   const [form, setForm] = useState(EMPTY_LIVE_FORM);
@@ -3462,7 +3479,7 @@ function LiveSessionView({ session, onBack, sessionUser, onRegisterAttendance })
   };
 
   const extractYTId = (url) => { if (!url) return ''; try { const u = new URL(url); if (u.hostname.includes('youtu.be')) return u.pathname.replace('/', ''); if (u.searchParams.has('v')) return u.searchParams.get('v'); } catch {} return url.trim().replace(/^https?:\/\/.*?v=/, '').split('&')[0]; };
-  const platformMeta = { youtube: { label: 'YouTube Live', color: 'bg-red-700', icon: '▶', embedable: true }, zoom: { label: 'Zoom', color: 'bg-blue-700', icon: '🎥', embedable: false }, meet: { label: 'Google Meet', color: 'bg-green-700', icon: '📹', embedable: false } };
+  const platformMeta = { youtube: { label: 'YouTube Live', color: 'bg-red-700', icon: '▶', embedable: true }, zoom: { label: 'Zoom', color: 'bg-blue-700', icon: '🎥', embedable: false }, meet: { label: 'Google Meet', color: 'bg-green-700', icon: '📹', embedable: false }, teams: { label: 'Microsoft Teams', color: 'bg-purple-700', icon: '💼', embedable: false } };
   const meta = platformMeta[session?.platform] || platformMeta.zoom;
 
   return (
@@ -3535,11 +3552,15 @@ function LiveSessionView({ session, onBack, sessionUser, onRegisterAttendance })
             <iframe src={`https://www.youtube.com/embed/${extractYTId(session.url)}?autoplay=1&rel=0&modestbranding=1`} title="Transmisión en vivo" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen className="w-full h-full" />
           </div>
         )}
-        {(session?.platform === 'zoom' || session?.platform === 'meet') && session?.url && (
+        {(session?.platform === 'zoom' || session?.platform === 'meet' || session?.platform === 'teams') && session?.url && (
           <div className="rounded-2xl border border-gray-700 bg-[#141414] p-8 md:p-12 text-center">
             <div className="text-5xl mb-4">{meta.icon}</div>
             <h2 className="text-xl font-bold text-white mb-2">La sesión se transmite por {meta.label}</h2>
-            <p className="text-gray-400 text-sm mb-8 max-w-md mx-auto">Haz clic en el botón para unirte directamente.{session.platform === 'zoom' && ' Es posible que necesites tener instalada la aplicación de Zoom.'}</p>
+            <p className="text-gray-400 text-sm mb-8 max-w-md mx-auto">
+              Haz clic en el botón para unirte directamente.
+              {session.platform === 'zoom' && ' Es posible que necesites tener instalada la aplicación de Zoom.'}
+              {session.platform === 'teams' && ' Es posible que necesites tener instalada la aplicación de Microsoft Teams.'}
+            </p>
             <a href={session.url} target="_blank" rel="noreferrer" className={`inline-flex items-center gap-3 text-white font-bold px-8 py-4 rounded-xl text-lg shadow-lg transition ${meta.color} hover:opacity-90`}><Video size={22} /> Unirme a {meta.label}</a>
           </div>
         )}
