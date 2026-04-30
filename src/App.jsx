@@ -1937,8 +1937,8 @@ function CertificateCanvas({ certRef, onImageLoaded, tpl, recipientName, statusT
     }
     return acc;
   }, {});
-  const statusColor = statusText?.includes('ACTIVO') ? '#166534' : '#991b1b';
-  const statusLabel = statusText?.includes('ACTIVO') ? 'ACTIVO' : statusText?.includes('INACTIVO') ? 'INACTIVO' : statusText;
+  const statusColor = statusText === 'ACTIVO' ? '#166534' : '#991b1b';
+  const statusLabel = statusText === 'ACTIVO' ? 'ACTIVO' : statusText === 'INACTIVO' ? 'INACTIVO' : statusText;
   const showStatus = statusText && statusText !== 'DESCONOCIDO' && statusText !== 'INVITADO' && statusText.length > 0;
   const dynTitleSize = videoTitle.length > 60 ? Math.max(L.courseTitle.fontSize - 7, 14) : videoTitle.length > 40 ? Math.max(L.courseTitle.fontSize - 4, 16) : L.courseTitle.fontSize;
 
