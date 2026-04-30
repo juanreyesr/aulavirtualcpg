@@ -2279,12 +2279,28 @@ function CertificateReprintView({ cert, onBack, certTemplate, videos = [] }) {
   const certRef = useRef(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [imageLoaded, setImageLoaded] = useState(false);
+  const [liveStatus, setLiveStatus] = useState(null);
+
+  useEffect(() => {
+    const num = cert.collegiate_number;
+    if (!num || num === '0000') return;
+    fetch(EDGE_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: String(num).trim() }) })
+      .then(r => r.json())
+      .then(data => {
+        const s = String(data?.estatus || data?.status || '').toUpperCase().trim();
+        if (s && s !== 'DESCONOCIDO') {
+          setLiveStatus(s);
+          supabase.from('cpg_certificates').update({ status: s }).eq('certificate_code', cert.certificate_code).then(() => {});
+        }
+      })
+      .catch(() => {});
+  }, [cert.collegiate_number, cert.certificate_code]);
 
   const tpl = { ...DEFAULT_CERT_CONFIG, ...certTemplate };
   const issuedDate = new Date(cert.issued_at);
   const dateFormatted = issuedDate.toLocaleDateString('es-GT', { year: 'numeric', month: 'long', day: 'numeric' });
   const qrUrl = getCertQrUrl(cert.certificate_code);
-  const statusText = cert.status || '';
+  const statusText = liveStatus || cert.status || '';
 
   const handleDownloadPDF = async () => {
     if (!certRef.current || !imageLoaded) { alert('Espera a que la plantilla cargue completamente.'); return; }
@@ -2981,25 +2997,26 @@ function CertificateView({ video, userProfile, sessionUser, onBack, certTemplate
 
   useEffect(() => {
     const tryResolve = async () => {
-      const profileStatus = String(userProfile.status || '').toUpperCase().trim();
-      if (profileStatus && profileStatus !== 'DESCONOCIDO' && profileStatus !== 'INVITADO') {
-        setResolvedStatus(profileStatus); return;
+      const num = userProfile.collegiateNumber || sessionUser?.collegiateNumber;
+      if (!num || num === '0000') {
+        // Guest — use whatever status is available from profile/session
+        const fallback = String(userProfile.status || sessionUser?.status || '').toUpperCase().trim();
+        if (fallback) setResolvedStatus(fallback);
+        return;
       }
-      const sessionStatus = String(sessionUser?.status || '').toUpperCase().trim();
-      if (sessionStatus && sessionStatus !== 'DESCONOCIDO' && sessionStatus !== 'INVITADO') {
-        setResolvedStatus(sessionStatus); return;
-      }
-      const collegiateNum = userProfile.collegiateNumber || sessionUser?.collegiateNumber;
-      if (!collegiateNum || collegiateNum === '0000') return;
+      // Always fetch live status from CPG API for real colegiados
       try {
-        const res = await fetch(EDGE_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: collegiateNum }) });
+        const res = await fetch(EDGE_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: num }) });
         const data = await res.json();
-        const apiStatus = String(data?.estatus || '').toUpperCase().trim();
-        if (apiStatus && apiStatus !== 'DESCONOCIDO') setResolvedStatus(apiStatus);
+        const apiStatus = String(data?.estatus || data?.status || '').toUpperCase().trim();
+        if (apiStatus && apiStatus !== 'DESCONOCIDO') { setResolvedStatus(apiStatus); return; }
       } catch {}
+      // Fallback to cached session status if API fails
+      const fallback = String(userProfile.status || sessionUser?.status || '').toUpperCase().trim();
+      if (fallback) setResolvedStatus(fallback);
     };
     tryResolve();
-  }, [userProfile.status, userProfile.collegiateNumber]);
+  }, [userProfile.collegiateNumber, sessionUser?.collegiateNumber]);
 
   useEffect(() => {
     if (!supabase || saved) return;
