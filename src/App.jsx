@@ -1312,7 +1312,8 @@ export default function App() {
               .select('email')
               .eq('collegiate_number', collegiateNumber)
               .maybeSingle();
-            if (existing?.email && existing.email.toLowerCase() !== googleEmail.toLowerCase()) {
+            // Colegiado de prueba (100000): permitir cualquier cuenta de Google
+            if (collegiateNumber !== '100000' && existing?.email && existing.email.toLowerCase() !== googleEmail.toLowerCase()) {
               await supabase.auth.signOut();
               localStorage.setItem('cpg_google_blocked', JSON.stringify({
                 maskedEmail: existing.email.slice(0,3) + '***@' + existing.email.split('@')[1],
@@ -4576,6 +4577,63 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
   const EMPTY_ACTIVITY_FORM = { title: '', organizer: '', date: '', time: '', horas: '', location: '', registrationLink: '', meetingLink: '', isFull: false, participants: '', costType: 'free', cost: '', scholarshipPct: '', scholarshipAmt: '', hasCommissions: false, commissions: [] };
   const [activityForm, setActivityForm] = useState(EMPTY_ACTIVITY_FORM);
   const [syncMsg, setSyncMsg] = useState('');
+  const [verifyStatusLoading, setVerifyStatusLoading] = useState(false);
+  const [verifyStatusMsg, setVerifyStatusMsg] = useState('');
+
+  // Verifica y actualiza el estado CPG de los certificados filtrados que no están como ACTIVO
+  const verifyFilteredStatus = async () => {
+    if (!supabase || verifyStatusLoading) return;
+    // Replicar la misma lógica de filtrado de la vista
+    const dateFiltered = certsData.filter(c => {
+      const d = new Date(c.issued_at);
+      if (certsDateMode === 'month' && certsDateMonth) {
+        const [y, m] = certsDateMonth.split('-').map(Number);
+        return d.getFullYear() === y && (d.getMonth() + 1) === m;
+      }
+      if (certsDateMode === 'range') {
+        if (certsDateStart && d < new Date(certsDateStart + 'T00:00:00')) return false;
+        if (certsDateEnd && d > new Date(certsDateEnd + 'T23:59:59')) return false;
+      }
+      return true;
+    });
+    const filtered = certsFilter
+      ? dateFiltered.filter(c => {
+          const q = certsFilter.toLowerCase();
+          return c.collegiate_number?.includes(q) || c.recipient_name?.toLowerCase().includes(q) || c.video_title?.toLowerCase().includes(q);
+        })
+      : dateFiltered;
+    // Solo los que NO son ACTIVO y tienen número válido
+    const toVerify = filtered.filter(c => c.status !== 'ACTIVO' && c.collegiate_number && c.collegiate_number !== '0000' && c.collegiate_number !== '100000');
+    if (toVerify.length === 0) {
+      setVerifyStatusMsg('✓ Todos los certificados filtrados ya están ACTIVO');
+      setTimeout(() => setVerifyStatusMsg(''), 4000);
+      return;
+    }
+    setVerifyStatusLoading(true);
+    setVerifyStatusMsg(`Verificando ${toVerify.length} certificado(s)...`);
+    // Agrupar por collegiate_number para no hacer llamadas duplicadas
+    const uniqueNums = [...new Set(toVerify.map(c => c.collegiate_number))];
+    let updated = 0;
+    for (const num of uniqueNums) {
+      try {
+        const res = await fetch(EDGE_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: String(num).trim() }) });
+        const cpgData = await res.json();
+        const newStatus = String(cpgData?.status || cpgData?.estatus || '').toUpperCase().trim();
+        if (newStatus && newStatus !== 'DESCONOCIDO') {
+          await supabase.from('cpg_certificates').update({ status: newStatus }).eq('collegiate_number', num).neq('status', newStatus);
+          updated++;
+        }
+      } catch {}
+    }
+    // Recargar la tabla
+    setCertsLoaded(false);
+    const { data } = await supabase.from('cpg_certificates').select('*').order('issued_at', { ascending: false });
+    if (data) setCertsData(data);
+    setCertsLoaded(true);
+    setVerifyStatusLoading(false);
+    setVerifyStatusMsg(`✓ ${updated} colegiado(s) actualizados`);
+    setTimeout(() => setVerifyStatusMsg(''), 5000);
+  };
 
   // Backfill: actualiza video_duration y video_title en certificados que tienen horas vacías
   const syncCertHours = React.useCallback(async (showMsg = false) => {
@@ -5078,7 +5136,16 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
                 >
                   ⟳ Sincronizar horas
                 </button>
+                <button
+                  onClick={verifyFilteredStatus}
+                  disabled={verifyStatusLoading}
+                  title="Consulta el CPG y actualiza el estado de los certificados filtrados que no están ACTIVO"
+                  className="flex items-center gap-2 bg-teal-700 hover:bg-teal-600 disabled:bg-teal-900 disabled:cursor-not-allowed px-3 py-2 rounded-lg text-sm font-semibold transition text-white"
+                >
+                  {verifyStatusLoading ? <><Loader2 size={14} className="animate-spin" /> Verificando...</> : <><UserCheck size={14} /> Verificar estado</>}
+                </button>
                 {syncMsg && <span className="text-xs self-center text-indigo-300">{syncMsg}</span>}
+                {verifyStatusMsg && <span className="text-xs self-center text-teal-300">{verifyStatusMsg}</span>}
               </div>
             </div>
 
