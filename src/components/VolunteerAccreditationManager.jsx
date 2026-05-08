@@ -346,7 +346,7 @@ function InteractiveCertPreview({ positions, onPositionChange, selectedEl, onSel
 }
 
 // ── Componente principal ─────────────────────────────────────────────────────
-export default function VolunteerAccreditationManager({ certTemplate, reprintCert, onReprintConsumed }) {
+export default function VolunteerAccreditationManager({ certTemplate, reprintCert, onReprintConsumed, autoDownload = false, onAutoDownloadConsumed }) {
   const [tab, setTab] = useState('individual');
   const [form, setForm] = useState({ ...DEFAULT_FORM });
   // Individual cert lookup
@@ -373,11 +373,16 @@ export default function VolunteerAccreditationManager({ certTemplate, reprintCer
   const [bulkAllPdfUrl, setBulkAllPdfUrl] = useState(null);
 
   const certRef = useRef(null);
+  // Ref para fijar el código durante la captura y evitar que Math.random() cambie en cada re-render
+  const certCodeRef = useRef(null);
+  const [autoDownloadPending, setAutoDownloadPending] = useState(false);
+
   const tpl = { ...certTemplate };
   const now = new Date();
   const dateFormatted = now.toLocaleDateString('es-GT', { year: 'numeric', month: 'long', day: 'numeric' });
   const genCode = (num) => `VOL-${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}-${String(num).padStart(4,'0')}-${Math.random().toString(36).substr(2,4).toUpperCase()}`;
-  const certCode = savedCode ?? genCode(form.collegiateNumber || '0000');
+  // certCode: usa el ref fijado durante generación, luego savedCode, luego genera uno temporal estable
+  const certCode = certCodeRef.current ?? savedCode ?? genCode(form.collegiateNumber || '0000');
 
   // ── Load commissions ──
   useEffect(() => {
@@ -512,15 +517,29 @@ export default function VolunteerAccreditationManager({ certTemplate, reprintCer
       setReprintCommissionsSnap(commissions_snapshot);
     }
 
+    // Si se solicitó descarga automática (desde botón imprimir en tabla admin), activar pending
+    if (autoDownload) setAutoDownloadPending(true);
+
     onReprintConsumed?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reprintCert]);
 
   const resetSingle = () => {
     setSingleNum(''); setSingleLookup(null); setSavedCode(null); setImageLoaded(false); setMsg(null);
-    setReprintCommissionsSnap(null);
+    setReprintCommissionsSnap(null); setAutoDownloadPending(false);
     setForm(p => ({ ...p, recipientName: '', collegiateNumber: '' }));
   };
+
+  // ── Auto-descarga cuando se solicita desde botón imprimir en tabla admin ──
+  // Se activa cuando: hay pendiente + imágenes cargadas + datos del colegiado disponibles + no generando
+  useEffect(() => {
+    if (!autoDownloadPending || !imageLoaded || !singleLookup?.name || generating) return;
+    setAutoDownloadPending(false);
+    onAutoDownloadConsumed?.();
+    // Pequeño delay para que React termine el render con el certCode correcto
+    setTimeout(() => handleDownload(), 100);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoDownloadPending, imageLoaded, singleLookup?.name, generating]);
 
   // ── Guardar: localStorage primario (siempre funciona) + Supabase backup ──
   const saveLayout = async () => {
@@ -655,9 +674,13 @@ export default function VolunteerAccreditationManager({ certTemplate, reprintCer
           }).then(() => {});
         }
 
-        // Render canvas for this recipient
+        // Fijar el código en el ref ANTES de forzar el re-render, para que certCode
+        // use este valor exacto (no un random diferente generado en el próximo render)
+        certCodeRef.current = code;
+        setSavedCode(code);
         setForm(prev => ({ ...prev, recipientName: r.name, collegiateNumber: r.num }));
-        const canvas = await captureCanvas();
+        const canvas = await captureCanvas(); // 600ms → React re-renderiza con certCode = code
+        certCodeRef.current = null;
         const imgData = canvas.toDataURL('image/jpeg', 0.93);
 
         // Individual PDF
@@ -676,8 +699,14 @@ export default function VolunteerAccreditationManager({ certTemplate, reprintCer
       const allDataUrl = allPdf.output('datauristring');
       setBulkAllPdfUrl(allDataUrl);
       setBulkProgress('');
+      setSavedCode(null); // Limpiar después del bloque para no contaminar la siguiente generación
+      certCodeRef.current = null;
       setMsg({ type: 'success', text: `¡${toGen.length} acreditaciones generadas y guardadas en el registro!` });
-    } catch (e) { setMsg({ type: 'error', text: 'Error: ' + e.message }); }
+    } catch (e) {
+      setSavedCode(null);
+      certCodeRef.current = null;
+      setMsg({ type: 'error', text: 'Error: ' + e.message });
+    }
     setBulkGenerating(false);
     setBulkProgress('');
   };

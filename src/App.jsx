@@ -4550,6 +4550,7 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
   const [showUserVerifySection, setShowUserVerifySection] = useState(false);
   const [showVolunteerCertSection, setShowVolunteerCertSection] = useState(false);
   const [volunteerReprintCert, setVolunteerReprintCert] = useState(null); // registro completo a reimprimir
+  const [volunteerAutoDownload, setVolunteerAutoDownload] = useState(false); // descarga directa sin abrir editor
   const volunteerSectionRef = useRef(null);
   const [showAuditLogSection, setShowAuditLogSection] = useState(false);
   const [showBulkCert, setShowBulkCert] = useState(false);
@@ -5288,15 +5289,16 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
                                       <Printer size={13} />
                                     </button>
                                   )}
-                                  {/* Reimprimir: acreditaciones especiales */}
+                                  {/* Reimprimir: acreditaciones especiales — descarga directa, sin abrir editor */}
                                   {c.cert_type === 'volunteer' && (
                                     <button
                                       onClick={() => {
                                         setVolunteerReprintCert(c);
+                                        setVolunteerAutoDownload(true); // activa descarga automática
                                         setShowVolunteerCertSection(true);
                                         setTimeout(() => volunteerSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 150);
                                       }}
-                                      className="p-1.5 bg-yellow-900/40 hover:bg-yellow-800/60 text-yellow-300 rounded" title="Reimprimir acreditación especial">
+                                      className="p-1.5 bg-yellow-900/40 hover:bg-yellow-800/60 text-yellow-300 rounded" title="Descargar acreditación especial">
                                       <Printer size={13} />
                                     </button>
                                   )}
@@ -5337,6 +5339,8 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
               certTemplate={certTemplate}
               reprintCert={volunteerReprintCert}
               onReprintConsumed={() => setVolunteerReprintCert(null)}
+              autoDownload={volunteerAutoDownload}
+              onAutoDownloadConsumed={() => setVolunteerAutoDownload(false)}
             />
           </div>
         )}
