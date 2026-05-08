@@ -160,18 +160,20 @@ function SpecialCertCanvas({ certRef, tpl, data, positions: P, certCode, dateFor
 
       {/* Título y comisiones */}
       <div style={{ position: 'absolute', left: P.titleBlock.x, top: P.titleBlock.y, width: P.titleBlock.w, textAlign: 'center' }}>
-        {/* Línea CAEDUC */}
-        <div style={commStyle}>{data.caeducLine || 'La Comisión de Acreditación y Educación Continua mediante el Aula Virtual'}</div>
+        {/* Línea principal (CAEDUC u otra institución) — vacía si el usuario la borró */}
+        {data.caeducLine ? <div style={commStyle}>{data.caeducLine}</div> : null}
         {/* Comisiones adicionales */}
         {selectedCommissions.map((c, i) => (
           <div key={c.id} style={commStyle}>
-            {data.commissionPrefix || 'en conjunto con la'} {c.commission_name}
+            {data.commissionPrefix ? `${data.commissionPrefix} ` : ''}{c.commission_name}
           </div>
         ))}
-        {/* "confieren la siguiente:" — transición hacia el título */}
-        <div style={{ fontSize: fs2('titleBlock'), color: '#555', fontStyle: 'italic', lineHeight: 1.4, textAlign: 'center', marginTop: 6 }}>
-          {data.conferText || 'confieren la siguiente:'}
-        </div>
+        {/* Transición hacia el título — vacía si el usuario la borró */}
+        {data.conferText ? (
+          <div style={{ fontSize: fs2('titleBlock'), color: '#555', fontStyle: 'italic', lineHeight: 1.4, textAlign: 'center', marginTop: 6 }}>
+            {data.conferText}
+          </div>
+        ) : null}
         {/* Título principal */}
         <div style={{ fontSize: fs('titleBlock'), fontWeight: 700, color: '#1e5c8b', marginTop: 4, letterSpacing: '0.03em', wordWrap: 'break-word' }}>
           {data.certTitle || 'Acreditación de Voluntario'}
@@ -187,14 +189,14 @@ function SpecialCertCanvas({ certRef, tpl, data, positions: P, certCode, dateFor
 
       {/* Nombre del acreditado */}
       <div style={{ position: 'absolute', left: P.recipientBlock.x, top: P.recipientBlock.y, width: P.recipientBlock.w, textAlign: 'center' }}>
-        <div style={{ fontSize: fs2('recipientBlock'), color: '#555' }}>
-          {data.haceConstarLabel || 'y hace constar que el/la voluntario/a:'}
-        </div>
+        {data.haceConstarLabel ? (
+          <div style={{ fontSize: fs2('recipientBlock'), color: '#555' }}>{data.haceConstarLabel}</div>
+        ) : null}
         <div style={{ fontSize: fs('recipientBlock'), fontStyle: 'italic', fontWeight: 700, color: '#1a1a2e', marginTop: 3, lineHeight: 1.1, wordWrap: 'break-word' }}>
           {data.recipientName || '[Nombre del acreditado]'}
         </div>
         <div style={{ fontSize: fs2('recipientBlock'), color: '#555', marginTop: 3 }}>
-          {data.collegiateLabel || 'Con número de colegiado activo:'} <strong>{data.collegiateNumber || '----'}</strong>
+          {data.collegiateLabel ? `${data.collegiateLabel} ` : ''}<strong>{data.collegiateNumber || '----'}</strong>
         </div>
       </div>
 
@@ -254,7 +256,7 @@ function SpecialCertCanvas({ certRef, tpl, data, positions: P, certCode, dateFor
 
       {/* Fecha */}
       <div style={{ position: 'absolute', left: P.dateText.x, top: P.dateText.y, fontSize: fs('dateText'), color: '#888', textAlign: 'center', width: P.dateText.w }}>
-        {data.dateLabel || 'Emitido el'} {dateFormatted}
+        {data.dateLabel ? `${data.dateLabel} ` : ''}{dateFormatted}
       </div>
     </div>
   );
@@ -496,7 +498,7 @@ export default function VolunteerAccreditationManager({ certTemplate, reprintCer
     setImageLoaded(false);
     setMsg({ type: 'info', text: `Reimprimiendo acreditación ${certificate_code}. Los datos son los del registro original.` });
 
-    // Cargar los campos del certificado original
+    // Cargar los campos del certificado original — si cert_data no tiene el campo (cert viejo), usa el valor actual del form
     setForm(p => ({
       ...p,
       recipientName:       recipient_name,
@@ -510,15 +512,25 @@ export default function VolunteerAccreditationManager({ certTemplate, reprintCer
       trainings:           cert_data?.trainings           ?? p.trainings,
       includePresident:    cert_data?.includePresident    ?? p.includePresident,
       selectedCommissions: cert_data?.selectedCommissions ?? p.selectedCommissions,
+      // Textos del diploma — solo se restauran si estaban guardados (nuevos registros)
+      ...(cert_data?.caeducLine        !== undefined && { caeducLine:        cert_data.caeducLine }),
+      ...(cert_data?.commissionPrefix  !== undefined && { commissionPrefix:  cert_data.commissionPrefix }),
+      ...(cert_data?.conferText        !== undefined && { conferText:        cert_data.conferText }),
+      ...(cert_data?.validLabel        !== undefined && { validLabel:        cert_data.validLabel }),
+      ...(cert_data?.haceConstarLabel  !== undefined && { haceConstarLabel:  cert_data.haceConstarLabel }),
+      ...(cert_data?.collegiateLabel   !== undefined && { collegiateLabel:   cert_data.collegiateLabel }),
+      ...(cert_data?.dateLabel         !== undefined && { dateLabel:         cert_data.dateLabel }),
     }));
+
+    // Si cert_data no tiene los campos de texto (registro viejo), NO auto-descargar:
+    // el editor se abrirá para que el usuario ajuste los textos antes de imprimir
+    const hasFullCertData = cert_data?.caeducLine !== undefined;
+    if (autoDownload && hasFullCertData) setAutoDownloadPending(true);
 
     // Usar el snapshot de comisiones exacto (firmas y datos del momento de emisión)
     if (commissions_snapshot?.length) {
       setReprintCommissionsSnap(commissions_snapshot);
     }
-
-    // Si se solicitó descarga automática (desde botón imprimir en tabla admin), activar pending
-    if (autoDownload) setAutoDownloadPending(true);
 
     onReprintConsumed?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -608,6 +620,11 @@ export default function VolunteerAccreditationManager({ certTemplate, reprintCer
             commissionName: form.commissionName, validFrom: form.validFrom, validTo: form.validTo,
             bodyText: form.bodyText, trainings: form.trainings,
             includePresident: form.includePresident, selectedCommissions: form.selectedCommissions,
+            // Campos de texto del diploma — guardados para reimpresión exacta
+            caeducLine: form.caeducLine, commissionPrefix: form.commissionPrefix,
+            conferText: form.conferText, validLabel: form.validLabel,
+            haceConstarLabel: form.haceConstarLabel, collegiateLabel: form.collegiateLabel,
+            dateLabel: form.dateLabel,
           },
           commissions_snapshot: selectedCommissions.map(c => ({ id: c.id, commission_name: c.commission_name, signer_name: c.signer_name, signer_title: c.signer_title, signature_url: c.signature_url, logo_url: c.logo_url || null })),
         });
@@ -669,6 +686,11 @@ export default function VolunteerAccreditationManager({ certTemplate, reprintCer
               commissionName: form.commissionName, validFrom: form.validFrom, validTo: form.validTo,
               bodyText: form.bodyText, trainings: form.trainings,
               includePresident: form.includePresident, selectedCommissions: form.selectedCommissions,
+              // Campos de texto del diploma — guardados para reimpresión exacta
+              caeducLine: form.caeducLine, commissionPrefix: form.commissionPrefix,
+              conferText: form.conferText, validLabel: form.validLabel,
+              haceConstarLabel: form.haceConstarLabel, collegiateLabel: form.collegiateLabel,
+              dateLabel: form.dateLabel,
             },
             commissions_snapshot: selectedCommissions.map(c => ({ id: c.id, commission_name: c.commission_name, signer_name: c.signer_name, signer_title: c.signer_title, signature_url: c.signature_url, logo_url: c.logo_url || null })),
           }).then(() => {});
