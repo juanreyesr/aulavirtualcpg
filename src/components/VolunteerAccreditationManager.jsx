@@ -569,11 +569,12 @@ export default function VolunteerAccreditationManager({ certTemplate, reprintCer
       localStorage.setItem(LS_KEY, JSON.stringify(payload));
 
       // Backup: Supabase — asíncrono, best-effort (para sincronizar entre dispositivos)
+      // Promise.resolve() garantiza que .catch() siempre esté disponible
       if (supabase) {
-        supabase.rpc('save_cpg_setting', {
+        Promise.resolve(supabase.rpc('save_cpg_setting', {
           p_key: SETTINGS_KEY,
           p_value: JSON.stringify(payload),
-        }).catch(() => {});
+        })).catch(() => {});
       }
 
       setMsg({ type: 'success', text: '✓ Estilo y datos guardados correctamente.' });
