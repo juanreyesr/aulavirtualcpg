@@ -1983,16 +1983,16 @@ function CertificateCanvas({ certRef, onImageLoaded, tpl, recipientName, statusT
     maxSigWidth,
     Math.floor((sigAreaWidth - sigBlockGap * (perRow - 1)) / perRow)
   );
-  // Altura de imagen de firma — escala según cantidad (firmas un poco más grandes para apoyarse en la línea)
+  // Altura de imagen de firma — escala según cantidad (firmas más grandes para apoyarse en la línea)
   const baseImgH = L.signature?.h || 90;
   const sigImgH = useTwoRows
-    ? Math.round(baseImgH * 0.70)
+    ? Math.round(baseImgH * 0.75)
     : totalSigners >= 4
-      ? Math.round(baseImgH * 0.80)
+      ? Math.round(baseImgH * 0.95)
       : totalSigners === 3
-        ? Math.round(baseImgH * 0.90)
+        ? Math.round(baseImgH * 1.05)
         : totalSigners === 2
-          ? Math.round(baseImgH * 0.95)
+          ? Math.round(baseImgH * 1.10)
           : baseImgH;
   const sigBlockH = sigImgH + 55; // imagen + línea + texto coordinador
 
@@ -2257,11 +2257,13 @@ function CertificateCanvas({ certRef, onImageLoaded, tpl, recipientName, statusT
           // Con múltiples firmas, el sello queda directamente sobre el QR (ignora offsets guardados para evitar invadir firmas)
           const sealX = hasMultipleSigners ? 0 : (L.seal?.x || 0);
           const sealY = hasMultipleSigners ? 0 : (L.seal?.y || 0);
+          // Centrar horizontalmente el sello sobre el QR (cuando hay anchos distintos, calculamos el offset)
+          const sealRightPx = hasMultipleSigners ? Math.round(40 + (qrW - sealW) / 2) : 40;
           const sealImg = (
             <img src={tpl.sealUrl} alt="Sello" crossOrigin="anonymous" style={{ width: sealW + 'px', height: sealH + 'px', objectFit: 'contain', opacity: 0.85, display: 'block' }} onLoad={handleImgLoad} onError={(e) => { e.target.style.display='none'; handleImgLoad(); }} />
           );
           return (
-            <div className="absolute" style={{ right: '40px', bottom: sealBaseBottom + 'px' }}>
+            <div className="absolute" style={{ right: sealRightPx + 'px', bottom: sealBaseBottom + 'px' }}>
               {interactive && onLayoutChange ? (
                 <DragResizeBox
                   x={sealX} y={sealY} w={sealW} h={sealH}
