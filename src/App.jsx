@@ -1983,16 +1983,16 @@ function CertificateCanvas({ certRef, onImageLoaded, tpl, recipientName, statusT
     maxSigWidth,
     Math.floor((sigAreaWidth - sigBlockGap * (perRow - 1)) / perRow)
   );
-  // Altura de imagen de firma — escala según cantidad (firmas más grandes para apoyarse en la línea)
+  // Altura de imagen de firma — escala según cantidad
   const baseImgH = L.signature?.h || 90;
   const sigImgH = useTwoRows
-    ? Math.round(baseImgH * 0.75)
+    ? Math.round(baseImgH * 0.70)
     : totalSigners >= 4
-      ? Math.round(baseImgH * 0.95)
+      ? Math.round(baseImgH * 0.85)
       : totalSigners === 3
-        ? Math.round(baseImgH * 1.05)
+        ? Math.round(baseImgH * 0.95)
         : totalSigners === 2
-          ? Math.round(baseImgH * 1.10)
+          ? Math.round(baseImgH * 1.00)
           : baseImgH;
   const sigBlockH = sigImgH + 55; // imagen + línea + texto coordinador
 
@@ -2146,9 +2146,12 @@ function CertificateCanvas({ certRef, onImageLoaded, tpl, recipientName, statusT
                 const showHandlesHere = interactive && isFirstRow && idx === 0 && onLayoutChange;
                 const lineWidth = lineWCustom > 0 ? lineWCustom : (sigBlockW - 20);
 
-                // Imagen de la firma — objectPosition center bottom para que se apoye en la línea
+                // La firma del coordinador (Juan Reyes / CAEDUC) tiene padding transparente abajo
+                // en el PNG, lo que hace que parezca flotar. Compensamos con un translateY
+                // específico para esa firma en modo multi-firmante. Las otras firmas no se afectan.
+                const isCoordinatorMulti = signer.isCoordinator && hasMultipleSigners;
                 const sigImg = signer.signature_url ? (
-                  <div style={{ height: sigImgH + 'px', width: (sigBlockW - 10) + 'px', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', margin: '0 auto' }}>
+                  <div style={{ height: sigImgH + 'px', width: (sigBlockW - 10) + 'px', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', margin: '0 auto', overflow: 'visible' }}>
                     <img
                       src={signer.signature_url}
                       alt={`Firma ${signer.commission_name}`}
@@ -2158,7 +2161,8 @@ function CertificateCanvas({ certRef, onImageLoaded, tpl, recipientName, statusT
                         maxHeight: '100%',
                         objectFit: 'contain',
                         objectPosition: 'center bottom',
-                        display: 'block'
+                        display: 'block',
+                        transform: isCoordinatorMulti ? 'translateY(12%)' : 'none',
                       }}
                       onLoad={handleImgLoad}
                       onError={(e) => { e.target.style.display='none'; handleImgLoad(); }}
