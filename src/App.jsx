@@ -1956,8 +1956,12 @@ function CertificateCanvas({ certRef, onImageLoaded, tpl, recipientName, statusT
   ];
   const totalSigners = allSigners.length;
 
-  // Decidir layout: 1 fila si ≤3, 2 filas si ≥4
-  const useTwoRows = totalSigners >= 4;
+  // Layout:
+  //   1 firma:    una fila, ancho completo (sin cambios — se ve perfecto)
+  //   2-4 firmas: una fila, RESERVANDO espacio a la derecha para sello+QR
+  //   5+ firmas:  dos filas (caso extremo)
+  const hasMultipleSigners = totalSigners >= 2;
+  const useTwoRows = totalSigners >= 5;
   const perRow = useTwoRows ? Math.ceil(totalSigners / 2) : totalSigners;
   const rows = useTwoRows
     ? [allSigners.slice(0, perRow), allSigners.slice(perRow)]
@@ -1965,18 +1969,29 @@ function CertificateCanvas({ certRef, onImageLoaded, tpl, recipientName, statusT
 
   // Dimensiones dinámicas por firmante
   const sigAreaLeft = 60;
-  const sigAreaWidth = 700;
+  // Cuando hay múltiples firmas, reservar ~200px a la derecha para sello+QR
+  const rightReserved = hasMultipleSigners ? 200 : 0;
+  const sigAreaWidth = hasMultipleSigners ? 740 : 700; // ligeramente más amplio si hay 1, pero respeta reserva si hay varios
   const sigBlockGap = 10;
   const sigCustomW = L.signature?.w || 300;
-  const maxSigWidth = useTwoRows ? Math.min(165, Math.round(sigCustomW * 0.55)) : Math.min(sigCustomW, 500);
-  const sigBlockW = Math.min(maxSigWidth, Math.floor((sigAreaWidth - sigBlockGap * (perRow - 1)) / perRow));
-  // Altura de firma: usa L.signature.h y escala según número de firmantes
+  // Cap por firmante: 500px si es la única; 200px si son varias (cabe el sello a la derecha sin solapar)
+  const maxSigBlockBase = hasMultipleSigners ? 200 : 500;
+  const maxSigWidth = useTwoRows
+    ? Math.min(165, Math.round(sigCustomW * 0.55))
+    : Math.min(maxSigBlockBase, sigCustomW);
+  const sigBlockW = Math.min(
+    maxSigWidth,
+    Math.floor((sigAreaWidth - sigBlockGap * (perRow - 1)) / perRow)
+  );
+  // Altura de imagen de firma — escala según cantidad
   const baseImgH = L.signature?.h || 90;
   const sigImgH = useTwoRows
     ? Math.round(baseImgH * 0.60)
-    : totalSigners > 1
-      ? Math.round(baseImgH * 0.80)
-      : baseImgH;
+    : totalSigners >= 3
+      ? Math.round(baseImgH * 0.70)
+      : totalSigners === 2
+        ? Math.round(baseImgH * 0.85)
+        : baseImgH;
   const sigBlockH = sigImgH + 55; // imagen + línea + texto coordinador
 
   const bottomY = L.bottomY || 25;
@@ -1985,8 +2000,9 @@ function CertificateCanvas({ certRef, onImageLoaded, tpl, recipientName, statusT
 
   const qrW = useTwoRows ? 85 : (L.qr.w || 110);
   const qrH = useTwoRows ? 85 : (L.qr.h || L.qr.w || 110);
-  const sealW = useTwoRows ? 85 : (L.seal.w || 130);
-  const sealH = useTwoRows ? 85 : (L.seal.h || L.seal.w || 130);
+  // Sello: reducido cuando hay múltiples firmas para que quede bien sobre el QR sin invadir
+  const sealW = useTwoRows ? 85 : hasMultipleSigners ? 100 : (L.seal.w || 130);
+  const sealH = useTwoRows ? 85 : hasMultipleSigners ? 100 : (L.seal.h || L.seal.w || 130);
 
   return (
     <div ref={certRef} className="relative" style={{ width: '1056px', height: '816px', fontFamily: "'Georgia', 'Times New Roman', serif", background: '#f0ede8', overflow: 'hidden' }}>
@@ -2083,9 +2099,12 @@ function CertificateCanvas({ certRef, onImageLoaded, tpl, recipientName, statusT
         {rows.map((rowSigners, rowIdx) => {
           const rowY = useTwoRows ? (rowIdx === 0 ? row1Y : row2Y) : bottomY;
           const rowWidth = rowSigners.length * sigBlockW + (rowSigners.length - 1) * sigBlockGap;
+          // Centrar respetando el espacio reservado a la derecha cuando hay múltiples firmas (sello+QR)
           const startX = useTwoRows
-            ? Math.max(sigAreaLeft, Math.floor((1056 - 180 - rowWidth) / 2))
-            : Math.max(sigAreaLeft, Math.floor((1056 - rowWidth) / 2));
+            ? Math.max(sigAreaLeft, Math.floor((1056 - 200 - rowWidth) / 2))
+            : hasMultipleSigners
+              ? Math.max(sigAreaLeft, Math.floor((1056 - rightReserved - rowWidth) / 2))
+              : Math.max(sigAreaLeft, Math.floor((1056 - rowWidth) / 2));
           const isFirstRow = rowIdx === 0;
           const sigX = isFirstRow ? (L.signature?.x || 0) : 0;
           const sigY = isFirstRow ? (L.signature?.y || 0) : 0;
@@ -2209,8 +2228,9 @@ function CertificateCanvas({ certRef, onImageLoaded, tpl, recipientName, statusT
           const sealOffsetGap = useTwoRows ? 8 : 6;
           // Sello base: por encima del QR, anclado a la derecha
           const sealBaseBottom = bottomY + qrH + 32 + sealOffsetGap;
-          const sealX = L.seal?.x || 0;
-          const sealY = L.seal?.y || 0;
+          // Con múltiples firmas, el sello queda directamente sobre el QR (ignora offsets guardados para evitar invadir firmas)
+          const sealX = hasMultipleSigners ? 0 : (L.seal?.x || 0);
+          const sealY = hasMultipleSigners ? 0 : (L.seal?.y || 0);
           const sealImg = (
             <img src={tpl.sealUrl} alt="Sello" crossOrigin="anonymous" style={{ width: sealW + 'px', height: sealH + 'px', objectFit: 'contain', opacity: 0.85, display: 'block' }} onLoad={handleImgLoad} onError={(e) => { e.target.style.display='none'; handleImgLoad(); }} />
           );
