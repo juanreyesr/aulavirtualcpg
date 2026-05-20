@@ -1983,15 +1983,17 @@ function CertificateCanvas({ certRef, onImageLoaded, tpl, recipientName, statusT
     maxSigWidth,
     Math.floor((sigAreaWidth - sigBlockGap * (perRow - 1)) / perRow)
   );
-  // Altura de imagen de firma — escala según cantidad
+  // Altura de imagen de firma — escala según cantidad (firmas un poco más grandes para apoyarse en la línea)
   const baseImgH = L.signature?.h || 90;
   const sigImgH = useTwoRows
-    ? Math.round(baseImgH * 0.60)
-    : totalSigners >= 3
-      ? Math.round(baseImgH * 0.70)
-      : totalSigners === 2
-        ? Math.round(baseImgH * 0.85)
-        : baseImgH;
+    ? Math.round(baseImgH * 0.70)
+    : totalSigners >= 4
+      ? Math.round(baseImgH * 0.80)
+      : totalSigners === 3
+        ? Math.round(baseImgH * 0.90)
+        : totalSigners === 2
+          ? Math.round(baseImgH * 0.95)
+          : baseImgH;
   const sigBlockH = sigImgH + 55; // imagen + línea + texto coordinador
 
   const bottomY = L.bottomY || 25;
@@ -2144,22 +2146,24 @@ function CertificateCanvas({ certRef, onImageLoaded, tpl, recipientName, statusT
                 const showHandlesHere = interactive && isFirstRow && idx === 0 && onLayoutChange;
                 const lineWidth = lineWCustom > 0 ? lineWCustom : (sigBlockW - 20);
 
-                // Imagen de la firma
+                // Imagen de la firma — objectPosition center bottom para que se apoye en la línea
                 const sigImg = signer.signature_url ? (
-                  <img
-                    src={signer.signature_url}
-                    alt={`Firma ${signer.commission_name}`}
-                    crossOrigin="anonymous"
-                    style={{
-                      maxWidth: (sigBlockW - 10) + 'px',
-                      maxHeight: sigImgH + 'px',
-                      objectFit: 'contain',
-                      margin: '0 auto',
-                      display: 'block'
-                    }}
-                    onLoad={handleImgLoad}
-                    onError={(e) => { e.target.style.display='none'; handleImgLoad(); }}
-                  />
+                  <div style={{ height: sigImgH + 'px', width: (sigBlockW - 10) + 'px', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', margin: '0 auto' }}>
+                    <img
+                      src={signer.signature_url}
+                      alt={`Firma ${signer.commission_name}`}
+                      crossOrigin="anonymous"
+                      style={{
+                        maxWidth: '100%',
+                        maxHeight: '100%',
+                        objectFit: 'contain',
+                        objectPosition: 'center bottom',
+                        display: 'block'
+                      }}
+                      onLoad={handleImgLoad}
+                      onError={(e) => { e.target.style.display='none'; handleImgLoad(); }}
+                    />
+                  </div>
                 ) : (
                   <div style={{ height: sigImgH + 'px', width: '1px' }} />
                 );
