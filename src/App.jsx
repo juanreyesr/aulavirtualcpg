@@ -2106,15 +2106,37 @@ function CertificateCanvas({ certRef, onImageLoaded, tpl, recipientName, statusT
               ? Math.max(sigAreaLeft, Math.floor((1056 - rightReserved - rowWidth) / 2))
               : Math.max(sigAreaLeft, Math.floor((1056 - rowWidth) / 2));
           const isFirstRow = rowIdx === 0;
-          const sigX = isFirstRow ? (L.signature?.x || 0) : 0;
-          const sigY = isFirstRow ? (L.signature?.y || 0) : 0;
+          // Con múltiples firmas, IGNORAR todos los offsets/widths personalizados — fueron guardados
+          // para el caso de 1 firma y rompen el layout cuando se aplican a varias firmas
+          const applyCustomLayout = isFirstRow && !hasMultipleSigners;
+          const sigX = applyCustomLayout ? (L.signature?.x || 0) : 0;
+          const sigY = applyCustomLayout ? (L.signature?.y || 0) : 0;
+          const lineX = applyCustomLayout ? (L.sigLine?.x || 0) : 0;
+          const lineY = applyCustomLayout ? (L.sigLine?.y || 0) : 0;
+          const lineWCustom = applyCustomLayout ? (L.sigLine?.w || 0) : 0;
+          const txtX = applyCustomLayout ? (L.sigText?.x || 0) : 0;
+          const txtY = applyCustomLayout ? (L.sigText?.y || 0) : 0;
 
-          // Offsets independientes para imagen / línea / texto (solo aplican al primer renglón)
-          const lineX = isFirstRow ? (L.sigLine?.x || 0) : 0;
-          const lineY = isFirstRow ? (L.sigLine?.y || 0) : 0;
-          const lineWCustom = isFirstRow ? (L.sigLine?.w || 0) : 0;
-          const txtX = isFirstRow ? (L.sigText?.x || 0) : 0;
-          const txtY = isFirstRow ? (L.sigText?.y || 0) : 0;
+          // Tamaños de fuente proporcional al número de firmantes (solo aplica en multi-firmante)
+          // 1 firma: 13/11/10  ·  2 firmas: 12/10/9  ·  3 firmas: 11/9/8  ·  4+: 10/8/7
+          const sigNameFs = useTwoRows
+            ? 11
+            : totalSigners >= 4 ? 10
+            : totalSigners === 3 ? 11
+            : totalSigners === 2 ? 12
+            : (L.coordName?.fontSize || 13);
+          const sigTitleFs = useTwoRows
+            ? 9
+            : totalSigners >= 4 ? 8
+            : totalSigners === 3 ? 9
+            : totalSigners === 2 ? 10
+            : (L.coordTitle?.fontSize || 11);
+          const sigCommFs = useTwoRows
+            ? 8
+            : totalSigners >= 4 ? 7
+            : totalSigners === 3 ? 8
+            : totalSigners === 2 ? 9
+            : 10;
 
           const rowInner = (
             <div style={{ display: 'flex', alignItems: 'flex-end', gap: sigBlockGap + 'px' }}>
@@ -2147,12 +2169,12 @@ function CertificateCanvas({ certRef, onImageLoaded, tpl, recipientName, statusT
                   <div style={{ borderTop: '1px solid #444', width: lineWidth + 'px', margin: '0 auto', height: '1px' }} />
                 );
 
-                // Texto coordinador
+                // Texto coordinador — fuentes escalan según cantidad de firmantes
                 const textEl = (
                   <div style={{ paddingTop: '4px', width: (sigBlockW - 20) + 'px', margin: '0 auto', textAlign: 'center' }}>
-                    <p style={{ fontSize: (L.coordName?.fontSize || (useTwoRows ? 11 : 13)) + 'px', fontWeight: 'bold', color: '#1a1a2e', lineHeight: '1.15', margin: 0 }}>{signer.signer_name}</p>
-                    <p style={{ fontSize: (L.coordTitle?.fontSize || (useTwoRows ? 9 : 11)) + 'px', color: '#555', lineHeight: '1.1', margin: '1px 0 0' }}>{signer.signer_title}</p>
-                    <p style={{ fontSize: (useTwoRows ? 8 : 10) + 'px', color: '#888', fontStyle: 'italic', lineHeight: '1.1', margin: '1px 0 0' }}>{signer.commission_name}</p>
+                    <p style={{ fontSize: sigNameFs + 'px', fontWeight: 'bold', color: '#1a1a2e', lineHeight: '1.15', margin: 0 }}>{signer.signer_name}</p>
+                    <p style={{ fontSize: sigTitleFs + 'px', color: '#555', lineHeight: '1.1', margin: '1px 0 0' }}>{signer.signer_title}</p>
+                    <p style={{ fontSize: sigCommFs + 'px', color: '#888', fontStyle: 'italic', lineHeight: '1.1', margin: '1px 0 0' }}>{signer.commission_name}</p>
                   </div>
                 );
 
