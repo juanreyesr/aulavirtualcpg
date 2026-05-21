@@ -1671,6 +1671,19 @@ export default function App() {
               </button>
             )}
 
+            {/* Botones de navegación — pegados al Bienvenido en la fila superior */}
+            <a href="https://gestionescaeduc.vercel.app/" target="_blank" rel="noreferrer" className="hidden lg:flex items-center gap-1 text-xs text-gray-300 hover:text-white border border-gray-600 px-3 py-1.5 rounded-full hover:bg-gray-800 transition flex-shrink-0"><ExternalLink size={12} /> Avales CAEDUC</a>
+            {!sessionUser.isGuest
+              ? <button onClick={() => navigateToCreditos(sessionUser)} className="hidden lg:flex items-center gap-1 text-xs text-blue-300 hover:text-white border border-blue-700 px-3 py-1.5 rounded-full hover:bg-blue-900/40 transition font-medium flex-shrink-0" title="Ir a Créditos Académicos (sesión compartida)"><ExternalLink size={12} /> Créditos Académicos</button>
+              : <a href={CREDITOS_URL} className="hidden lg:flex items-center gap-1 text-xs text-gray-300 hover:text-white border border-gray-600 px-3 py-1.5 rounded-full hover:bg-gray-800 transition flex-shrink-0"><ExternalLink size={12} /> Créditos Académicos</a>
+            }
+            <a href="https://colegiodepsicologos.org.gt" target="_blank" rel="noreferrer" className="hidden lg:flex items-center gap-1 text-xs text-gray-300 hover:text-white border border-gray-600 px-3 py-1.5 rounded-full hover:bg-gray-800 transition flex-shrink-0"><ExternalLink size={12} /> Sitio Oficial</a>
+            {!sessionUser.isGuest && (
+              <button onClick={() => setView('history')} className="hidden lg:flex items-center gap-1.5 text-xs text-gray-300 hover:text-white border border-gray-600 px-3 py-1.5 rounded-full hover:bg-gray-800 transition font-medium flex-shrink-0">
+                <History size={13} /> Mis Certificados
+              </button>
+            )}
+
             <div className="relative" data-profile-panel>
             <button
               onClick={() => { setShowProfile(p => { if (!p) fetchProfileCredits(); return !p; }); }}
@@ -1782,7 +1795,7 @@ export default function App() {
           </div>
         </div>
 
-        {/* ─── Fila 2: Buscador + reproducciones + botones de navegación ─── */}
+        {/* ─── Fila 2: Buscador + contador de reproducciones ─── */}
         <div className="flex items-center gap-2 flex-wrap">
           <div className="relative flex-shrink-0">
             <Search size={14} className="absolute left-3 top-2.5 text-gray-500 pointer-events-none" />
@@ -1806,15 +1819,15 @@ export default function App() {
             </div>
           )}
 
-          <a href="https://gestionescaeduc.vercel.app/" target="_blank" rel="noreferrer" className="flex items-center gap-1 text-xs text-gray-300 hover:text-white border border-gray-600 px-3 py-1.5 rounded-full hover:bg-gray-800 transition flex-shrink-0"><ExternalLink size={12} /> Avales CAEDUC</a>
+          {/* En pantallas pequeñas (sm/md) los botones de nav se muestran aquí abajo en lugar de en la fila superior */}
+          <a href="https://gestionescaeduc.vercel.app/" target="_blank" rel="noreferrer" className="lg:hidden flex items-center gap-1 text-xs text-gray-300 hover:text-white border border-gray-600 px-3 py-1.5 rounded-full hover:bg-gray-800 transition flex-shrink-0"><ExternalLink size={12} /> Avales CAEDUC</a>
           {!sessionUser.isGuest
-            ? <button onClick={() => navigateToCreditos(sessionUser)} className="flex items-center gap-1 text-xs text-blue-300 hover:text-white border border-blue-700 px-3 py-1.5 rounded-full hover:bg-blue-900/40 transition font-medium flex-shrink-0" title="Ir a Créditos Académicos (sesión compartida)"><ExternalLink size={12} /> Créditos Académicos</button>
-            : <a href={CREDITOS_URL} className="flex items-center gap-1 text-xs text-gray-300 hover:text-white border border-gray-600 px-3 py-1.5 rounded-full hover:bg-gray-800 transition flex-shrink-0"><ExternalLink size={12} /> Créditos Académicos</a>
+            ? <button onClick={() => navigateToCreditos(sessionUser)} className="lg:hidden flex items-center gap-1 text-xs text-blue-300 hover:text-white border border-blue-700 px-3 py-1.5 rounded-full hover:bg-blue-900/40 transition font-medium flex-shrink-0" title="Ir a Créditos Académicos (sesión compartida)"><ExternalLink size={12} /> Créditos Académicos</button>
+            : <a href={CREDITOS_URL} className="lg:hidden flex items-center gap-1 text-xs text-gray-300 hover:text-white border border-gray-600 px-3 py-1.5 rounded-full hover:bg-gray-800 transition flex-shrink-0"><ExternalLink size={12} /> Créditos Académicos</a>
           }
-          <a href="https://colegiodepsicologos.org.gt" target="_blank" rel="noreferrer" className="flex items-center gap-1 text-xs text-gray-300 hover:text-white border border-gray-600 px-3 py-1.5 rounded-full hover:bg-gray-800 transition flex-shrink-0"><ExternalLink size={12} /> Sitio Oficial</a>
-
+          <a href="https://colegiodepsicologos.org.gt" target="_blank" rel="noreferrer" className="lg:hidden flex items-center gap-1 text-xs text-gray-300 hover:text-white border border-gray-600 px-3 py-1.5 rounded-full hover:bg-gray-800 transition flex-shrink-0"><ExternalLink size={12} /> Sitio Oficial</a>
           {!sessionUser.isGuest && (
-            <button onClick={() => setView('history')} className="flex items-center gap-1.5 text-xs text-gray-300 hover:text-white border border-gray-600 px-3 py-1.5 rounded-full hover:bg-gray-800 transition font-medium flex-shrink-0">
+            <button onClick={() => setView('history')} className="lg:hidden flex items-center gap-1.5 text-xs text-gray-300 hover:text-white border border-gray-600 px-3 py-1.5 rounded-full hover:bg-gray-800 transition font-medium flex-shrink-0">
               <History size={13} /> Mis Certificados
             </button>
           )}
