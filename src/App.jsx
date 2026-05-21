@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useLayoutEffect } from 'react';
 import {
   Play, CheckCircle, XCircle, LogOut, Plus, Trash2, Award,
   ChevronLeft, ChevronDown, Lock, ExternalLink, X, CalendarDays, Eye,
@@ -1181,6 +1181,26 @@ export default function App() {
   const [reprintCert, setReprintCert] = useState(null);
   const [certTemplate, setCertTemplate] = useState(DEFAULT_CERT_CONFIG);
   const [siteLogos, setSiteLogos] = useState(DEFAULT_SITE_LOGOS);
+
+  // ── Medición dinámica del nav superior — para que cualquier zoom/wrap no tape contenido ──
+  const navRef = useRef(null);
+  const [navHeight, setNavHeight] = useState(72); // valor inicial razonable
+
+  useLayoutEffect(() => {
+    if (!navRef.current) return;
+    // Medir una vez al montar
+    setNavHeight(navRef.current.offsetHeight);
+    // Observar cambios (zoom, resize, wrap de botones, etc.)
+    const ro = new ResizeObserver(entries => {
+      for (const entry of entries) {
+        const h = Math.ceil(entry.contentRect.height + 8); // +8 colchón visual
+        setNavHeight(prev => prev !== h ? h : prev);
+      }
+    });
+    ro.observe(navRef.current);
+    return () => ro.disconnect();
+  }, [sessionUser]); // re-mide si cambia sesión (afecta qué botones se muestran)
+
   // ── FIX #2: estado para recovery mode ──
   const [showPasswordReset, setShowPasswordReset] = useState(false);
   // ── Entrega 2: estados para comisiones y asistencia ──
@@ -1593,8 +1613,8 @@ export default function App() {
   const firstName = getFirstName(sessionUser.name);
 
   return (
-    <div className="min-h-screen bg-[#141414] text-white font-sans selection:bg-blue-600 selection:text-white overflow-x-hidden">
-      <nav className="fixed top-0 w-full z-50 bg-[#0e0e0e] border-b border-gray-800 px-4 py-3 flex justify-between items-center shadow-lg">
+    <div className="min-h-screen bg-[#141414] text-white font-sans selection:bg-blue-600 selection:text-white overflow-x-hidden" style={{ paddingTop: navHeight + 'px' }}>
+      <nav ref={navRef} className="fixed top-0 w-full z-50 bg-[#0e0e0e] border-b border-gray-800 px-4 py-3 flex justify-between items-center shadow-lg flex-wrap gap-y-2">
         <div className="flex items-center gap-3 cursor-pointer" onClick={() => { setView('home'); setSearchQuery(''); }}>
           <img src={siteLogos.navLogoCpg} alt="Logo CPG" className="w-11 h-11 object-contain filter drop-shadow-lg" onError={(e) => { e.target.style.display = 'none'; }} />
           <div className="hidden md:block">
@@ -1759,9 +1779,9 @@ export default function App() {
         {view === 'player' && selectedVideo && <PlayerView video={selectedVideo} viewCounts={viewCounts} onBack={() => setView('home')} sessionUser={sessionUser} userProfile={userProfile} setUserProfile={setUserProfile} isCompleted={completedVideos.has(selectedVideo.id)} onMarkCompleted={() => markVideoCompleted(selectedVideo.id)} certTemplate={certTemplate} commissions={commissions} />}
         {view === 'login' && <LoginView onLogin={handleLogin} onBack={() => setView('home')} authError={authError} />}
         {view === 'admin' && isAdmin && <AdminDashboard videos={videos} viewCounts={viewCounts} totalViews={totalViews} activities={activities} liveSession={liveSession} onSaveLiveSession={saveLiveSession} onVideosChange={persistVideos} onActivitiesChange={persistActivities} onGenerateCertificate={handleManualCertificate} certTemplate={certTemplate} onSaveCertConfig={saveCertConfig} siteLogos={siteLogos} onSaveSiteLogos={saveSiteLogos} adminRole={adminRole} commissions={commissions} />}
-        {view === 'certificate' && manualCertificate && <div className="min-h-screen bg-[#141414] pt-20 px-4 md:px-16 pb-12"><CertificateView video={manualCertificate.video} userProfile={manualCertificate.profile} onBack={handleCloseManualCertificate} certTemplate={certTemplate} commissions={commissions} /></div>}
+        {view === 'certificate' && manualCertificate && <div className="min-h-screen bg-[#141414] pt-2 px-4 md:px-16 pb-12"><CertificateView video={manualCertificate.video} userProfile={manualCertificate.profile} onBack={handleCloseManualCertificate} certTemplate={certTemplate} commissions={commissions} /></div>}
         {view === 'history' && !sessionUser.isGuest && !reprintCert && <HistoryView sessionUser={sessionUser} onBack={() => setView('home')} onReprintCert={(cert) => setReprintCert(cert)} />}
-        {view === 'history' && reprintCert && <div className="min-h-screen bg-[#141414] pt-20 px-4 md:px-16 pb-12"><CertificateReprintView cert={reprintCert} onBack={() => setReprintCert(null)} certTemplate={certTemplate} videos={videos} /></div>}
+        {view === 'history' && reprintCert && <div className="min-h-screen bg-[#141414] pt-2 px-4 md:px-16 pb-12"><CertificateReprintView cert={reprintCert} onBack={() => setReprintCert(null)} certTemplate={certTemplate} videos={videos} /></div>}
       </div>
 
       <footer className="py-12 px-10 bg-black/80 text-gray-500 text-sm border-t border-gray-800 mt-10">
@@ -1809,7 +1829,7 @@ function HistoryView({ sessionUser, onBack, onReprintCert }) {
   const fmt = (iso) => new Date(iso).toLocaleDateString('es-GT', { year: 'numeric', month: 'long', day: 'numeric' });
 
   return (
-    <div className="min-h-screen bg-[#141414] pt-24 px-4 md:px-16 pb-12">
+    <div className="min-h-screen bg-[#141414] pt-2 px-4 md:px-16 pb-12">
       <button onClick={onBack} className="flex items-center gap-2 text-gray-400 hover:text-white mb-6 transition"><ChevronLeft /> Regresar</button>
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-white mb-1">Mis certificados</h1>
@@ -2839,7 +2859,7 @@ function PlayerView({ video, viewCounts, onBack, sessionUser, userProfile, setUs
 
   if (sessionUser.isGuest) {
     return (
-      <div className="min-h-screen bg-[#141414] pt-20 px-4 pb-12 flex items-center justify-center">
+      <div className="min-h-screen bg-[#141414] pt-2 px-4 pb-12 flex items-center justify-center">
         <div className="text-center max-w-md bg-[#1a1a1a] border border-yellow-700/40 rounded-2xl p-10">
           <Lock size={56} className="text-yellow-400 mx-auto mb-4" />
           <h2 className="text-2xl font-bold text-white mb-2">Contenido exclusivo para colegiados</h2>
@@ -2880,7 +2900,7 @@ function PlayerView({ video, viewCounts, onBack, sessionUser, userProfile, setUs
     : 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share';
 
   return (
-    <div className="min-h-screen bg-[#141414] pt-20 px-4 md:px-16 pb-12">
+    <div className="min-h-screen bg-[#141414] pt-2 px-4 md:px-16 pb-12">
       <button onClick={onBack} className="flex items-center gap-2 text-gray-400 hover:text-white mb-6 transition"><ChevronLeft /> Regresar</button>
       {showCert ? (
         <CertificateView video={video} userProfile={userProfile} sessionUser={sessionUser} onBack={() => setShowCert(false)} certTemplate={certTemplate} commissions={commissions} />
@@ -3553,7 +3573,7 @@ function LiveSessionView({ session, onBack, sessionUser, onRegisterAttendance })
   const meta = platformMeta[session?.platform] || platformMeta.zoom;
 
   return (
-    <div className="min-h-screen bg-[#0e0e0e] pt-20 px-4 md:px-10 pb-16">
+    <div className="min-h-screen bg-[#0e0e0e] pt-2 px-4 md:px-10 pb-16">
       <div className="max-w-5xl mx-auto">
         <div className="flex items-center gap-3 mb-6">
           <button onClick={onBack} className="text-gray-400 hover:text-white transition flex items-center gap-1 text-sm"><ChevronLeft size={18} /> Inicio</button>
@@ -4839,7 +4859,7 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
 
   if (editingVideo) {
     return (
-      <div className="min-h-screen bg-[#141414] pt-24 px-4 md:px-16 pb-12 text-white">
+      <div className="min-h-screen bg-[#141414] pt-2 px-4 md:px-16 pb-12 text-white">
         <div className="max-w-4xl mx-auto">
           <div className="flex justify-between items-center mb-6">
             <h2 className="text-2xl font-bold">{formData.title ? 'Editar Video' : 'Nuevo Video'}</h2>
@@ -4946,7 +4966,7 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
   }
 
   return (
-    <div className="min-h-screen bg-[#141414] pt-24 px-4 md:px-16 text-white">
+    <div className="min-h-screen bg-[#141414] pt-2 px-4 md:px-16 text-white">
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-8 border-b border-gray-800 pb-4">
         <div><h1 className="text-3xl font-bold">Panel de Administración</h1><p className="text-sm text-gray-400">Gestiona videos y actividades de capacitación.</p></div>
         <div className="flex flex-wrap gap-2">
