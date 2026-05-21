@@ -3,7 +3,7 @@ import {
   Play, CheckCircle, XCircle, LogOut, Plus, Trash2, Award,
   ChevronLeft, ChevronDown, Lock, ExternalLink, X, CalendarDays, Eye,
   Download, Loader2, UserCheck, UserX, Edit2, Users, Radio, Wifi, Video,
-  Search, Mail, Shield, History, QrCode, KeyRound, Upload, Image, Type, Settings, Printer
+  Search, Mail, Shield, History, QrCode, KeyRound, Upload, Image, Type, Settings, Printer, RefreshCw
 } from 'lucide-react';
 import { supabase } from './supabaseClient';
 import html2canvas from 'html2canvas';
@@ -1185,6 +1185,42 @@ export default function App() {
   // ── Medición dinámica del nav superior — para que cualquier zoom/wrap no tape contenido ──
   const navRef = useRef(null);
   const [navHeight, setNavHeight] = useState(72); // valor inicial razonable
+  // ── Actualizar sesión: reconsulta datos del colegiado para reflejar cambios (estado, pagos, etc.) ──
+  const [refreshingSession, setRefreshingSession] = useState(false);
+  const [refreshMsg, setRefreshMsg] = useState('');
+
+  const handleRefreshSession = useCallback(async () => {
+    if (!sessionUser || sessionUser.isGuest || !sessionUser.collegiateNumber) return;
+    setRefreshingSession(true);
+    setRefreshMsg('');
+    try {
+      const res = await fetch('https://ilyospunwucdojrnfgti.supabase.co/functions/v1/consultar-colegiado', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: sessionUser.collegiateNumber }),
+      });
+      const data = await res.json();
+      if (data.error) {
+        setRefreshMsg('No se pudo actualizar: ' + data.error);
+      } else {
+        const updated = {
+          ...sessionUser,
+          name: data.nombre ?? sessionUser.name,
+          status: data.estatus ?? sessionUser.status,
+          ...(data.fechaColegiacion !== undefined && { fechaColegiacion: data.fechaColegiacion }),
+          ...(data.ultimoPago !== undefined && { ultimoPago: data.ultimoPago }),
+          ...(data.cuotaCongreso !== undefined && { cuotaCongreso: data.cuotaCongreso }),
+        };
+        setSessionUser(updated);
+        try { localStorage.setItem('cpg_session', JSON.stringify(updated)); } catch {}
+        setRefreshMsg('✓ Sesión actualizada');
+        setTimeout(() => setRefreshMsg(''), 2500);
+      }
+    } catch (e) {
+      setRefreshMsg('Error de conexión');
+    }
+    setRefreshingSession(false);
+  }, [sessionUser]);
 
   useLayoutEffect(() => {
     if (!navRef.current) return;
@@ -1614,58 +1650,28 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#141414] text-white font-sans selection:bg-blue-600 selection:text-white overflow-x-hidden" style={{ paddingTop: navHeight + 'px' }}>
-      <nav ref={navRef} className="fixed top-0 w-full z-50 bg-[#0e0e0e] border-b border-gray-800 px-4 py-3 flex justify-between items-center shadow-lg flex-wrap gap-y-2">
-        <div className="flex items-center gap-3 cursor-pointer" onClick={() => { setView('home'); setSearchQuery(''); }}>
-          <img src={siteLogos.navLogoCpg} alt="Logo CPG" className="w-11 h-11 object-contain filter drop-shadow-lg" onError={(e) => { e.target.style.display = 'none'; }} />
-          <div className="hidden md:block">
-            <h1 className="text-base font-bold leading-tight text-gray-100">Colegio de Psicólogos de Guatemala</h1>
-            <p className="text-xs text-blue-400 tracking-widest uppercase">Aula Virtual</p>
-          </div>
-          <img src={siteLogos.navLogoCaeduc} alt="Logo CAEDUC" className="w-11 h-11 object-contain filter drop-shadow-lg" onError={(e) => { e.target.style.display = 'none'; }} />
-          {totalViews > 0 && (
-            <div className="hidden sm:flex items-center gap-1.5 bg-blue-900/30 border border-blue-700/50 text-blue-300 text-xs font-semibold px-3 py-1.5 rounded-full">
-              <Eye size={12} />{totalViews.toLocaleString()} reproducciones
+      <nav ref={navRef} className="fixed top-0 w-full z-50 bg-[#0e0e0e] border-b border-gray-800 px-4 py-3 shadow-lg flex flex-col gap-2">
+        {/* ─── Fila 1: Marca a la izquierda · Bienvenido + Admin SIEMPRE a la derecha ─── */}
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 cursor-pointer min-w-0" onClick={() => { setView('home'); setSearchQuery(''); }}>
+            <img src={siteLogos.navLogoCpg} alt="Logo CPG" className="w-11 h-11 object-contain filter drop-shadow-lg flex-shrink-0" onError={(e) => { e.target.style.display = 'none'; }} />
+            <div className="hidden md:block min-w-0">
+              <h1 className="text-base font-bold leading-tight text-gray-100 truncate">Colegio de Psicólogos de Guatemala</h1>
+              <p className="text-xs text-blue-400 tracking-widest uppercase">Aula Virtual</p>
             </div>
-          )}
-        </div>
+            <img src={siteLogos.navLogoCaeduc} alt="Logo CAEDUC" className="w-11 h-11 object-contain filter drop-shadow-lg flex-shrink-0" onError={(e) => { e.target.style.display = 'none'; }} />
+          </div>
 
-        <div className="flex items-center gap-2 md:gap-3">
-          <div className="relative hidden md:block">
-            <Search size={14} className="absolute left-3 top-2.5 text-gray-500 pointer-events-none" />
-            <input
-              type="text"
-              placeholder="Buscar cursos..."
-              value={searchQuery}
-              onChange={e => { setSearchQuery(e.target.value); if (view !== 'home') setView('home'); }}
-              className="bg-gray-800/80 border border-gray-700 rounded-full pl-8 pr-4 py-2 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 w-44 focus:w-56 transition-all"
-            />
-            {searchQuery && (
-              <button onClick={() => setSearchQuery('')} className="absolute right-3 top-2.5 text-gray-500 hover:text-white">
-                <X size={12} />
+          {/* Bienvenido + Admin — anclado siempre a la derecha */}
+          <div className="flex items-center gap-2 md:gap-3 flex-shrink-0">
+            {view !== 'home' && <button onClick={() => setView('home')} className="text-sm hover:text-blue-400 transition-colors">Inicio</button>}
+            {liveSession?.active && (
+              <button onClick={() => setView('live')} className="flex items-center gap-1.5 bg-red-600 hover:bg-red-500 text-white text-xs font-bold px-3 py-1.5 rounded-full shadow-lg shadow-red-900/40 transition animate-pulse">
+                <Radio size={12} />EN VIVO
               </button>
             )}
-          </div>
 
-          {view !== 'home' && <button onClick={() => setView('home')} className="text-sm hover:text-blue-400 transition-colors">Inicio</button>}
-          {liveSession?.active && (
-            <button onClick={() => setView('live')} className="flex items-center gap-1.5 bg-red-600 hover:bg-red-500 text-white text-xs font-bold px-3 py-1.5 rounded-full shadow-lg shadow-red-900/40 transition animate-pulse">
-              <Radio size={12} />EN VIVO
-            </button>
-          )}
-          <a href="https://gestionescaeduc.vercel.app/" target="_blank" rel="noreferrer" className="hidden md:flex items-center gap-1 text-xs text-gray-300 hover:text-white border border-gray-600 px-3 py-1.5 rounded-full hover:bg-gray-800 transition"><ExternalLink size={12} /> Avales CAEDUC</a>
-          {!sessionUser.isGuest
-            ? <button onClick={() => navigateToCreditos(sessionUser)} className="hidden md:flex items-center gap-1 text-xs text-blue-300 hover:text-white border border-blue-700 px-3 py-1.5 rounded-full hover:bg-blue-900/40 transition font-medium" title="Ir a Créditos Académicos (sesión compartida)"><ExternalLink size={12} /> Créditos Académicos</button>
-            : <a href={CREDITOS_URL} className="hidden md:flex items-center gap-1 text-xs text-gray-300 hover:text-white border border-gray-600 px-3 py-1.5 rounded-full hover:bg-gray-800 transition"><ExternalLink size={12} /> Créditos Académicos</a>
-          }
-          <a href="https://colegiodepsicologos.org.gt" target="_blank" rel="noreferrer" className="hidden md:flex items-center gap-1 text-xs text-gray-300 hover:text-white border border-gray-600 px-3 py-1.5 rounded-full hover:bg-gray-800 transition"><ExternalLink size={12} /> Sitio Oficial</a>
-
-          {!sessionUser.isGuest && (
-            <button onClick={() => setView('history')} className="flex items-center gap-1.5 text-xs text-gray-300 hover:text-white border border-gray-600 px-3 py-1.5 rounded-full hover:bg-gray-800 transition font-medium">
-              <History size={13} /> Mis Certificados
-            </button>
-          )}
-
-          <div className="relative" data-profile-panel>
+            <div className="relative" data-profile-panel>
             <button
               onClick={() => { setShowProfile(p => { if (!p) fetchProfileCredits(); return !p; }); }}
               className="flex items-center gap-2 bg-gray-800/60 border border-gray-700 rounded-full px-3 py-1.5 hover:bg-gray-700/60 hover:border-gray-500 transition cursor-pointer"
@@ -1729,6 +1735,19 @@ export default function App() {
                     })()}
                   </div>
                   <div className="px-5 py-3">
+                    {/* Actualizar sesión — reconsulta al Colegio para reflejar cambios (estado, pagos, congreso) */}
+                    <button
+                      onClick={handleRefreshSession}
+                      disabled={refreshingSession}
+                      className="w-full text-xs text-emerald-400 hover:text-emerald-200 border border-emerald-800/60 hover:border-emerald-600 rounded-lg py-2 transition flex items-center justify-center gap-1.5 mb-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                      title="Reconsulta tu información en el Colegio de Psicólogos (estado activo/inactivo, último pago, etc.)"
+                    >
+                      {refreshingSession ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+                      {refreshingSession ? 'Actualizando…' : 'Actualizar sesión'}
+                    </button>
+                    {refreshMsg && (
+                      <p className={`text-[10px] text-center mb-2 ${refreshMsg.startsWith('✓') ? 'text-emerald-400' : 'text-red-400'}`}>{refreshMsg}</p>
+                    )}
                     <button onClick={() => { navigateToCreditos(sessionUser); setShowProfile(false); }} className="w-full text-xs text-blue-400 hover:text-blue-200 border border-blue-800 hover:border-blue-600 rounded-lg py-2 transition flex items-center justify-center gap-1.5 mb-2">
                       <ExternalLink size={11} /> Ver historial completo en Créditos
                     </button>
@@ -1748,17 +1767,56 @@ export default function App() {
               </div>
             )}
           </div>
-          {isAdmin ? (
-            <>
-              {view !== 'admin' && (
-                <button onClick={() => setView('admin')} className="flex items-center gap-2 bg-amber-600 hover:bg-amber-700 px-3 py-1.5 rounded text-sm font-medium transition" title="Volver al panel de administración">
-                  <Shield size={15} /> Panel admin
-                </button>
-              )}
-              <button onClick={handleLogout} className="flex items-center gap-2 bg-red-600 hover:bg-red-700 px-3 py-1.5 rounded text-sm font-medium transition" title="Cerrar sesión administrativa"><LogOut size={15} /> Salir</button>
-            </>
-          ) : (
-            <button onClick={() => setView('login')} className="text-gray-400 hover:text-white transition p-2" title="Acceso Administrativo"><Lock size={17} /></button>
+            {isAdmin ? (
+              <>
+                {view !== 'admin' && (
+                  <button onClick={() => setView('admin')} className="flex items-center gap-2 bg-amber-600 hover:bg-amber-700 px-3 py-1.5 rounded text-sm font-medium transition" title="Volver al panel de administración">
+                    <Shield size={15} /> Panel admin
+                  </button>
+                )}
+                <button onClick={handleLogout} className="flex items-center gap-2 bg-red-600 hover:bg-red-700 px-3 py-1.5 rounded text-sm font-medium transition" title="Cerrar sesión administrativa"><LogOut size={15} /> Salir</button>
+              </>
+            ) : (
+              <button onClick={() => setView('login')} className="text-gray-400 hover:text-white transition p-2" title="Acceso Administrativo"><Lock size={17} /></button>
+            )}
+          </div>
+        </div>
+
+        {/* ─── Fila 2: Buscador + reproducciones + botones de navegación ─── */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="relative flex-shrink-0">
+            <Search size={14} className="absolute left-3 top-2.5 text-gray-500 pointer-events-none" />
+            <input
+              type="text"
+              placeholder="Buscar cursos..."
+              value={searchQuery}
+              onChange={e => { setSearchQuery(e.target.value); if (view !== 'home') setView('home'); }}
+              className="bg-gray-800/80 border border-gray-700 rounded-full pl-8 pr-4 py-2 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 w-44 focus:w-56 transition-all"
+            />
+            {searchQuery && (
+              <button onClick={() => setSearchQuery('')} className="absolute right-3 top-2.5 text-gray-500 hover:text-white">
+                <X size={12} />
+              </button>
+            )}
+          </div>
+
+          {totalViews > 0 && (
+            <div className="flex items-center gap-1.5 bg-blue-900/30 border border-blue-700/50 text-blue-300 text-xs font-semibold px-3 py-1.5 rounded-full flex-shrink-0">
+              <Eye size={12} />{totalViews.toLocaleString()} reproducciones
+            </div>
+          )}
+
+          <a href="https://gestionescaeduc.vercel.app/" target="_blank" rel="noreferrer" className="flex items-center gap-1 text-xs text-gray-300 hover:text-white border border-gray-600 px-3 py-1.5 rounded-full hover:bg-gray-800 transition flex-shrink-0"><ExternalLink size={12} /> Avales CAEDUC</a>
+          {!sessionUser.isGuest
+            ? <button onClick={() => navigateToCreditos(sessionUser)} className="flex items-center gap-1 text-xs text-blue-300 hover:text-white border border-blue-700 px-3 py-1.5 rounded-full hover:bg-blue-900/40 transition font-medium flex-shrink-0" title="Ir a Créditos Académicos (sesión compartida)"><ExternalLink size={12} /> Créditos Académicos</button>
+            : <a href={CREDITOS_URL} className="flex items-center gap-1 text-xs text-gray-300 hover:text-white border border-gray-600 px-3 py-1.5 rounded-full hover:bg-gray-800 transition flex-shrink-0"><ExternalLink size={12} /> Créditos Académicos</a>
+          }
+          <a href="https://colegiodepsicologos.org.gt" target="_blank" rel="noreferrer" className="flex items-center gap-1 text-xs text-gray-300 hover:text-white border border-gray-600 px-3 py-1.5 rounded-full hover:bg-gray-800 transition flex-shrink-0"><ExternalLink size={12} /> Sitio Oficial</a>
+
+          {!sessionUser.isGuest && (
+            <button onClick={() => setView('history')} className="flex items-center gap-1.5 text-xs text-gray-300 hover:text-white border border-gray-600 px-3 py-1.5 rounded-full hover:bg-gray-800 transition font-medium flex-shrink-0">
+              <History size={13} /> Mis Certificados
+            </button>
           )}
         </div>
       </nav>
