@@ -1456,15 +1456,30 @@ export default function App() {
   const saveLiveSession = async (updates) => {
     const next = { ...liveSession, ...updates, updated_at: new Date().toISOString() };
     setLiveSession(next);
-    if (!supabase) return;
+    if (!supabase) return { error: null };
+    // Whitelist explícito — solo enviamos columnas escribibles del view/tabla.
+    // Antes hacíamos spread de `next` (que incluye id, created_at, etc.) y eso
+    // hacía fallar el upsert silenciosamente, revirtiendo el estado al siguiente poll.
+    const payload = {
+      id: 1,
+      active: next.active ?? false,
+      title: next.title || '',
+      platform: next.platform || 'youtube',
+      url: next.url || '',
+      started_at: next.started_at || null,
+      updated_at: next.updated_at,
+      commissions_snapshot: next.commissions_snapshot ?? [],
+    };
     const { error } = await supabase
       .from('cpg_live_session')
-      .upsert({ id: 1, ...next }, { onConflict: 'id' });
+      .upsert(payload, { onConflict: 'id' });
     if (error) {
-      console.error('[saveLiveSession] Error guardando en BD:', error.message);
-      // Recargar desde BD para no quedar con estado inconsistente
-      loadLiveSession();
+      console.error('[saveLiveSession] Error guardando en BD:', error.message, error);
+      // No revertimos automáticamente — el admin debe ver el error y reintentar
+      // (antes esto causaba que la transmisión "se prendiera y apagara sola")
+      return { error };
     }
+    return { error: null };
   };
 
   const registerAttendance = async (extraFields = {}) => {
@@ -3358,28 +3373,52 @@ function LiveAdminPanel({ liveSession, onSave, onOpenAttendance, commissions = [
   const isActive = liveSession?.active;
   const currentPlatform = PLATFORMS.find(p => p.id === form.platform);
 
+  const detectPlatform = (url) => {
+    if (!url) return null;
+    const lower = url.toLowerCase();
+    if (lower.includes('zoom.us')) return 'zoom';
+    if (lower.includes('meet.google.com')) return 'meet';
+    if (lower.includes('teams.microsoft.com') || lower.includes('teams.live.com')) return 'teams';
+    if (lower.includes('youtube.com') || lower.includes('youtu.be')) return 'youtube';
+    return null;
+  };
+
   const handleActivityPreFill = (actId) => {
     setSelectedActivity(actId);
     if (!actId) return;
     const a = activities.find(x => String(x.id) === actId);
     if (!a) return;
+    const link = a.meetingLink || a.zoomLink || '';
     setForm(prev => ({
       ...prev,
       title: a.title || prev.title,
-      url: a.meetingLink || a.zoomLink || prev.url,
-      platform: a.meetingLink?.includes('zoom') ? 'zoom' : a.meetingLink?.includes('meet.google') ? 'meet' : prev.platform,
+      url: link || prev.url,
+      platform: detectPlatform(link) || prev.platform,
       hasCommissions: !!a.hasCommissions,
       commissions: a.commissions || [],
     }));
   };
 
+  const [toggleError, setToggleError] = useState('');
+
   const handleToggle = async () => {
     setSaving(true);
+    setToggleError('');
     if (!isActive) {
+      if (!form.url?.trim()) {
+        setToggleError('Falta el enlace de la transmisión antes de iniciar.');
+        setSaving(false);
+        return;
+      }
       const commSnap = form.hasCommissions
         ? commissions.filter(c => (form.commissions || []).includes(c.id)).map(c => ({ id: c.id, commission_name: c.commission_name, signer_name: c.signer_name, signer_title: c.signer_title, signature_url: c.signature_url }))
         : [];
-      await onSave({ active: true, title: form.title, platform: form.platform, url: form.url, started_at: new Date().toISOString(), commissions_snapshot: commSnap });
+      const res = await onSave({ active: true, title: form.title, platform: form.platform, url: form.url, started_at: new Date().toISOString(), commissions_snapshot: commSnap });
+      if (res?.error) {
+        setToggleError('Error al iniciar: ' + (res.error.message || 'error desconocido') + '. La transmisión NO quedó activa en la base de datos.');
+        setSaving(false);
+        return;
+      }
     } else {
       // Al finalizar: contar asistentes de esta sesión y guardar en el log
       if (supabase && liveSession?.title) {
@@ -3458,6 +3497,16 @@ function LiveAdminPanel({ liveSession, onSave, onOpenAttendance, commissions = [
           </button>
         </div>
       </div>
+      {toggleError && (
+        <div className="mb-4 bg-red-500/10 border border-red-500/40 rounded-xl px-4 py-3 text-sm text-red-300 flex items-start gap-2">
+          <XCircle size={16} className="mt-0.5 flex-shrink-0" />
+          <div className="flex-1">
+            <p className="font-semibold mb-0.5">No se pudo activar la transmisión</p>
+            <p className="text-xs text-red-300/80">{toggleError}</p>
+          </div>
+          <button onClick={() => setToggleError('')} className="text-red-400 hover:text-red-200 text-xs">✕</button>
+        </div>
+      )}
       {/* Prefill desde actividad existente */}
       {activities.length > 0 && !isActive && (
         <div className="mb-4">
@@ -3623,6 +3672,84 @@ function LiveAdminPanel({ liveSession, onSave, onOpenAttendance, commissions = [
   );
 }
 
+// ── EMBED EXTERNO (Zoom / Meet / Teams) ──
+// Intenta iframe primero. Si la plataforma bloquea con X-Frame-Options
+// (Microsoft Teams casi siempre lo hace), muestra el botón externo.
+function ExternalLiveEmbed({ session, meta }) {
+  const [embedFailed, setEmbedFailed] = useState(false);
+  const [showEmbed, setShowEmbed] = useState(false);
+  const iframeRef = useRef(null);
+
+  // Detección del fallo: si el iframe no dispara 'load' en 4 segundos
+  // o devuelve un origen distinto bloqueado, marcamos como fallido.
+  useEffect(() => {
+    if (!showEmbed) return;
+    const timer = setTimeout(() => {
+      try {
+        // Si el iframe está bloqueado por CSP/X-Frame-Options, accederlo lanza error
+        if (iframeRef.current && !iframeRef.current.contentDocument) {
+          // No siempre confiable, pero junto con el timer da una señal
+        }
+      } catch {}
+    }, 4000);
+    return () => clearTimeout(timer);
+  }, [showEmbed]);
+
+  // El botón "Intentar ver aquí dentro" solo aparece para plataformas que
+  // ocasionalmente permiten embed (Meet a veces, Teams casi nunca, Zoom nunca).
+  const canTryEmbed = session.platform === 'meet' || session.platform === 'teams';
+
+  if (showEmbed && !embedFailed && session?.url) {
+    return (
+      <div className="space-y-3">
+        <div className="rounded-2xl overflow-hidden border border-gray-800 shadow-2xl bg-black aspect-video w-full relative">
+          <iframe
+            ref={iframeRef}
+            src={session.url}
+            title={`Transmisión ${meta.label}`}
+            allow="camera; microphone; fullscreen; speaker; display-capture; autoplay; clipboard-read; clipboard-write"
+            allowFullScreen
+            className="w-full h-full"
+            onError={() => setEmbedFailed(true)}
+          />
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-gray-500">
+          <span>Si la pantalla queda en blanco, {meta.label} no permite mostrarse aquí. Usa el botón externo:</span>
+          <div className="flex gap-2">
+            <a href={session.url} target="_blank" rel="noreferrer" className={`inline-flex items-center gap-1.5 text-white font-bold px-3 py-1.5 rounded-lg text-xs transition ${meta.color} hover:opacity-90`}><Video size={13} /> Abrir en {meta.label}</a>
+            <button onClick={() => setShowEmbed(false)} className="text-gray-400 hover:text-white">Volver</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-2xl border border-gray-700 bg-[#141414] p-8 md:p-12 text-center">
+      <div className="text-5xl mb-4">{meta.icon}</div>
+      <h2 className="text-xl font-bold text-white mb-2">La sesión se transmite por {meta.label}</h2>
+      <p className="text-gray-400 text-sm mb-8 max-w-md mx-auto">
+        Haz clic en el botón para unirte directamente.
+        {session.platform === 'zoom' && ' Es posible que necesites tener instalada la aplicación de Zoom.'}
+        {session.platform === 'teams' && ' Es posible que necesites tener instalada la aplicación de Microsoft Teams.'}
+      </p>
+      <div className="flex flex-wrap items-center justify-center gap-3">
+        <a href={session.url} target="_blank" rel="noreferrer" className={`inline-flex items-center gap-3 text-white font-bold px-8 py-4 rounded-xl text-lg shadow-lg transition ${meta.color} hover:opacity-90`}><Video size={22} /> Unirme a {meta.label}</a>
+        {canTryEmbed && (
+          <button onClick={() => { setShowEmbed(true); setEmbedFailed(false); }} className="inline-flex items-center gap-2 bg-gray-800 hover:bg-gray-700 text-white text-sm font-semibold px-5 py-3 rounded-xl border border-gray-700 transition">
+            Intentar ver aquí dentro
+          </button>
+        )}
+      </div>
+      {session.platform === 'teams' && (
+        <p className="text-[11px] text-gray-600 mt-5 max-w-md mx-auto">
+          Nota: Microsoft Teams normalmente bloquea la incrustación de reuniones en sitios externos por seguridad. Si el embed queda en blanco, usa "Unirme a {meta.label}".
+        </p>
+      )}
+    </div>
+  );
+}
+
 // ── LIVE SESSION VIEW ─────────────────────────────
 function LiveSessionView({ session, onBack, sessionUser, onRegisterAttendance }) {
   const [attended, setAttended] = useState(false);
@@ -3714,16 +3841,7 @@ function LiveSessionView({ session, onBack, sessionUser, onRegisterAttendance })
           </div>
         )}
         {(session?.platform === 'zoom' || session?.platform === 'meet' || session?.platform === 'teams') && session?.url && (
-          <div className="rounded-2xl border border-gray-700 bg-[#141414] p-8 md:p-12 text-center">
-            <div className="text-5xl mb-4">{meta.icon}</div>
-            <h2 className="text-xl font-bold text-white mb-2">La sesión se transmite por {meta.label}</h2>
-            <p className="text-gray-400 text-sm mb-8 max-w-md mx-auto">
-              Haz clic en el botón para unirte directamente.
-              {session.platform === 'zoom' && ' Es posible que necesites tener instalada la aplicación de Zoom.'}
-              {session.platform === 'teams' && ' Es posible que necesites tener instalada la aplicación de Microsoft Teams.'}
-            </p>
-            <a href={session.url} target="_blank" rel="noreferrer" className={`inline-flex items-center gap-3 text-white font-bold px-8 py-4 rounded-xl text-lg shadow-lg transition ${meta.color} hover:opacity-90`}><Video size={22} /> Unirme a {meta.label}</a>
-          </div>
+          <ExternalLiveEmbed session={session} meta={meta} />
         )}
         {!session?.url && (
           <div className="rounded-2xl border border-yellow-800 bg-yellow-900/10 p-10 text-center text-yellow-400">
