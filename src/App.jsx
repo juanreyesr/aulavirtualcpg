@@ -33,6 +33,21 @@ function exportXLSX(rows, filename) {
   XLSX.writeFile(wb, filename);
 }
 
+// Variante multi-hoja para informes complejos. Recibe array de { sheetName, rows }
+function exportXLSXMultiSheet(sheets, filename) {
+  const XLSX = window.XLSX;
+  if (!XLSX) { alert('La librería de exportación no está disponible.'); return; }
+  const wb = XLSX.utils.book_new();
+  sheets.forEach(({ sheetName, rows }) => {
+    if (!rows || rows.length === 0) return;
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    // Limita nombre de hoja a 31 chars (límite Excel)
+    const safeName = String(sheetName || 'Hoja').slice(0, 31).replace(/[\\\/\?\*\[\]:]/g, '');
+    XLSX.utils.book_append_sheet(wb, ws, safeName);
+  });
+  XLSX.writeFile(wb, filename);
+}
+
 const DEFAULT_SITE_LOGOS = {
   navLogoCpg: '/logo-cpg-grande.png',
   navLogoCaeduc: '/logo-caeduc.png',
@@ -268,7 +283,19 @@ const logAuditAuto = async (action, resourceType, resourceId = '', details = {})
   try {
     const { data: { session } } = await supabase.auth.getSession();
     const email = (session?.user?.email || '').toLowerCase().trim();
-    if (email === SUPER_ADMIN_EMAIL) return;
+    if (!email || email === SUPER_ADMIN_EMAIL) return;
+
+    // Solo registrar acciones de administradores reales: si el email no
+    // pertenece a cpg_admin_users, NO insertar en el log de auditoría
+    // (evita acumular eventos de usuarios regulares emitiendo sus propios certs).
+    const { data: adminRow } = await supabase
+      .from('cpg_admin_users')
+      .select('email, active')
+      .eq('email', email)
+      .eq('active', true)
+      .maybeSingle();
+    if (!adminRow) return;
+
     await supabase.from('cpg_audit_log').insert({
       admin_email: email,
       admin_name: '',
@@ -1220,6 +1247,15 @@ export default function App() {
   const [certTemplate, setCertTemplate] = useState(DEFAULT_CERT_CONFIG);
   const [siteLogos, setSiteLogos] = useState(DEFAULT_SITE_LOGOS);
 
+  // ── Tracker de clicks en botones del nav (silencioso, fire-and-forget) ──
+  const trackClick = useCallback((key, label = null) => {
+    if (!supabase || !key) return;
+    // Silencioso: no esperamos respuesta, no bloqueamos la navegación, ignoramos errores
+    try {
+      supabase.rpc('increment_button_click', { p_key: key, p_label: label });
+    } catch {}
+  }, []);
+
   // ── Botones personalizables del nav (gestionables desde admin) ──
   const [navButtons, setNavButtons] = useState([]);
   const loadNavButtons = useCallback(async () => {
@@ -1713,7 +1749,18 @@ export default function App() {
   const handleCloseManualCertificate = () => { setManualCertificate(null); setView('admin'); };
 
   // Derivados de `videos` — memoizados para evitar recomputar en cada keystroke / poll tick
-  const categories = useMemo(() => [...new Set(videos.map(v => v.category))], [videos]);
+  // Categorías ordenadas por cantidad de videos publicados (más videos = arriba)
+  const categories = useMemo(() => {
+    const counts = {};
+    videos.forEach(v => {
+      if (!isVideoPublished(v)) return; // solo contar publicados
+      const cat = v.category || 'Sin categoría';
+      counts[cat] = (counts[cat] || 0) + 1;
+    });
+    return Object.entries(counts)
+      .sort(([, a], [, b]) => b - a)
+      .map(([cat]) => cat);
+  }, [videos]);
   const publishedVideos = useMemo(() => videos.filter(isVideoPublished), [videos]);
   const upcomingVideos = useMemo(() => videos.filter(v => !isVideoPublished(v)), [videos]);
   const recentVideos = useMemo(() => [...publishedVideos].reverse().slice(0, 5), [publishedVideos]);
@@ -1754,14 +1801,14 @@ export default function App() {
             )}
 
             {/* Botones de navegación — pegados al Bienvenido en la fila superior */}
-            <a href="https://gestionescaeduc.vercel.app/" target="_blank" rel="noreferrer" className="hidden lg:flex items-center gap-1 text-xs text-gray-300 hover:text-white border border-gray-600 px-3 py-1.5 rounded-full hover:bg-gray-800 transition flex-shrink-0"><ExternalLink size={12} /> Avales CAEDUC</a>
+            <a href="https://gestionescaeduc.vercel.app/" target="_blank" rel="noreferrer" onClick={() => trackClick('nav:avales_caeduc', 'Avales CAEDUC')} className="hidden lg:flex items-center gap-1 text-xs text-gray-300 hover:text-white border border-gray-600 px-3 py-1.5 rounded-full hover:bg-gray-800 transition flex-shrink-0"><ExternalLink size={12} /> Avales CAEDUC</a>
             {!sessionUser.isGuest
-              ? <button onClick={() => navigateToCreditos(sessionUser)} className="hidden lg:flex items-center gap-1 text-xs text-blue-300 hover:text-white border border-blue-700 px-3 py-1.5 rounded-full hover:bg-blue-900/40 transition font-medium flex-shrink-0" title="Ir a Créditos Académicos (sesión compartida)"><ExternalLink size={12} /> Créditos Académicos</button>
-              : <a href={CREDITOS_URL} className="hidden lg:flex items-center gap-1 text-xs text-gray-300 hover:text-white border border-gray-600 px-3 py-1.5 rounded-full hover:bg-gray-800 transition flex-shrink-0"><ExternalLink size={12} /> Créditos Académicos</a>
+              ? <button onClick={() => { trackClick('nav:creditos_academicos', 'Créditos Académicos'); navigateToCreditos(sessionUser); }} className="hidden lg:flex items-center gap-1 text-xs text-blue-300 hover:text-white border border-blue-700 px-3 py-1.5 rounded-full hover:bg-blue-900/40 transition font-medium flex-shrink-0" title="Ir a Créditos Académicos (sesión compartida)"><ExternalLink size={12} /> Créditos Académicos</button>
+              : <a href={CREDITOS_URL} onClick={() => trackClick('nav:creditos_academicos', 'Créditos Académicos')} className="hidden lg:flex items-center gap-1 text-xs text-gray-300 hover:text-white border border-gray-600 px-3 py-1.5 rounded-full hover:bg-gray-800 transition flex-shrink-0"><ExternalLink size={12} /> Créditos Académicos</a>
             }
-            <a href="https://colegiodepsicologos.org.gt" target="_blank" rel="noreferrer" className="hidden lg:flex items-center gap-1 text-xs text-gray-300 hover:text-white border border-gray-600 px-3 py-1.5 rounded-full hover:bg-gray-800 transition flex-shrink-0"><ExternalLink size={12} /> Sitio Oficial</a>
+            <a href="https://colegiodepsicologos.org.gt" target="_blank" rel="noreferrer" onClick={() => trackClick('nav:sitio_oficial', 'Sitio Oficial')} className="hidden lg:flex items-center gap-1 text-xs text-gray-300 hover:text-white border border-gray-600 px-3 py-1.5 rounded-full hover:bg-gray-800 transition flex-shrink-0"><ExternalLink size={12} /> Sitio Oficial</a>
             {!sessionUser.isGuest && (
-              <button onClick={() => setView('history')} className="hidden lg:flex items-center gap-1.5 text-xs text-gray-300 hover:text-white border border-gray-600 px-3 py-1.5 rounded-full hover:bg-gray-800 transition font-medium flex-shrink-0">
+              <button onClick={() => { trackClick('nav:mis_certificados', 'Mis Certificados'); setView('history'); }} className="hidden lg:flex items-center gap-1.5 text-xs text-gray-300 hover:text-white border border-gray-600 px-3 py-1.5 rounded-full hover:bg-gray-800 transition font-medium flex-shrink-0">
                 <History size={13} /> Mis Certificados
               </button>
             )}
@@ -1911,6 +1958,7 @@ export default function App() {
                 href={b.url}
                 target={b.target || '_blank'}
                 rel={b.target === '_blank' ? 'noreferrer' : undefined}
+                onClick={() => trackClick(`custom:${b.id}`, b.label)}
                 className={`flex items-center gap-1 text-xs border px-3 py-1.5 rounded-full transition flex-shrink-0 ${colorClasses}`}
               >
                 <Icon size={12} /> {b.label}
@@ -1919,14 +1967,14 @@ export default function App() {
           })}
 
           {/* En pantallas pequeñas (sm/md) los botones de nav se muestran aquí abajo en lugar de en la fila superior */}
-          <a href="https://gestionescaeduc.vercel.app/" target="_blank" rel="noreferrer" className="lg:hidden flex items-center gap-1 text-xs text-gray-300 hover:text-white border border-gray-600 px-3 py-1.5 rounded-full hover:bg-gray-800 transition flex-shrink-0"><ExternalLink size={12} /> Avales CAEDUC</a>
+          <a href="https://gestionescaeduc.vercel.app/" target="_blank" rel="noreferrer" onClick={() => trackClick('nav:avales_caeduc', 'Avales CAEDUC')} className="lg:hidden flex items-center gap-1 text-xs text-gray-300 hover:text-white border border-gray-600 px-3 py-1.5 rounded-full hover:bg-gray-800 transition flex-shrink-0"><ExternalLink size={12} /> Avales CAEDUC</a>
           {!sessionUser.isGuest
-            ? <button onClick={() => navigateToCreditos(sessionUser)} className="lg:hidden flex items-center gap-1 text-xs text-blue-300 hover:text-white border border-blue-700 px-3 py-1.5 rounded-full hover:bg-blue-900/40 transition font-medium flex-shrink-0" title="Ir a Créditos Académicos (sesión compartida)"><ExternalLink size={12} /> Créditos Académicos</button>
-            : <a href={CREDITOS_URL} className="lg:hidden flex items-center gap-1 text-xs text-gray-300 hover:text-white border border-gray-600 px-3 py-1.5 rounded-full hover:bg-gray-800 transition flex-shrink-0"><ExternalLink size={12} /> Créditos Académicos</a>
+            ? <button onClick={() => { trackClick('nav:creditos_academicos', 'Créditos Académicos'); navigateToCreditos(sessionUser); }} className="lg:hidden flex items-center gap-1 text-xs text-blue-300 hover:text-white border border-blue-700 px-3 py-1.5 rounded-full hover:bg-blue-900/40 transition font-medium flex-shrink-0" title="Ir a Créditos Académicos (sesión compartida)"><ExternalLink size={12} /> Créditos Académicos</button>
+            : <a href={CREDITOS_URL} onClick={() => trackClick('nav:creditos_academicos', 'Créditos Académicos')} className="lg:hidden flex items-center gap-1 text-xs text-gray-300 hover:text-white border border-gray-600 px-3 py-1.5 rounded-full hover:bg-gray-800 transition flex-shrink-0"><ExternalLink size={12} /> Créditos Académicos</a>
           }
-          <a href="https://colegiodepsicologos.org.gt" target="_blank" rel="noreferrer" className="lg:hidden flex items-center gap-1 text-xs text-gray-300 hover:text-white border border-gray-600 px-3 py-1.5 rounded-full hover:bg-gray-800 transition flex-shrink-0"><ExternalLink size={12} /> Sitio Oficial</a>
+          <a href="https://colegiodepsicologos.org.gt" target="_blank" rel="noreferrer" onClick={() => trackClick('nav:sitio_oficial', 'Sitio Oficial')} className="lg:hidden flex items-center gap-1 text-xs text-gray-300 hover:text-white border border-gray-600 px-3 py-1.5 rounded-full hover:bg-gray-800 transition flex-shrink-0"><ExternalLink size={12} /> Sitio Oficial</a>
           {!sessionUser.isGuest && (
-            <button onClick={() => setView('history')} className="lg:hidden flex items-center gap-1.5 text-xs text-gray-300 hover:text-white border border-gray-600 px-3 py-1.5 rounded-full hover:bg-gray-800 transition font-medium flex-shrink-0">
+            <button onClick={() => { trackClick('nav:mis_certificados', 'Mis Certificados'); setView('history'); }} className="lg:hidden flex items-center gap-1.5 text-xs text-gray-300 hover:text-white border border-gray-600 px-3 py-1.5 rounded-full hover:bg-gray-800 transition font-medium flex-shrink-0">
               <History size={13} /> Mis Certificados
             </button>
           )}
@@ -2985,7 +3033,16 @@ function HomeView({ videos, viewCounts, recentVideos, categories, upcomingVideos
         <div key={category} className="pl-8 md:pl-16 mt-4">
           {!activeCategory && <h2 className="text-lg md:text-xl font-bold mb-4 text-gray-200 hover:text-blue-400 cursor-pointer transition" onClick={() => setActiveCategory(category)}>{category}</h2>}
           <div className="flex gap-4 overflow-x-auto pb-4 pr-8 scrollbar-hide snap-x">
-            {videos.filter(v => v.category === category).map(v => <VideoCard key={v.id} video={v} viewCount={viewCounts[v.id] || 0} onClick={() => onVideoSelect(v)} isSmall={!activeCategory} isPublished={isVideoPublished(v)} isCompleted={completedVideos.has(v.id)} isGuest={isGuest} />)}
+            {videos
+              .filter(v => v.category === category)
+              .sort((a, b) => {
+                // Más reciente primero (izquierda). Usa scheduledAt si existe; fallback al id.
+                const da = a.scheduledAt ? new Date(a.scheduledAt + 'T00:00:00').getTime() : 0;
+                const db = b.scheduledAt ? new Date(b.scheduledAt + 'T00:00:00').getTime() : 0;
+                if (da !== db) return db - da;
+                return (b.id || 0) - (a.id || 0);
+              })
+              .map(v => <VideoCard key={v.id} video={v} viewCount={viewCounts[v.id] || 0} onClick={() => onVideoSelect(v)} isSmall={!activeCategory} isPublished={isVideoPublished(v)} isCompleted={completedVideos.has(v.id)} isGuest={isGuest} />)}
           </div>
         </div>
       ))}
@@ -4401,6 +4458,7 @@ const getNavButtonColorClasses = (colorId) =>
 
 function NavButtonsManager({ currentAdminRole, currentAdminEmail, onChange }) {
   const [buttons, setButtons] = useState([]);
+  const [clickStats, setClickStats] = useState({}); // { button_key: { count, label, last } }
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -4414,8 +4472,14 @@ function NavButtonsManager({ currentAdminRole, currentAdminEmail, onChange }) {
     if (!supabase) return;
     setLoading(true);
     try {
-      const { data } = await supabase.from('cpg_nav_buttons').select('*').order('display_order', { ascending: true });
-      setButtons(data || []);
+      const [btnsRes, statsRes] = await Promise.all([
+        supabase.from('cpg_nav_buttons').select('*').order('display_order', { ascending: true }),
+        supabase.from('cpg_button_clicks').select('*'),
+      ]);
+      setButtons(btnsRes.data || []);
+      const map = {};
+      (statsRes.data || []).forEach(s => { map[s.button_key] = s; });
+      setClickStats(map);
     } catch {}
     setLoading(false);
   }, []);
@@ -4545,6 +4609,73 @@ function NavButtonsManager({ currentAdminRole, currentAdminEmail, onChange }) {
           <p className="text-cyan-200/70">Los botones que crees aquí aparecerán en la <span className="text-white font-semibold">fila 2 del menú</span>, al lado del contador de reproducciones. Útil para agregar accesos al Congreso 2026, eventos, sitios externos, etc.</p>
         </div>
       </div>
+
+      {/* ── Estadísticas de uso del menú (incluye los 4 botones fijos + custom) ── */}
+      {(() => {
+        const STATIC_LABELS = {
+          'nav:avales_caeduc': 'Avales CAEDUC',
+          'nav:creditos_academicos': 'Créditos Académicos',
+          'nav:sitio_oficial': 'Sitio Oficial',
+          'nav:mis_certificados': 'Mis Certificados',
+        };
+        const statsArr = Object.entries(clickStats)
+          .map(([key, s]) => ({
+            key,
+            isCustom: key.startsWith('custom:'),
+            label: s.label || STATIC_LABELS[key] || key,
+            count: s.click_count || 0,
+            last: s.last_clicked_at,
+          }))
+          .sort((a, b) => b.count - a.count);
+        const total = statsArr.reduce((acc, s) => acc + s.count, 0);
+        return (
+          <div className="bg-gradient-to-br from-emerald-900/15 to-cyan-900/10 border border-emerald-700/30 rounded-2xl p-4 mb-4">
+            <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
+              <div className="flex items-center gap-2">
+                <div className="bg-emerald-600/80 p-1.5 rounded-lg"><Eye size={13} className="text-white" /></div>
+                <div>
+                  <h4 className="text-white font-bold text-sm">Estadísticas de uso del menú</h4>
+                  <p className="text-[11px] text-gray-500">Clicks totales en cada botón del menú superior</p>
+                </div>
+              </div>
+              <div className="text-right">
+                <p className="text-emerald-300 font-bold text-lg leading-none">{total.toLocaleString('es-GT')}</p>
+                <p className="text-[10px] text-gray-500 uppercase tracking-wider">clicks totales</p>
+              </div>
+            </div>
+            {statsArr.length === 0 ? (
+              <p className="text-xs text-gray-500 text-center py-4">Aún no se han registrado clicks. Cuando alguien presione un botón del menú, aparecerá aquí.</p>
+            ) : (
+              <div className="overflow-x-auto rounded-lg border border-gray-800">
+                <table className="w-full text-xs">
+                  <thead className="bg-gray-900 text-gray-400 uppercase text-[10px]">
+                    <tr>
+                      <th className="text-left px-3 py-2">Botón</th>
+                      <th className="text-left px-3 py-2">Tipo</th>
+                      <th className="text-right px-3 py-2">Clicks</th>
+                      <th className="text-left px-3 py-2">Último click</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {statsArr.map(s => (
+                      <tr key={s.key} className="border-t border-gray-800/60 hover:bg-white/[0.02]">
+                        <td className="px-3 py-2 text-white font-medium">{s.label}</td>
+                        <td className="px-3 py-2">
+                          {s.isCustom
+                            ? <span className="text-cyan-300 bg-cyan-900/30 px-1.5 py-0.5 rounded text-[10px] font-bold">Personalizado</span>
+                            : <span className="text-gray-400 bg-gray-800 px-1.5 py-0.5 rounded text-[10px] font-bold">Fijo</span>}
+                        </td>
+                        <td className="px-3 py-2 text-right text-emerald-300 font-mono font-bold">{(s.count || 0).toLocaleString('es-GT')}</td>
+                        <td className="px-3 py-2 text-gray-500">{s.last ? new Date(s.last).toLocaleString('es-GT', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="text-sm text-gray-400">
@@ -4711,6 +4842,17 @@ function NavButtonsManager({ currentAdminRole, currentAdminEmail, onChange }) {
                     <span className={`inline-flex items-center gap-1 text-xs border px-3 py-1.5 rounded-full ${colorClasses}`}>
                       <Icon size={12} /> {b.label}
                     </span>
+                    {(() => {
+                      const stats = clickStats[`custom:${b.id}`];
+                      const count = stats?.click_count || 0;
+                      return (
+                        <span className={`inline-flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-md ${
+                          count > 0 ? 'bg-emerald-900/40 text-emerald-300 border border-emerald-700/40' : 'bg-gray-800/60 text-gray-500 border border-gray-700/40'
+                        }`} title={stats?.last_clicked_at ? `Último click: ${new Date(stats.last_clicked_at).toLocaleString('es-GT')}` : 'Sin clicks aún'}>
+                          <Eye size={10} /> {count.toLocaleString('es-GT')} {count === 1 ? 'click' : 'clicks'}
+                        </span>
+                      );
+                    })()}
 
                     <div className="flex-1 min-w-0">
                       <p className="text-xs text-gray-500 truncate font-mono">{b.url}</p>
@@ -5490,6 +5632,560 @@ function AdminUsersManager({ currentAdminRole }) {
 
 
 // ══════════════════════════════════════════════════════════════
+// ██ INFORME DE ESTADÍSTICAS DE USO                           ██
+// ══════════════════════════════════════════════════════════════
+// Cada item: { key, label, group, generator: async (ctx) => { sheetName, rows } }
+// `ctx` contiene fetchedData (cacheado) y helpers
+const STAT_GROUPS = [
+  {
+    id: 'aula_virtual',
+    title: 'Aula Virtual',
+    icon: 'Eye',
+    color: 'blue',
+    items: [
+      { key: 'total_views', label: 'Total de reproducciones acumuladas', table: 'cpg_view_counts' },
+      { key: 'total_users', label: 'Total de usuarios registrados', table: 'cpg_user_profiles' },
+      { key: 'users_by_status', label: 'Usuarios por estado colegial (ACTIVO/INACTIVO)', table: 'cpg_user_profiles' },
+      { key: 'users_by_month', label: 'Usuarios registrados por mes', table: 'cpg_user_profiles' },
+      { key: 'hotmail_queue', label: 'Cuentas Hotmail/Outlook que requirieron activación manual', table: 'cpg_email_verification_queue' },
+      { key: 'menu_clicks', label: 'Clicks por botón del menú superior', table: 'cpg_button_clicks' },
+    ],
+  },
+  {
+    id: 'videos',
+    title: 'Videos del aula',
+    icon: 'Video',
+    color: 'purple',
+    items: [
+      { key: 'total_videos', label: 'Total de videos publicados', table: 'cpg_videos' },
+      { key: 'videos_list', label: 'Lista completa de videos (título, categoría, reproducciones)', table: 'cpg_videos' },
+      { key: 'top_videos', label: 'Top 20 videos más vistos', table: 'cpg_videos' },
+      { key: 'videos_by_category', label: 'Cantidad de videos por categoría', table: 'cpg_videos' },
+      { key: 'total_hours', label: 'Total de horas de contenido educativo', table: 'cpg_videos' },
+    ],
+  },
+  {
+    id: 'certs',
+    title: 'Certificados emitidos',
+    icon: 'Award',
+    color: 'amber',
+    items: [
+      { key: 'total_certs', label: 'Total de certificados emitidos', table: 'cpg_certificates' },
+      { key: 'certs_by_month', label: 'Certificados emitidos por mes', table: 'cpg_certificates' },
+      { key: 'certs_by_type', label: 'Certificados por tipo (regular vs voluntariado)', table: 'cpg_certificates' },
+      { key: 'certs_list', label: 'Lista completa de certificados emitidos', table: 'cpg_certificates' },
+      { key: 'top_cert_videos', label: 'Top 20 cursos con más certificados', table: 'cpg_certificates' },
+    ],
+  },
+  {
+    id: 'activities',
+    title: 'Actividades del calendario',
+    icon: 'CalendarDays',
+    color: 'rose',
+    items: [
+      { key: 'total_activities', label: 'Total de actividades creadas', table: 'cpg_activities' },
+      { key: 'activities_list', label: 'Lista de actividades (título, fecha, modalidad)', table: 'cpg_activities' },
+      { key: 'activities_by_month', label: 'Actividades por mes', table: 'cpg_activities' },
+    ],
+  },
+  {
+    id: 'live',
+    title: 'Transmisiones en vivo',
+    icon: 'Radio',
+    color: 'red',
+    items: [
+      { key: 'total_live', label: 'Total de sesiones realizadas', table: 'cpg_live_sessions_log' },
+      { key: 'live_list', label: 'Lista de sesiones (título, plataforma, fecha, asistentes)', table: 'cpg_live_sessions_log' },
+      { key: 'live_by_platform', label: 'Sesiones por plataforma (YouTube/Zoom/Meet/Teams)', table: 'cpg_live_sessions_log' },
+      { key: 'live_attendees', label: 'Asistentes únicos totales', table: 'cpg_live_attendance' },
+    ],
+  },
+  {
+    id: 'commissions',
+    title: 'Comisiones acreditantes',
+    icon: 'Users',
+    color: 'emerald',
+    items: [
+      { key: 'commissions_list', label: 'Lista de comisiones configuradas', table: 'cpg_commissions' },
+      { key: 'certs_by_commission', label: 'Certificados firmados por cada comisión', table: 'cpg_certificates' },
+    ],
+  },
+  {
+    id: 'admin',
+    title: 'Acciones administrativas',
+    icon: 'Shield',
+    color: 'cyan',
+    items: [
+      { key: 'admin_actions', label: 'Acciones por admin', table: 'cpg_audit_log' },
+      { key: 'admin_actions_by_type', label: 'Acciones por tipo', table: 'cpg_audit_log' },
+    ],
+  },
+];
+
+const STAT_GROUP_COLOR_CLASSES = {
+  blue: { bg: 'from-blue-900/20 to-blue-900/5', border: 'border-blue-700/40', icon: 'bg-blue-600/80', text: 'text-blue-300' },
+  purple: { bg: 'from-purple-900/20 to-purple-900/5', border: 'border-purple-700/40', icon: 'bg-purple-600/80', text: 'text-purple-300' },
+  amber: { bg: 'from-amber-900/20 to-amber-900/5', border: 'border-amber-700/40', icon: 'bg-amber-600/80', text: 'text-amber-300' },
+  rose: { bg: 'from-rose-900/20 to-rose-900/5', border: 'border-rose-700/40', icon: 'bg-rose-600/80', text: 'text-rose-300' },
+  red: { bg: 'from-red-900/20 to-red-900/5', border: 'border-red-700/40', icon: 'bg-red-600/80', text: 'text-red-300' },
+  emerald: { bg: 'from-emerald-900/20 to-emerald-900/5', border: 'border-emerald-700/40', icon: 'bg-emerald-600/80', text: 'text-emerald-300' },
+  cyan: { bg: 'from-cyan-900/20 to-cyan-900/5', border: 'border-cyan-700/40', icon: 'bg-cyan-600/80', text: 'text-cyan-300' },
+};
+
+function UsageStatsReport() {
+  // Por defecto todo seleccionado (informe completo)
+  const defaultSelected = useMemo(() => {
+    const sel = {};
+    STAT_GROUPS.forEach(g => g.items.forEach(it => { sel[it.key] = true; }));
+    return sel;
+  }, []);
+  const [selected, setSelected] = useState(defaultSelected);
+  const [generating, setGenerating] = useState(false);
+  const [progress, setProgress] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+
+  const toggleStat = (key) => setSelected(s => ({ ...s, [key]: !s[key] }));
+  const toggleGroup = (groupId, value) => {
+    const grp = STAT_GROUPS.find(g => g.id === groupId);
+    setSelected(s => {
+      const next = { ...s };
+      grp.items.forEach(it => { next[it.key] = value; });
+      return next;
+    });
+  };
+  const selectAll = (value) => {
+    setSelected(s => {
+      const next = { ...s };
+      STAT_GROUPS.forEach(g => g.items.forEach(it => { next[it.key] = value; }));
+      return next;
+    });
+  };
+
+  const groupAllSelected = (groupId) => {
+    const grp = STAT_GROUPS.find(g => g.id === groupId);
+    return grp.items.every(it => selected[it.key]);
+  };
+  const totalSelected = Object.values(selected).filter(Boolean).length;
+
+  // ───────── Constructores de hojas ─────────
+  // Cada generador recibe ctx con los datasets ya cacheados.
+  const buildSheets = async () => {
+    const sheets = [];
+    setProgress('Cargando datos…');
+
+    // Helper: fetch with optional date filter on a column
+    const fetchTable = async (table, dateCol = null) => {
+      let q = supabase.from(table).select('*');
+      if (dateCol && dateFrom) q = q.gte(dateCol, dateFrom + 'T00:00:00');
+      if (dateCol && dateTo) q = q.lte(dateCol, dateTo + 'T23:59:59');
+      const { data } = await q;
+      return data || [];
+    };
+
+    // Carga paralela de los datasets necesarios
+    const [
+      videos, certificates, activities, liveSessions, liveAttendance,
+      commissions, userProfiles, viewCounts, hotmailQueue, buttonClicks, auditLog,
+    ] = await Promise.all([
+      fetchTable('cpg_videos'),
+      fetchTable('cpg_certificates', 'issued_at'),
+      fetchTable('cpg_activities'),
+      fetchTable('cpg_live_sessions_log', 'started_at'),
+      fetchTable('cpg_live_attendance', 'joined_at'),
+      fetchTable('cpg_commissions'),
+      fetchTable('cpg_user_profiles', 'created_at'),
+      fetchTable('cpg_view_counts'),
+      fetchTable('cpg_email_verification_queue', 'created_at'),
+      fetchTable('cpg_button_clicks'),
+      fetchTable('cpg_audit_log', 'created_at'),
+    ]);
+    setProgress('Construyendo informe…');
+
+    // ── PORTADA ──
+    const now = new Date();
+    const periodo = (dateFrom || dateTo) ? `${dateFrom || '(inicio)'} a ${dateTo || '(hoy)'}` : 'Todo el histórico';
+    sheets.push({
+      sheetName: 'Portada',
+      rows: [
+        ['INFORME DE USO — AULA VIRTUAL CPG'],
+        [],
+        ['Colegio de Psicólogos de Guatemala'],
+        ['Comisión de Acreditación y Educación Continua (CAEDUC)'],
+        [],
+        ['Generado', now.toLocaleString('es-GT')],
+        ['Período', periodo],
+        ['Total de estadísticas incluidas', totalSelected],
+        [],
+        ['Resumen rápido'],
+        ['Videos publicados', videos.filter(v => !v.scheduledAt || new Date(v.scheduledAt + 'T00:00:00') <= new Date()).length],
+        ['Total de certificados emitidos', certificates.length],
+        ['Actividades programadas', activities.length],
+        ['Sesiones en vivo realizadas', liveSessions.length],
+        ['Usuarios registrados', userProfiles.length],
+        ['Comisiones acreditantes activas', commissions.filter(c => c.active).length],
+      ],
+    });
+
+    // ── Helper para reducir contador por mes ──
+    const groupByMonth = (rows, dateField) => {
+      const counts = {};
+      rows.forEach(r => {
+        const d = r[dateField];
+        if (!d) return;
+        const key = d.slice(0, 7); // YYYY-MM
+        counts[key] = (counts[key] || 0) + 1;
+      });
+      return Object.entries(counts).sort(([a], [b]) => a.localeCompare(b));
+    };
+
+    // ─────── AULA VIRTUAL ───────
+    if (selected.total_views) {
+      const total = viewCounts.reduce((acc, v) => acc + (v.view_count || 0), 0);
+      sheets.push({ sheetName: 'Reproducciones', rows: [
+        ['Total de reproducciones acumuladas'],
+        ['Total', total],
+      ]});
+    }
+    if (selected.total_users) {
+      sheets.push({ sheetName: 'Total usuarios', rows: [
+        ['Total de usuarios registrados'],
+        ['Total', userProfiles.length],
+      ]});
+    }
+    if (selected.users_by_status) {
+      const byStatus = {};
+      userProfiles.forEach(u => { const s = u.status || 'DESCONOCIDO'; byStatus[s] = (byStatus[s] || 0) + 1; });
+      sheets.push({ sheetName: 'Usuarios por estado', rows: [
+        ['Estado', 'Cantidad'],
+        ...Object.entries(byStatus).sort(([, a], [, b]) => b - a),
+      ]});
+    }
+    if (selected.users_by_month) {
+      sheets.push({ sheetName: 'Usuarios por mes', rows: [
+        ['Mes', 'Usuarios nuevos'],
+        ...groupByMonth(userProfiles, 'created_at'),
+      ]});
+    }
+    if (selected.hotmail_queue) {
+      const total = hotmailQueue.length;
+      const pendientes = hotmailQueue.filter(q => !q.activated_at).length;
+      const activadas = hotmailQueue.filter(q => q.activated_at).length;
+      sheets.push({ sheetName: 'Cola Hotmail', rows: [
+        ['Resumen'],
+        ['Total ingresadas a la cola', total],
+        ['Activadas manualmente', activadas],
+        ['Pendientes', pendientes],
+        [],
+        ['Detalle'],
+        ['Correo', 'Colegiado', 'Nombre', 'Dominio', 'Creado', 'Activado el', 'Activado por'],
+        ...hotmailQueue.map(q => [q.email, q.collegiate_number, q.name, q.domain, q.created_at, q.activated_at || '—', q.activated_by || '—']),
+      ]});
+    }
+    if (selected.menu_clicks) {
+      const STATIC_LABELS = {
+        'nav:avales_caeduc': 'Avales CAEDUC',
+        'nav:creditos_academicos': 'Créditos Académicos',
+        'nav:sitio_oficial': 'Sitio Oficial',
+        'nav:mis_certificados': 'Mis Certificados',
+      };
+      sheets.push({ sheetName: 'Clicks del menú', rows: [
+        ['Botón', 'Tipo', 'Clicks', 'Último click'],
+        ...buttonClicks
+          .map(b => [b.label || STATIC_LABELS[b.button_key] || b.button_key, b.button_key.startsWith('custom:') ? 'Personalizado' : 'Fijo', b.click_count, b.last_clicked_at])
+          .sort((a, b) => (b[2] || 0) - (a[2] || 0)),
+      ]});
+    }
+
+    // ─────── VIDEOS ───────
+    const viewMap = {};
+    viewCounts.forEach(v => { viewMap[v.video_id] = v.view_count || 0; });
+    const videosWithViews = videos.map(v => ({ ...v, _views: viewMap[v.id] || 0 }));
+
+    if (selected.total_videos) {
+      sheets.push({ sheetName: 'Total videos', rows: [
+        ['Resumen de videos'],
+        ['Total registrados', videos.length],
+        ['Publicados (visibles)', videos.filter(v => !v.scheduledAt || new Date(v.scheduledAt + 'T00:00:00') <= new Date()).length],
+        ['Programados (futuros)', videos.filter(v => v.scheduledAt && new Date(v.scheduledAt + 'T00:00:00') > new Date()).length],
+      ]});
+    }
+    if (selected.videos_list) {
+      sheets.push({ sheetName: 'Lista de videos', rows: [
+        ['Título', 'Categoría', 'Duración (h)', 'Plataforma', 'Programado para', 'Reproducciones'],
+        ...videosWithViews.map(v => [v.title, v.category, v.duration, v.platform || 'youtube', v.scheduledAt || '(inmediato)', v._views]),
+      ]});
+    }
+    if (selected.top_videos) {
+      sheets.push({ sheetName: 'Top 20 más vistos', rows: [
+        ['#', 'Título', 'Categoría', 'Reproducciones'],
+        ...videosWithViews.sort((a, b) => b._views - a._views).slice(0, 20).map((v, i) => [i + 1, v.title, v.category, v._views]),
+      ]});
+    }
+    if (selected.videos_by_category) {
+      const byCat = {};
+      videos.forEach(v => { byCat[v.category] = (byCat[v.category] || 0) + 1; });
+      sheets.push({ sheetName: 'Videos por categoría', rows: [
+        ['Categoría', 'Cantidad de videos'],
+        ...Object.entries(byCat).sort(([, a], [, b]) => b - a),
+      ]});
+    }
+    if (selected.total_hours) {
+      const total = videos.reduce((acc, v) => acc + (Number(v.duration) || 0), 0);
+      sheets.push({ sheetName: 'Horas de contenido', rows: [
+        ['Total horas de contenido educativo'],
+        ['Total horas', total.toFixed(2)],
+        ['Total videos contabilizados', videos.filter(v => Number(v.duration) > 0).length],
+      ]});
+    }
+
+    // ─────── CERTIFICADOS ───────
+    if (selected.total_certs) {
+      sheets.push({ sheetName: 'Total certificados', rows: [
+        ['Resumen de certificados emitidos'],
+        ['Total emitidos', certificates.length],
+        ['Regulares (videos)', certificates.filter(c => c.cert_type !== 'volunteer').length],
+        ['Voluntariado/Especiales', certificates.filter(c => c.cert_type === 'volunteer').length],
+      ]});
+    }
+    if (selected.certs_by_month) {
+      sheets.push({ sheetName: 'Certs por mes', rows: [
+        ['Mes', 'Certificados emitidos'],
+        ...groupByMonth(certificates, 'issued_at'),
+      ]});
+    }
+    if (selected.certs_by_type) {
+      sheets.push({ sheetName: 'Certs por tipo', rows: [
+        ['Tipo', 'Cantidad'],
+        ['Regular (de videos)', certificates.filter(c => c.cert_type !== 'volunteer').length],
+        ['Voluntariado/Especial', certificates.filter(c => c.cert_type === 'volunteer').length],
+      ]});
+    }
+    if (selected.certs_list) {
+      sheets.push({ sheetName: 'Lista de certificados', rows: [
+        ['Código', 'Colegiado', 'Nombre', 'Estado colegial', 'Tipo', 'Video/Título', 'Duración', 'Emitido'],
+        ...certificates.map(c => [c.certificate_code, c.collegiate_number, c.recipient_name, c.status, c.cert_type === 'volunteer' ? 'Voluntariado' : 'Regular', c.video_title, c.video_duration, c.issued_at]),
+      ]});
+    }
+    if (selected.top_cert_videos) {
+      const byVideo = {};
+      certificates.forEach(c => { const t = c.video_title || '(sin título)'; byVideo[t] = (byVideo[t] || 0) + 1; });
+      sheets.push({ sheetName: 'Top 20 cursos certificados', rows: [
+        ['#', 'Curso / Título', 'Certificados emitidos'],
+        ...Object.entries(byVideo).sort(([, a], [, b]) => b - a).slice(0, 20).map(([t, c], i) => [i + 1, t, c]),
+      ]});
+    }
+
+    // ─────── ACTIVIDADES ───────
+    if (selected.total_activities) {
+      sheets.push({ sheetName: 'Total actividades', rows: [
+        ['Total de actividades en el calendario'],
+        ['Total', activities.length],
+      ]});
+    }
+    if (selected.activities_list) {
+      sheets.push({ sheetName: 'Lista de actividades', rows: [
+        ['Título', 'Fecha', 'Modalidad', 'Tiene aval', 'Tiene comisión'],
+        ...activities.map(a => [a.title, a.date || a.scheduledAt || '', a.modality || '', a.hasAval ? 'Sí' : 'No', a.hasCommissions ? 'Sí' : 'No']),
+      ]});
+    }
+    if (selected.activities_by_month) {
+      sheets.push({ sheetName: 'Actividades por mes', rows: [
+        ['Mes', 'Cantidad'],
+        ...groupByMonth(activities.map(a => ({ created_at: a.date || a.created_at })), 'created_at'),
+      ]});
+    }
+
+    // ─────── LIVE SESSIONS ───────
+    if (selected.total_live) {
+      sheets.push({ sheetName: 'Total live', rows: [
+        ['Total de transmisiones realizadas'],
+        ['Total', liveSessions.length],
+        ['Total asistentes (suma)', liveSessions.reduce((acc, l) => acc + (l.attendee_count || 0), 0)],
+      ]});
+    }
+    if (selected.live_list) {
+      sheets.push({ sheetName: 'Lista de live', rows: [
+        ['Título', 'Plataforma', 'Inicio', 'Fin', 'Asistentes'],
+        ...liveSessions.map(l => [l.title, l.platform, l.started_at, l.ended_at, l.attendee_count || 0]),
+      ]});
+    }
+    if (selected.live_by_platform) {
+      const byPlat = {};
+      liveSessions.forEach(l => { byPlat[l.platform] = (byPlat[l.platform] || 0) + 1; });
+      sheets.push({ sheetName: 'Live por plataforma', rows: [
+        ['Plataforma', 'Sesiones'],
+        ...Object.entries(byPlat).sort(([, a], [, b]) => b - a),
+      ]});
+    }
+    if (selected.live_attendees) {
+      const uniqueCol = new Set(liveAttendance.map(a => a.collegiate_number));
+      sheets.push({ sheetName: 'Asistentes live', rows: [
+        ['Total registros de asistencia', liveAttendance.length],
+        ['Asistentes únicos (por colegiado)', uniqueCol.size],
+      ]});
+    }
+
+    // ─────── COMISIONES ───────
+    if (selected.commissions_list) {
+      sheets.push({ sheetName: 'Comisiones', rows: [
+        ['Comisión', 'Firmante', 'Cargo', 'Activa'],
+        ...commissions.map(c => [c.commission_name, c.signer_name, c.signer_title, c.active ? 'Sí' : 'No']),
+      ]});
+    }
+    if (selected.certs_by_commission) {
+      const byComm = {};
+      certificates.forEach(c => {
+        (c.commissions_snapshot || []).forEach(comm => {
+          const k = comm.commission_name || '(sin nombre)';
+          byComm[k] = (byComm[k] || 0) + 1;
+        });
+      });
+      sheets.push({ sheetName: 'Certs por comisión', rows: [
+        ['Comisión', 'Certificados firmados'],
+        ...Object.entries(byComm).sort(([, a], [, b]) => b - a),
+      ]});
+    }
+
+    // ─────── ACCIONES ADMIN ───────
+    if (selected.admin_actions) {
+      const byAdmin = {};
+      auditLog.forEach(l => { byAdmin[l.admin_email] = (byAdmin[l.admin_email] || 0) + 1; });
+      sheets.push({ sheetName: 'Acciones por admin', rows: [
+        ['Admin', 'Acciones'],
+        ...Object.entries(byAdmin).sort(([, a], [, b]) => b - a),
+      ]});
+    }
+    if (selected.admin_actions_by_type) {
+      const byAction = {};
+      auditLog.forEach(l => { byAction[l.action] = (byAction[l.action] || 0) + 1; });
+      sheets.push({ sheetName: 'Acciones por tipo', rows: [
+        ['Tipo de acción', 'Cantidad'],
+        ...Object.entries(byAction).sort(([, a], [, b]) => b - a),
+      ]});
+    }
+
+    return sheets;
+  };
+
+  const handleGenerate = async () => {
+    if (totalSelected === 0) { alert('Selecciona al menos una estadística.'); return; }
+    setGenerating(true); setProgress('Iniciando…');
+    try {
+      const sheets = await buildSheets();
+      const ts = new Date().toISOString().slice(0, 10);
+      exportXLSXMultiSheet(sheets, `Informe_Aula_Virtual_CPG_${ts}.xlsx`);
+      setProgress('');
+    } catch (e) {
+      alert('Error generando informe: ' + (e?.message || e));
+    }
+    setGenerating(false);
+  };
+
+  return (
+    <div className="p-6 space-y-5">
+      {/* Banner */}
+      <div className="flex items-start gap-3 bg-gradient-to-r from-indigo-900/20 to-purple-900/15 border border-indigo-700/30 rounded-xl px-4 py-3">
+        <Download size={18} className="text-indigo-300 mt-0.5 flex-shrink-0" />
+        <div className="text-xs text-indigo-200/90">
+          <p className="font-semibold mb-0.5">Informe de uso para auditoría</p>
+          <p className="text-indigo-200/70">Selecciona las estadísticas que necesites incluir y descarga un archivo Excel con una hoja por categoría. Útil para reportes anuales, justificación de uso, métricas de impacto.</p>
+        </div>
+      </div>
+
+      {/* Filtros + acción global */}
+      <div className="bg-[#1a1a1a] border border-gray-800 rounded-xl p-4 space-y-3">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div>
+            <label className="block text-xs text-gray-400 mb-1">Período — desde (opcional)</label>
+            <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
+              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-white text-xs focus:border-indigo-500 outline-none" />
+          </div>
+          <div>
+            <label className="block text-xs text-gray-400 mb-1">Hasta (opcional)</label>
+            <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
+              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-white text-xs focus:border-indigo-500 outline-none" />
+          </div>
+          <div className="flex items-end gap-2">
+            <button
+              onClick={() => selectAll(true)}
+              className="flex-1 text-xs bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 px-3 py-2 rounded-lg transition"
+            >
+              Marcar todas
+            </button>
+            <button
+              onClick={() => selectAll(false)}
+              className="flex-1 text-xs bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 px-3 py-2 rounded-lg transition"
+            >
+              Limpiar
+            </button>
+          </div>
+        </div>
+        <p className="text-[11px] text-gray-500">
+          <span className="text-white font-bold">{totalSelected}</span> estadísticas seleccionadas
+          {(dateFrom || dateTo) && (
+            <span className="ml-2 text-indigo-300">· Período: {dateFrom || '(inicio)'} → {dateTo || '(hoy)'}</span>
+          )}
+        </p>
+      </div>
+
+      {/* Grid de grupos */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        {STAT_GROUPS.map(group => {
+          const IconComp = NAV_BUTTON_ICONS[group.icon] || Eye;
+          const cls = STAT_GROUP_COLOR_CLASSES[group.color] || STAT_GROUP_COLOR_CLASSES.blue;
+          const allSel = groupAllSelected(group.id);
+          return (
+            <div key={group.id} className={`bg-gradient-to-br ${cls.bg} border ${cls.border} rounded-xl p-4`}>
+              <div className="flex items-center justify-between mb-3 gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className={`${cls.icon} p-1.5 rounded-lg flex-shrink-0`}>
+                    <IconComp size={13} className="text-white" />
+                  </div>
+                  <h4 className="text-white font-semibold text-sm truncate">{group.title}</h4>
+                </div>
+                <button
+                  onClick={() => toggleGroup(group.id, !allSel)}
+                  className={`text-[10px] uppercase tracking-wider font-bold transition ${cls.text} hover:text-white`}
+                >
+                  {allSel ? 'Quitar' : 'Marcar'} todo
+                </button>
+              </div>
+              <div className="space-y-1.5">
+                {group.items.map(item => (
+                  <label key={item.key} className="flex items-start gap-2 cursor-pointer group">
+                    <input
+                      type="checkbox"
+                      checked={!!selected[item.key]}
+                      onChange={() => toggleStat(item.key)}
+                      className="mt-0.5 w-3.5 h-3.5 accent-indigo-500 flex-shrink-0"
+                    />
+                    <span className="text-xs text-gray-300 group-hover:text-white transition leading-snug">{item.label}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Acción descargar */}
+      <div className="flex items-center justify-end gap-3 pt-2">
+        {progress && <span className="text-xs text-gray-400">{progress}</span>}
+        <button
+          onClick={handleGenerate}
+          disabled={generating || totalSelected === 0}
+          className="flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold px-6 py-3 rounded-xl text-sm transition shadow-lg shadow-indigo-900/40"
+        >
+          {generating ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
+          {generating ? 'Generando…' : `Descargar informe XLSX (${totalSelected})`}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════
 // ██ VISOR DE LOG DE AUDITORÍA                                ██
 // ══════════════════════════════════════════════════════════════
 function AuditLogViewer() {
@@ -5499,24 +6195,47 @@ function AuditLogViewer() {
   const [filterAction, setFilterAction] = useState('');
   const [filterDate, setFilterDate] = useState('');
   const [limit, setLimit] = useState(50);
+  // Set de correos de admins reales — usado para filtrar el log y descartar
+  // registros antiguos contaminados (cuando usuarios regulares emitían certs
+  // y se logueaban como admins por error).
+  const [adminEmails, setAdminEmails] = useState(null);
+
+  const loadAdmins = useCallback(async () => {
+    if (!supabase) return;
+    try {
+      const { data } = await supabase.from('cpg_admin_users').select('email');
+      const set = new Set((data || []).map(a => (a.email || '').toLowerCase().trim()));
+      // Incluir al super admin que no está en la tabla pero sí es admin real
+      set.add(SUPER_ADMIN_EMAIL);
+      setAdminEmails(set);
+    } catch { setAdminEmails(new Set()); }
+  }, []);
 
   const loadLogs = async () => {
     if (!supabase) return;
     setLoading(true);
     try {
-      let query = supabase.from('cpg_audit_log').select('*').order('created_at', { ascending: false }).limit(limit);
+      // Traer un poco más del límite para filtrar luego por admins reales sin quedarnos cortos
+      const fetchLimit = Math.max(limit * 3, 200);
+      let query = supabase.from('cpg_audit_log').select('*').order('created_at', { ascending: false }).limit(fetchLimit);
       if (filterAdmin) query = query.ilike('admin_email', '%' + filterAdmin + '%');
       if (filterAction) query = query.eq('action', filterAction);
       if (filterDate) {
         query = query.gte('created_at', filterDate + 'T00:00:00').lte('created_at', filterDate + 'T23:59:59');
       }
       const { data } = await query;
-      setLogs(data || []);
+      let filtered = data || [];
+      // Filtrar a solo admins registrados (descarta usuarios regulares que aparecieron en logs viejos)
+      if (adminEmails && adminEmails.size > 0) {
+        filtered = filtered.filter(l => adminEmails.has((l.admin_email || '').toLowerCase().trim()));
+      }
+      setLogs(filtered.slice(0, limit));
     } catch {}
     setLoading(false);
   };
 
-  useEffect(() => { loadLogs(); }, [filterAdmin, filterAction, filterDate, limit]);
+  useEffect(() => { loadAdmins(); }, [loadAdmins]);
+  useEffect(() => { if (adminEmails !== null) loadLogs(); }, [filterAdmin, filterAction, filterDate, limit, adminEmails]);
 
   const actionLabels = {
     login: '🔑 Inicio de sesión',
@@ -5681,6 +6400,7 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
   const [volunteerAutoDownload, setVolunteerAutoDownload] = useState(false); // descarga directa sin abrir editor
   const volunteerSectionRef = useRef(null);
   const [showAuditLogSection, setShowAuditLogSection] = useState(false);
+  const [showStatsReportSection, setShowStatsReportSection] = useState(false);
   const [showBulkCert, setShowBulkCert] = useState(false);
   const [showAttendanceReport, setShowAttendanceReport] = useState(false);
   const [showCommissionsSection, setShowCommissionsSection] = useState(false);
@@ -6475,6 +7195,23 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
       </div>
       )}
 
+      {/* ── INFORME DE ESTADÍSTICAS DE USO (solo Super Admin) ── */}
+      {adminRole === 'super_admin' && (
+      <div className="bg-[#1b1b1b] border border-gray-800 rounded-2xl mb-6 overflow-hidden">
+        <button type="button" onClick={() => setShowStatsReportSection(v => !v)} className="w-full flex items-center justify-between px-6 py-4 hover:bg-white/5 transition">
+          <div className="flex items-center gap-3">
+            <div className="bg-gradient-to-br from-indigo-500 to-purple-600 p-2 rounded-lg shadow-lg shadow-indigo-900/30"><Download size={18} className="text-white" /></div>
+            <div className="text-left">
+              <h2 className="text-xl font-bold text-white">Informe de estadísticas para auditoría</h2>
+              <p className="text-xs text-gray-400">Selecciona métricas y descarga un Excel con resumen completo de uso de la página</p>
+            </div>
+          </div>
+          <span className="text-gray-400 text-lg">{showStatsReportSection ? '▲' : '▼'}</span>
+        </button>
+        {showStatsReportSection && <div className="border-t border-gray-800"><UsageStatsReport /></div>}
+      </div>
+      )}
+
       {/* ── LOG DE AUDITORÍA (solo Super Admin) ── */}
       {adminRole === 'super_admin' && (
       <div className="bg-[#1b1b1b] border border-gray-800 rounded-2xl mb-6 overflow-hidden">
@@ -6483,7 +7220,7 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
             <div className="bg-emerald-600 p-2 rounded-lg"><History size={18} className="text-white" /></div>
             <div className="text-left">
               <h2 className="text-xl font-bold text-white">Log de auditoría</h2>
-              <p className="text-xs text-gray-400">Visible únicamente para el Super Administrador</p>
+              <p className="text-xs text-gray-400">Solo muestra acciones de administradores registrados</p>
             </div>
           </div>
           <span className="text-gray-400 text-lg">{showAuditLogSection ? '▲' : '▼'}</span>
