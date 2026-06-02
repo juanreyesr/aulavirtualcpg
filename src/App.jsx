@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef, useLayoutEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useLayoutEffect, useMemo, Suspense } from 'react';
 import {
   Play, CheckCircle, XCircle, LogOut, Plus, Trash2, Award,
   ChevronLeft, ChevronDown, Lock, ExternalLink, X, CalendarDays, Eye,
@@ -6,11 +6,11 @@ import {
   Search, Mail, Shield, History, QrCode, KeyRound, Upload, Image, Type, Settings, Printer, RefreshCw
 } from 'lucide-react';
 import { supabase } from './supabaseClient';
-import html2canvas from 'html2canvas';
-import { jsPDF } from 'jspdf';
-import CommissionsManager from './components/CommissionsManager';
-import AttendanceReportView from './components/AttendanceReportView';
-import VolunteerAccreditationManager from './components/VolunteerAccreditationManager';
+// html2canvas + jspdf se cargan dinámicamente al descargar PDFs (lazy)
+// Componentes pesados de admin se lazy-loadan (lazy + Suspense más abajo)
+const CommissionsManager = React.lazy(() => import('./components/CommissionsManager'));
+const AttendanceReportView = React.lazy(() => import('./components/AttendanceReportView'));
+const VolunteerAccreditationManager = React.lazy(() => import('./components/VolunteerAccreditationManager'));
 
 const ADMIN_CREDENTIALS = {
   email: 'gestor.caeduc@colegiodepsicologos.org.gt',
@@ -1449,7 +1449,20 @@ export default function App() {
     if (!supabase) return;
     try {
       const { data } = await supabase.from('cpg_live_session').select('*').eq('id', 1).single();
-      if (data) setLiveSession(data);
+      if (!data) return;
+      // Shallow-compare antes de setState: el polling cada 30s no debe disparar
+      // un re-render completo del árbol App si nada cambió en la BD.
+      setLiveSession(prev => {
+        if (prev
+          && prev.active === data.active
+          && prev.url === data.url
+          && prev.title === data.title
+          && prev.platform === data.platform
+          && prev.updated_at === data.updated_at) {
+          return prev; // misma referencia → React no re-renderiza
+        }
+        return data;
+      });
     } catch {}
   };
 
@@ -1646,10 +1659,11 @@ export default function App() {
   const handleManualCertificate = (video, profile) => { setManualCertificate({ video, profile }); setView('certificate'); };
   const handleCloseManualCertificate = () => { setManualCertificate(null); setView('admin'); };
 
-  const categories = [...new Set(videos.map(v => v.category))];
-  const publishedVideos = videos.filter(isVideoPublished);
-  const upcomingVideos = videos.filter(v => !isVideoPublished(v));
-  const recentVideos = [...publishedVideos].reverse().slice(0, 5);
+  // Derivados de `videos` — memoizados para evitar recomputar en cada keystroke / poll tick
+  const categories = useMemo(() => [...new Set(videos.map(v => v.category))], [videos]);
+  const publishedVideos = useMemo(() => videos.filter(isVideoPublished), [videos]);
+  const upcomingVideos = useMemo(() => videos.filter(v => !isVideoPublished(v)), [videos]);
+  const recentVideos = useMemo(() => [...publishedVideos].reverse().slice(0, 5), [publishedVideos]);
 
   if (certCodeFromUrl) return <CertificateVerifyView code={certCodeFromUrl} />;
 
@@ -1864,7 +1878,18 @@ export default function App() {
         {view === 'live' && <LiveSessionView session={liveSession} onBack={() => setView('home')} sessionUser={sessionUser} onRegisterAttendance={registerAttendance} />}
         {view === 'player' && selectedVideo && <PlayerView video={selectedVideo} viewCounts={viewCounts} onBack={() => setView('home')} sessionUser={sessionUser} userProfile={userProfile} setUserProfile={setUserProfile} isCompleted={completedVideos.has(selectedVideo.id)} onMarkCompleted={() => markVideoCompleted(selectedVideo.id)} certTemplate={certTemplate} commissions={commissions} />}
         {view === 'login' && <LoginView onLogin={handleLogin} onBack={() => setView('home')} authError={authError} />}
-        {view === 'admin' && isAdmin && <AdminDashboard videos={videos} viewCounts={viewCounts} totalViews={totalViews} activities={activities} liveSession={liveSession} onSaveLiveSession={saveLiveSession} onVideosChange={persistVideos} onActivitiesChange={persistActivities} onGenerateCertificate={handleManualCertificate} certTemplate={certTemplate} onSaveCertConfig={saveCertConfig} siteLogos={siteLogos} onSaveSiteLogos={saveSiteLogos} adminRole={adminRole} commissions={commissions} />}
+        {view === 'admin' && isAdmin && (
+          <Suspense fallback={
+            <div className="min-h-screen flex items-center justify-center text-gray-400">
+              <div className="text-center">
+                <Loader2 size={40} className="animate-spin mx-auto mb-3 text-blue-500" />
+                <p className="text-sm">Cargando panel administrativo…</p>
+              </div>
+            </div>
+          }>
+            <AdminDashboard videos={videos} viewCounts={viewCounts} totalViews={totalViews} activities={activities} liveSession={liveSession} onSaveLiveSession={saveLiveSession} onVideosChange={persistVideos} onActivitiesChange={persistActivities} onGenerateCertificate={handleManualCertificate} certTemplate={certTemplate} onSaveCertConfig={saveCertConfig} siteLogos={siteLogos} onSaveSiteLogos={saveSiteLogos} adminRole={adminRole} commissions={commissions} />
+          </Suspense>
+        )}
         {view === 'certificate' && manualCertificate && <div className="min-h-screen bg-[#141414] pt-2 px-4 md:px-16 pb-12"><CertificateView video={manualCertificate.video} userProfile={manualCertificate.profile} onBack={handleCloseManualCertificate} certTemplate={certTemplate} commissions={commissions} /></div>}
         {view === 'history' && !sessionUser.isGuest && !reprintCert && <HistoryView sessionUser={sessionUser} onBack={() => setView('home')} onReprintCert={(cert) => setReprintCert(cert)} />}
         {view === 'history' && reprintCert && <div className="min-h-screen bg-[#141414] pt-2 px-4 md:px-16 pb-12"><CertificateReprintView cert={reprintCert} onBack={() => setReprintCert(null)} certTemplate={certTemplate} videos={videos} /></div>}
@@ -2465,6 +2490,11 @@ function CertificateReprintView({ cert, onBack, certTemplate, videos = [] }) {
     if (!certRef.current || !imageLoaded) { alert('Espera a que la plantilla cargue completamente.'); return; }
     setIsGenerating(true);
     try {
+      // Lazy-load html2canvas + jspdf (~600KB) solo cuando el usuario descarga
+      const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
+        import('html2canvas'),
+        import('jspdf'),
+      ]);
       const canvas = await html2canvas(certRef.current, {
         scale: 3, useCORS: true, allowTaint: true, backgroundColor: '#f5f5f0', logging: false, imageTimeout: 15000,
         width: 1056, height: 816, windowWidth: 1056, windowHeight: 816, scrollX: 0, scrollY: 0,
@@ -3225,6 +3255,10 @@ function CertificateView({ video, userProfile, sessionUser, onBack, certTemplate
       ).then(() => {});
     }
     try {
+      const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
+        import('html2canvas'),
+        import('jspdf'),
+      ]);
       const canvas = await html2canvas(certRef.current, {
         scale: 3, useCORS: true, allowTaint: true, backgroundColor: '#f5f5f0', logging: false, imageTimeout: 15000,
         width: 1056, height: 816, windowWidth: 1056, windowHeight: 816, scrollX: 0, scrollY: 0,
@@ -3679,21 +3713,8 @@ function ExternalLiveEmbed({ session, meta }) {
   const [embedFailed, setEmbedFailed] = useState(false);
   const [showEmbed, setShowEmbed] = useState(false);
   const iframeRef = useRef(null);
-
-  // Detección del fallo: si el iframe no dispara 'load' en 4 segundos
-  // o devuelve un origen distinto bloqueado, marcamos como fallido.
-  useEffect(() => {
-    if (!showEmbed) return;
-    const timer = setTimeout(() => {
-      try {
-        // Si el iframe está bloqueado por CSP/X-Frame-Options, accederlo lanza error
-        if (iframeRef.current && !iframeRef.current.contentDocument) {
-          // No siempre confiable, pero junto con el timer da una señal
-        }
-      } catch {}
-    }, 4000);
-    return () => clearTimeout(timer);
-  }, [showEmbed]);
+  // (la detección automática de bloqueo por X-Frame-Options no es confiable
+  // entre orígenes; el usuario sabrá si quedó en blanco y usará el botón externo)
 
   // El botón "Intentar ver aquí dentro" solo aparece para plataformas que
   // ocasionalmente permiten embed (Meet a veces, Teams casi nunca, Zoom nunca).
@@ -3766,7 +3787,7 @@ function LiveSessionView({ session, onBack, sessionUser, onRegisterAttendance })
     setShowForm(false);
   };
 
-  const extractYTId = (url) => { if (!url) return ''; try { const u = new URL(url); if (u.hostname.includes('youtu.be')) return u.pathname.replace('/', ''); if (u.searchParams.has('v')) return u.searchParams.get('v'); } catch {} return url.trim().replace(/^https?:\/\/.*?v=/, '').split('&')[0]; };
+  // Reutilizamos el extractor canónico definido al inicio del archivo
   const platformMeta = { youtube: { label: 'YouTube Live', color: 'bg-red-700', icon: '▶', embedable: true }, zoom: { label: 'Zoom', color: 'bg-blue-700', icon: '🎥', embedable: false }, meet: { label: 'Google Meet', color: 'bg-green-700', icon: '📹', embedable: false }, teams: { label: 'Microsoft Teams', color: 'bg-purple-700', icon: '💼', embedable: false } };
   const meta = platformMeta[session?.platform] || platformMeta.zoom;
 
@@ -3837,7 +3858,7 @@ function LiveSessionView({ session, onBack, sessionUser, onRegisterAttendance })
         {/* Video embed */}
         {session?.platform === 'youtube' && session?.url && (
           <div className="rounded-2xl overflow-hidden border border-gray-800 shadow-2xl bg-black aspect-video w-full">
-            <iframe src={`https://www.youtube.com/embed/${extractYTId(session.url)}?autoplay=1&rel=0&modestbranding=1`} title="Transmisión en vivo" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen className="w-full h-full" />
+            <iframe src={`https://www.youtube.com/embed/${extractYouTubeId(session.url)}?autoplay=1&rel=0&modestbranding=1`} title="Transmisión en vivo" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen className="w-full h-full" />
           </div>
         )}
         {(session?.platform === 'zoom' || session?.platform === 'meet' || session?.platform === 'teams') && session?.url && (

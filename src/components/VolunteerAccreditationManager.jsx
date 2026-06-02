@@ -7,8 +7,18 @@ import {
   Award, Move, Save, Users, Search, Minus, Printer,
 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
-import html2canvas from 'html2canvas';
-import { jsPDF } from 'jspdf';
+
+// Loader lazy de html2canvas + jspdf — solo cargan al primer uso, una sola vez
+let _pdfLibsPromise = null;
+const loadPdfLibs = () => {
+  if (!_pdfLibsPromise) {
+    _pdfLibsPromise = Promise.all([
+      import('html2canvas').then(m => m.default),
+      import('jspdf').then(m => m.jsPDF),
+    ]).then(([html2canvas, jsPDF]) => ({ html2canvas, jsPDF }));
+  }
+  return _pdfLibsPromise;
+};
 
 const APP_URL      = 'https://aulavirtualcpg.org';
 const EDGE_URL     = 'https://ilyospunwucdojrnfgti.supabase.co/functions/v1/consultar-colegiado';
@@ -588,6 +598,7 @@ export default function VolunteerAccreditationManager({ certTemplate, reprintCer
     setTimeout(async () => {
       try {
         if (!certRef.current) throw new Error('Canvas no disponible');
+        const { html2canvas } = await loadPdfLibs();
         const canvas = await html2canvas(certRef.current, {
           scale: 2,                   // scale:2 → ~4MB JPEG vs 31MB PNG anterior
           useCORS: true, allowTaint: true, backgroundColor: '#f0ede8', logging: false,
@@ -633,6 +644,7 @@ export default function VolunteerAccreditationManager({ certTemplate, reprintCer
         setSavedCode(code);
       }
       const canvas = await captureCanvas();
+      const { jsPDF } = await loadPdfLibs();
       const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'letter' });
       pdf.addImage(canvas.toDataURL('image/jpeg', 0.93), 'JPEG', 0, 0, pdf.internal.pageSize.getWidth(), pdf.internal.pageSize.getHeight());
       pdf.save(`Acreditacion_${singleLookup.name.replace(/\s+/g,'_')}_${code}.pdf`);
@@ -664,6 +676,7 @@ export default function VolunteerAccreditationManager({ certTemplate, reprintCer
     if (!toGen.length) { setMsg({ type: 'error', text: 'No hay personas marcadas para generar.' }); return; }
     setBulkGenerating(true); setMsg(null); setBulkAllPdfUrl(null);
     try {
+      const { jsPDF } = await loadPdfLibs();
       const allPdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'letter' });
       const pw = allPdf.internal.pageSize.getWidth();
       const ph = allPdf.internal.pageSize.getHeight();
