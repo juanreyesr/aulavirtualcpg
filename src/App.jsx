@@ -115,6 +115,23 @@ const uploadCertAsset = async (file, filename) => {
   return publicUrl;
 };
 
+// ── DOMINIOS DE CORREO PROBLEMÁTICOS ───────────────
+// Cuando alguien crea cuenta con uno de estos dominios, el correo de
+// verificación de Supabase frecuentemente no llega (Microsoft lo bloquea).
+// Por eso acumulamos esas cuentas en cpg_email_verification_queue para
+// que el admin pueda activarlas manualmente desde el panel.
+const PROBLEMATIC_EMAIL_DOMAINS = [
+  'hotmail.com', 'hotmail.es', 'hotmail.com.gt',
+  'outlook.com', 'outlook.es',
+  'live.com', 'live.com.mx',
+  'msn.com',
+];
+const isProblematicEmailDomain = (email) => {
+  if (!email) return false;
+  const domain = String(email).toLowerCase().split('@')[1] || '';
+  return PROBLEMATIC_EMAIL_DOMAINS.includes(domain);
+};
+
 // ── YOUTUBE UTILS ────────────────────────────────
 const extractYouTubeId = (value) => {
   if (!value) return '';
@@ -665,13 +682,34 @@ function LoginColModal({ onSession }) {
           } else { setError(signUpErr.message); }
           setLoading(false); return;
         }
+        const newEmail = emailInput.trim().toLowerCase();
         await supabase.from('cpg_user_profiles').upsert(
-          { collegiate_number: cpgData.colegiado, email: emailInput.trim(), name: cpgData.name },
+          { collegiate_number: cpgData.colegiado, email: newEmail, name: cpgData.name },
           { onConflict: 'collegiate_number' }
         );
+
+        // Si el dominio del correo es de los que suelen no recibir verificación
+        // (Hotmail/Outlook/Live/MSN), acumular en la cola para activación manual
+        if (isProblematicEmailDomain(newEmail) && !signUpData?.session) {
+          const domain = newEmail.split('@')[1] || '';
+          try {
+            await supabase
+              .from('cpg_email_verification_queue')
+              .upsert(
+                {
+                  email: newEmail,
+                  collegiate_number: String(cpgData.colegiado || ''),
+                  name: cpgData.name || '',
+                  domain,
+                },
+                { onConflict: 'email' }
+              );
+          } catch {} // best-effort, no bloquea el signup
+        }
+
         if (!signUpData?.session) {
           setSignUpSent(true);
-          setRegisteredEmail(emailInput.trim());
+          setRegisteredEmail(newEmail);
           setLoading(false);
           return;
         }
@@ -1181,6 +1219,21 @@ export default function App() {
   const [reprintCert, setReprintCert] = useState(null);
   const [certTemplate, setCertTemplate] = useState(DEFAULT_CERT_CONFIG);
   const [siteLogos, setSiteLogos] = useState(DEFAULT_SITE_LOGOS);
+
+  // ── Botones personalizables del nav (gestionables desde admin) ──
+  const [navButtons, setNavButtons] = useState([]);
+  const loadNavButtons = useCallback(async () => {
+    if (!supabase) return;
+    try {
+      const { data } = await supabase
+        .from('cpg_nav_buttons')
+        .select('*')
+        .eq('active', true)
+        .order('display_order', { ascending: true });
+      setNavButtons(data || []);
+    } catch {}
+  }, []);
+  useEffect(() => { loadNavButtons(); }, [loadNavButtons]);
 
   // ── Medición dinámica del nav superior — para que cualquier zoom/wrap no tape contenido ──
   const navRef = useRef(null);
@@ -1848,6 +1901,23 @@ export default function App() {
             </div>
           )}
 
+          {/* Botones personalizables — gestionables desde el panel admin */}
+          {navButtons.map(b => {
+            const Icon = NAV_BUTTON_ICONS[b.icon] || ExternalLink;
+            const colorClasses = getNavButtonColorClasses(b.color);
+            return (
+              <a
+                key={b.id}
+                href={b.url}
+                target={b.target || '_blank'}
+                rel={b.target === '_blank' ? 'noreferrer' : undefined}
+                className={`flex items-center gap-1 text-xs border px-3 py-1.5 rounded-full transition flex-shrink-0 ${colorClasses}`}
+              >
+                <Icon size={12} /> {b.label}
+              </a>
+            );
+          })}
+
           {/* En pantallas pequeñas (sm/md) los botones de nav se muestran aquí abajo en lugar de en la fila superior */}
           <a href="https://gestionescaeduc.vercel.app/" target="_blank" rel="noreferrer" className="lg:hidden flex items-center gap-1 text-xs text-gray-300 hover:text-white border border-gray-600 px-3 py-1.5 rounded-full hover:bg-gray-800 transition flex-shrink-0"><ExternalLink size={12} /> Avales CAEDUC</a>
           {!sessionUser.isGuest
@@ -1887,7 +1957,7 @@ export default function App() {
               </div>
             </div>
           }>
-            <AdminDashboard videos={videos} viewCounts={viewCounts} totalViews={totalViews} activities={activities} liveSession={liveSession} onSaveLiveSession={saveLiveSession} onVideosChange={persistVideos} onActivitiesChange={persistActivities} onGenerateCertificate={handleManualCertificate} certTemplate={certTemplate} onSaveCertConfig={saveCertConfig} siteLogos={siteLogos} onSaveSiteLogos={saveSiteLogos} adminRole={adminRole} commissions={commissions} />
+            <AdminDashboard videos={videos} viewCounts={viewCounts} totalViews={totalViews} activities={activities} liveSession={liveSession} onSaveLiveSession={saveLiveSession} onVideosChange={persistVideos} onActivitiesChange={persistActivities} onGenerateCertificate={handleManualCertificate} certTemplate={certTemplate} onSaveCertConfig={saveCertConfig} siteLogos={siteLogos} onSaveSiteLogos={saveSiteLogos} adminRole={adminRole} commissions={commissions} currentAdminEmail={sessionUser?.email || ''} onNavButtonsChange={loadNavButtons} />
           </Suspense>
         )}
         {view === 'certificate' && manualCertificate && <div className="min-h-screen bg-[#141414] pt-2 px-4 md:px-16 pb-12"><CertificateView video={manualCertificate.video} userProfile={manualCertificate.profile} onBack={handleCloseManualCertificate} certTemplate={certTemplate} commissions={commissions} /></div>}
@@ -4304,12 +4374,625 @@ function LogoManagerModal({ siteLogos, onSave, onClose }) {
 // ══════════════════════════════════════════════════════════════
 // ██ VERIFICAR Y ACTIVAR CUENTAS DE USUARIOS                  ██
 // ══════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════
+// ██ BOTONES PERSONALIZABLES DEL NAV SUPERIOR                 ██
+// ══════════════════════════════════════════════════════════════
+
+// Catálogo de íconos disponibles para los botones del nav.
+// Mapa nombre→componente; se exporta para reuso desde el render del nav.
+const NAV_BUTTON_ICONS = {
+  ExternalLink, CalendarDays, Award, Video, Mail, History, QrCode, Users,
+  Radio, Wifi, Shield, Eye, Search, Image, KeyRound, Settings, Printer, Type, Upload,
+};
+
+// Paleta de colores disponibles (Tailwind classes — clase ya completa para evitar purge)
+const NAV_BUTTON_COLORS = [
+  { id: 'gray',    label: 'Gris (neutral)',  classes: 'text-gray-300 hover:text-white border-gray-600 hover:bg-gray-800' },
+  { id: 'blue',    label: 'Azul',            classes: 'text-blue-300 hover:text-white border-blue-700 hover:bg-blue-900/40' },
+  { id: 'emerald', label: 'Verde esmeralda', classes: 'text-emerald-300 hover:text-white border-emerald-700 hover:bg-emerald-900/40' },
+  { id: 'amber',   label: 'Ámbar',           classes: 'text-amber-300 hover:text-white border-amber-700 hover:bg-amber-900/40' },
+  { id: 'rose',    label: 'Rosa',            classes: 'text-rose-300 hover:text-white border-rose-700 hover:bg-rose-900/40' },
+  { id: 'purple',  label: 'Morado',          classes: 'text-purple-300 hover:text-white border-purple-700 hover:bg-purple-900/40' },
+  { id: 'cyan',    label: 'Cian',            classes: 'text-cyan-300 hover:text-white border-cyan-700 hover:bg-cyan-900/40' },
+];
+
+const getNavButtonColorClasses = (colorId) =>
+  (NAV_BUTTON_COLORS.find(c => c.id === colorId) || NAV_BUTTON_COLORS[0]).classes;
+
+function NavButtonsManager({ currentAdminRole, currentAdminEmail, onChange }) {
+  const [buttons, setButtons] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [form, setForm] = useState({ label: '', url: '', icon: 'ExternalLink', color: 'gray', target: '_blank', active: true });
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState(null);
+
+  const isSuperAdmin = currentAdminRole === 'super_admin';
+
+  const load = useCallback(async () => {
+    if (!supabase) return;
+    setLoading(true);
+    try {
+      const { data } = await supabase.from('cpg_nav_buttons').select('*').order('display_order', { ascending: true });
+      setButtons(data || []);
+    } catch {}
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  if (!isSuperAdmin) {
+    return (
+      <div className="p-6">
+        <p className="text-gray-400">Solo los administradores con rol <span className="text-white font-bold">Super Admin</span> pueden gestionar los botones del menú.</p>
+      </div>
+    );
+  }
+
+  const resetForm = () => {
+    setForm({ label: '', url: '', icon: 'ExternalLink', color: 'gray', target: '_blank', active: true });
+    setEditingId(null);
+    setShowForm(false);
+  };
+
+  const handleEdit = (b) => {
+    setForm({
+      label: b.label || '', url: b.url || '',
+      icon: b.icon || 'ExternalLink', color: b.color || 'gray',
+      target: b.target || '_blank', active: b.active !== false,
+    });
+    setEditingId(b.id);
+    setShowForm(true);
+  };
+
+  const handleSave = async () => {
+    if (!form.label.trim() || !form.url.trim()) {
+      setMsg({ type: 'error', text: 'Etiqueta y URL son obligatorios.' });
+      return;
+    }
+    setSaving(true);
+    try {
+      const payload = {
+        label: form.label.trim(),
+        url: form.url.trim(),
+        icon: form.icon,
+        color: form.color,
+        target: form.target,
+        active: form.active,
+        updated_at: new Date().toISOString(),
+      };
+      if (editingId) {
+        await supabase.from('cpg_nav_buttons').update(payload).eq('id', editingId);
+        logAudit(currentAdminEmail, '', 'nav_button_updated', 'nav_button', editingId, payload);
+      } else {
+        const nextOrder = buttons.length > 0 ? Math.max(...buttons.map(b => b.display_order || 0)) + 1 : 1;
+        await supabase.from('cpg_nav_buttons').insert({ ...payload, display_order: nextOrder });
+        logAudit(currentAdminEmail, '', 'nav_button_created', 'nav_button', '', payload);
+      }
+      setMsg({ type: 'success', text: editingId ? 'Botón actualizado.' : 'Botón creado.' });
+      setTimeout(() => setMsg(null), 2500);
+      resetForm();
+      await load();
+      onChange?.();
+    } catch (e) {
+      setMsg({ type: 'error', text: 'Error: ' + (e?.message || e) });
+    }
+    setSaving(false);
+  };
+
+  const handleToggle = async (b) => {
+    try {
+      await supabase.from('cpg_nav_buttons').update({ active: !b.active, updated_at: new Date().toISOString() }).eq('id', b.id);
+      logAudit(currentAdminEmail, '', 'nav_button_toggled', 'nav_button', b.id, { active: !b.active });
+      await load();
+      onChange?.();
+    } catch (e) {
+      setMsg({ type: 'error', text: 'Error: ' + e.message });
+    }
+  };
+
+  const handleDelete = async (b) => {
+    if (!confirm(`¿Eliminar el botón "${b.label}"?`)) return;
+    try {
+      await supabase.from('cpg_nav_buttons').delete().eq('id', b.id);
+      logAudit(currentAdminEmail, '', 'nav_button_deleted', 'nav_button', b.id, { label: b.label });
+      await load();
+      onChange?.();
+      setMsg({ type: 'success', text: 'Botón eliminado.' });
+      setTimeout(() => setMsg(null), 2500);
+    } catch (e) {
+      setMsg({ type: 'error', text: 'Error: ' + e.message });
+    }
+  };
+
+  const handleMove = async (b, direction) => {
+    const sorted = [...buttons].sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
+    const idx = sorted.findIndex(x => x.id === b.id);
+    const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
+    if (swapIdx < 0 || swapIdx >= sorted.length) return;
+    const other = sorted[swapIdx];
+    try {
+      await supabase.from('cpg_nav_buttons').update({ display_order: other.display_order }).eq('id', b.id);
+      await supabase.from('cpg_nav_buttons').update({ display_order: b.display_order }).eq('id', other.id);
+      await load();
+      onChange?.();
+    } catch (e) {
+      setMsg({ type: 'error', text: 'Error: ' + e.message });
+    }
+  };
+
+  // Preview en vivo del botón
+  const FormIcon = NAV_BUTTON_ICONS[form.icon] || ExternalLink;
+  const previewClasses = getNavButtonColorClasses(form.color);
+
+  return (
+    <div className="p-6 space-y-5">
+      {msg && (
+        <div className={`rounded-xl px-4 py-2.5 text-sm border flex items-start gap-2 ${
+          msg.type === 'error' ? 'bg-red-900/20 border-red-700/40 text-red-300' :
+          'bg-green-900/20 border-green-700/40 text-green-300'
+        }`}>
+          {msg.type === 'error' ? <XCircle size={15} className="mt-0.5 flex-shrink-0" /> : <CheckCircle size={15} className="mt-0.5 flex-shrink-0" />}
+          {msg.text}
+        </div>
+      )}
+
+      <div className="bg-cyan-900/15 border border-cyan-700/30 rounded-xl px-4 py-3 flex items-start gap-2.5">
+        <Settings size={15} className="text-cyan-400 shrink-0 mt-0.5" />
+        <div className="text-cyan-200/90 text-xs">
+          <p className="font-semibold mb-0.5">Botones del menú superior</p>
+          <p className="text-cyan-200/70">Los botones que crees aquí aparecerán en la <span className="text-white font-semibold">fila 2 del menú</span>, al lado del contador de reproducciones. Útil para agregar accesos al Congreso 2026, eventos, sitios externos, etc.</p>
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="text-sm text-gray-400">
+          <span className="text-white font-bold">{buttons.filter(b => b.active).length}</span> activos ·{' '}
+          <span className="text-gray-500">{buttons.length} en total</span>
+        </div>
+        {!showForm && (
+          <button
+            onClick={() => { resetForm(); setShowForm(true); }}
+            className="flex items-center gap-2 bg-gradient-to-r from-cyan-700 to-cyan-600 hover:from-cyan-600 hover:to-cyan-500 px-4 py-2 rounded-lg text-sm font-bold transition shadow-lg shadow-cyan-900/30"
+          >
+            <Plus size={15} /> Nuevo botón
+          </button>
+        )}
+      </div>
+
+      {/* ── Form crear/editar ── */}
+      {showForm && (
+        <div className="bg-[#1a1a1a] border border-gray-800 rounded-2xl p-5 space-y-4">
+          <h3 className="text-white font-bold text-lg">{editingId ? 'Editar botón' : 'Nuevo botón'}</h3>
+
+          {/* Preview */}
+          <div className="bg-black/40 border border-gray-700 rounded-xl px-4 py-3">
+            <p className="text-xs text-gray-500 uppercase tracking-wider mb-2">Vista previa</p>
+            <span className={`inline-flex items-center gap-1 text-xs border px-3 py-1.5 rounded-full transition ${previewClasses}`}>
+              <FormIcon size={12} /> {form.label || 'Etiqueta del botón'}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">Etiqueta <span className="text-red-400">*</span></label>
+              <input
+                value={form.label}
+                onChange={e => setForm({ ...form, label: e.target.value })}
+                placeholder="Ej. Congreso 2026"
+                className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:border-cyan-500 outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">URL <span className="text-red-400">*</span></label>
+              <input
+                value={form.url}
+                onChange={e => setForm({ ...form, url: e.target.value })}
+                placeholder="https://..."
+                className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:border-cyan-500 outline-none"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">Color</label>
+              <div className="grid grid-cols-7 gap-1.5">
+                {NAV_BUTTON_COLORS.map(c => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => setForm({ ...form, color: c.id })}
+                    title={c.label}
+                    className={`h-9 rounded-lg border-2 transition flex items-center justify-center text-xs font-bold ${
+                      form.color === c.id ? 'border-white scale-105' : 'border-transparent opacity-70 hover:opacity-100'
+                    } ${c.classes.split(' ').filter(cl => cl.startsWith('text-')).join(' ')}`}
+                  >
+                    Aa
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">Abrir en</label>
+              <select
+                value={form.target}
+                onChange={e => setForm({ ...form, target: e.target.value })}
+                className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:border-cyan-500 outline-none"
+              >
+                <option value="_blank">Pestaña nueva</option>
+                <option value="_self">Misma pestaña</option>
+              </select>
+            </div>
+
+            <div className="md:col-span-2">
+              <label className="block text-xs text-gray-400 mb-1">Ícono</label>
+              <div className="bg-black/40 border border-gray-700 rounded-lg p-2 max-h-44 overflow-y-auto">
+                <div className="grid grid-cols-6 sm:grid-cols-10 gap-1.5">
+                  {Object.entries(NAV_BUTTON_ICONS).map(([name, IconComp]) => (
+                    <button
+                      key={name}
+                      type="button"
+                      onClick={() => setForm({ ...form, icon: name })}
+                      title={name}
+                      className={`aspect-square rounded-lg flex items-center justify-center transition border ${
+                        form.icon === name
+                          ? 'bg-cyan-600/30 border-cyan-500 text-white'
+                          : 'bg-gray-900/50 border-transparent text-gray-400 hover:text-white hover:bg-gray-800'
+                      }`}
+                    >
+                      <IconComp size={16} />
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="md:col-span-2">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={form.active}
+                  onChange={e => setForm({ ...form, active: e.target.checked })}
+                  className="w-4 h-4 accent-cyan-500"
+                />
+                <span className="text-sm text-gray-300">Botón activo (visible en el menú)</span>
+              </label>
+            </div>
+          </div>
+
+          <div className="flex gap-2 pt-2">
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold px-5 py-2 rounded-lg transition flex items-center gap-2 text-sm"
+            >
+              {saving ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle size={14} />}
+              {editingId ? 'Guardar cambios' : 'Crear botón'}
+            </button>
+            <button
+              onClick={resetForm}
+              className="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-lg text-sm transition"
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Lista de botones existentes ── */}
+      {loading ? (
+        <div className="text-center py-8 text-gray-500 text-sm">
+          <Loader2 size={20} className="animate-spin mx-auto mb-2 text-cyan-500" />
+          Cargando…
+        </div>
+      ) : buttons.length === 0 ? (
+        <div className="bg-black/30 border border-gray-800 border-dashed rounded-2xl p-8 text-center">
+          <Settings size={32} className="mx-auto mb-2 text-gray-600" />
+          <p className="text-gray-400 text-sm font-semibold">No hay botones creados aún</p>
+          <p className="text-gray-500 text-xs mt-1">Crea el primero para que aparezca en el menú superior.</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {[...buttons]
+            .sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
+            .map((b, idx, arr) => {
+              const Icon = NAV_BUTTON_ICONS[b.icon] || ExternalLink;
+              const colorClasses = getNavButtonColorClasses(b.color);
+              return (
+                <div key={b.id} className={`bg-[#1a1a1a] border border-gray-800 hover:border-gray-700 rounded-xl px-4 py-3 transition ${!b.active ? 'opacity-50' : ''}`}>
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <div className="flex flex-col gap-0.5">
+                      <button onClick={() => handleMove(b, 'up')} disabled={idx === 0} className="p-0.5 text-gray-500 hover:text-white disabled:opacity-20"><ChevronDown size={11} className="rotate-180" /></button>
+                      <span className="text-[10px] text-gray-600 text-center font-mono">{b.display_order}</span>
+                      <button onClick={() => handleMove(b, 'down')} disabled={idx === arr.length - 1} className="p-0.5 text-gray-500 hover:text-white disabled:opacity-20"><ChevronDown size={11} /></button>
+                    </div>
+
+                    <span className={`inline-flex items-center gap-1 text-xs border px-3 py-1.5 rounded-full ${colorClasses}`}>
+                      <Icon size={12} /> {b.label}
+                    </span>
+
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs text-gray-500 truncate font-mono">{b.url}</p>
+                      <p className="text-[10px] text-gray-600 mt-0.5">
+                        {b.target === '_blank' ? 'Abre en pestaña nueva' : 'Misma pestaña'}
+                        {!b.active && ' · INACTIVO'}
+                      </p>
+                    </div>
+
+                    <div className="flex gap-1">
+                      <button
+                        onClick={() => handleEdit(b)}
+                        className="p-1.5 bg-blue-900/40 hover:bg-blue-800/60 text-blue-300 rounded-lg"
+                        title="Editar"
+                      >
+                        <Edit2 size={13} />
+                      </button>
+                      <button
+                        onClick={() => handleToggle(b)}
+                        className={`p-1.5 rounded-lg ${b.active ? 'bg-orange-900/40 hover:bg-orange-800/60 text-orange-300' : 'bg-green-900/40 hover:bg-green-800/60 text-green-300'}`}
+                        title={b.active ? 'Desactivar' : 'Activar'}
+                      >
+                        {b.active ? <XCircle size={13} /> : <CheckCircle size={13} />}
+                      </button>
+                      <button
+                        onClick={() => handleDelete(b)}
+                        className="p-1.5 bg-red-900/40 hover:bg-red-800/60 text-red-300 rounded-lg"
+                        title="Eliminar"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════
+// ██ CAMBIAR CORREO REGISTRADO                                ██
+// ══════════════════════════════════════════════════════════════
+function EmailChangeManager({ currentAdminRole, currentAdminEmail }) {
+  const [oldEmail, setOldEmail] = useState('');
+  const [newEmail, setNewEmail] = useState('');
+  const [profileMatch, setProfileMatch] = useState(null); // { collegiate_number, name }
+  const [searching, setSearching] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [msg, setMsg] = useState(null);
+
+  const isSuperAdmin = currentAdminRole === 'super_admin';
+
+  if (!isSuperAdmin) {
+    return (
+      <div className="p-6">
+        <p className="text-gray-400">Solo los administradores con rol <span className="text-white font-bold">Super Admin</span> pueden cambiar correos registrados.</p>
+      </div>
+    );
+  }
+
+  const handleSearch = async () => {
+    const v = oldEmail.trim().toLowerCase();
+    if (!v) { setMsg({ type: 'error', text: 'Ingresa el correo actual del usuario.' }); return; }
+    setSearching(true); setMsg(null); setProfileMatch(null);
+    try {
+      const { data, error } = await supabase
+        .from('cpg_user_profiles')
+        .select('collegiate_number, name, email')
+        .ilike('email', v)
+        .limit(1)
+        .maybeSingle();
+      if (error) throw error;
+      if (data) {
+        setProfileMatch(data);
+      } else {
+        setMsg({ type: 'info', text: 'No encontramos perfil con ese correo en la tabla local. Aun así puedes intentar el cambio (puede que solo exista en Supabase Auth).' });
+      }
+    } catch (e) {
+      setMsg({ type: 'error', text: 'Error buscando: ' + (e?.message || e) });
+    }
+    setSearching(false);
+  };
+
+  const performChange = async () => {
+    const oldE = oldEmail.trim().toLowerCase();
+    const newE = newEmail.trim().toLowerCase();
+    if (!oldE || !newE) {
+      setMsg({ type: 'error', text: 'Ingresa ambos correos.' });
+      setConfirmOpen(false);
+      return;
+    }
+    if (oldE === newE) {
+      setMsg({ type: 'error', text: 'El nuevo correo es igual al actual.' });
+      setConfirmOpen(false);
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newE)) {
+      setMsg({ type: 'error', text: 'El nuevo correo no tiene formato válido.' });
+      setConfirmOpen(false);
+      return;
+    }
+    setSaving(true); setMsg(null);
+    try {
+      const { data, error } = await supabase.rpc('change_user_email', {
+        target_old_email: oldE,
+        new_email: newE,
+        p_admin_email: currentAdminEmail || '',
+      });
+      if (error) throw error;
+      if (data?.success === false) {
+        setMsg({ type: 'error', text: data?.message || 'No se pudo cambiar el correo.' });
+      } else {
+        setMsg({ type: 'success', text: data?.message || 'Correo cambiado correctamente.' });
+        setOldEmail(''); setNewEmail(''); setProfileMatch(null);
+        logAudit(currentAdminEmail, '', 'email_changed', 'user', oldE, { newEmail: newE });
+      }
+    } catch (e) {
+      setMsg({ type: 'error', text: 'Error: ' + (e?.message || e) });
+    }
+    setSaving(false);
+    setConfirmOpen(false);
+  };
+
+  return (
+    <div className="p-6 space-y-5">
+      <div className="flex items-start gap-3 bg-amber-900/15 border border-amber-700/30 rounded-xl px-4 py-3">
+        <Shield size={16} className="text-amber-400 mt-0.5 flex-shrink-0" />
+        <div className="text-xs text-amber-200/90">
+          <p className="font-semibold mb-0.5">Acción sensible</p>
+          <p className="text-amber-200/70">El nuevo correo se activa automáticamente — el usuario podrá ingresar de inmediato con su contraseña actual y el nuevo correo. El cambio queda registrado en el audit log.</p>
+        </div>
+      </div>
+
+      {/* Paso 1: Buscar usuario */}
+      <div className="bg-[#1a1a1a] border border-gray-800 rounded-xl p-4 space-y-3">
+        <div className="flex items-center gap-2">
+          <div className="bg-blue-600/80 p-1.5 rounded-lg"><Search size={13} className="text-white" /></div>
+          <h3 className="text-white font-semibold text-sm">1. Buscar usuario por correo actual</h3>
+        </div>
+        <div className="flex gap-3 items-end flex-wrap">
+          <div className="flex-1 min-w-[200px]">
+            <input
+              type="email"
+              value={oldEmail}
+              onChange={e => { setOldEmail(e.target.value); setProfileMatch(null); setMsg(null); }}
+              onKeyDown={e => { if (e.key === 'Enter') handleSearch(); }}
+              placeholder="correo.actual@ejemplo.com"
+              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2.5 text-white text-sm focus:border-blue-500 outline-none"
+            />
+          </div>
+          <button
+            onClick={handleSearch}
+            disabled={searching || !oldEmail.trim()}
+            className="flex items-center gap-2 bg-blue-700 hover:bg-blue-600 disabled:opacity-50 px-4 py-2.5 rounded-lg text-sm font-bold transition"
+          >
+            {searching ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
+            Buscar
+          </button>
+        </div>
+        {profileMatch && (
+          <div className="bg-emerald-900/15 border border-emerald-700/30 rounded-lg px-3 py-2 flex items-center gap-3">
+            <CheckCircle size={16} className="text-emerald-400 flex-shrink-0" />
+            <div className="flex-1 text-sm">
+              <p className="text-white font-semibold">{profileMatch.name || '(sin nombre)'}</p>
+              <p className="text-xs text-gray-400">Colegiado: <span className="text-gray-200 font-mono">{profileMatch.collegiate_number || '—'}</span></p>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Paso 2: Nuevo correo */}
+      <div className="bg-[#1a1a1a] border border-gray-800 rounded-xl p-4 space-y-3">
+        <div className="flex items-center gap-2">
+          <div className="bg-emerald-600/80 p-1.5 rounded-lg"><Mail size={13} className="text-white" /></div>
+          <h3 className="text-white font-semibold text-sm">2. Nuevo correo</h3>
+        </div>
+        <input
+          type="email"
+          value={newEmail}
+          onChange={e => { setNewEmail(e.target.value); setMsg(null); }}
+          placeholder="nuevo.correo@ejemplo.com"
+          className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2.5 text-white text-sm focus:border-emerald-500 outline-none"
+        />
+        <button
+          onClick={() => setConfirmOpen(true)}
+          disabled={saving || !oldEmail.trim() || !newEmail.trim()}
+          className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-emerald-700 to-emerald-600 hover:from-emerald-600 hover:to-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold px-5 py-2.5 rounded-lg transition shadow-lg shadow-emerald-900/30"
+        >
+          {saving ? <Loader2 size={15} className="animate-spin" /> : <Mail size={15} />}
+          Cambiar correo registrado
+        </button>
+      </div>
+
+      {msg && (
+        <div className={`rounded-xl px-4 py-3 text-sm border flex items-start gap-2 ${
+          msg.type === 'error' ? 'bg-red-900/20 border-red-700/40 text-red-300' :
+          msg.type === 'success' ? 'bg-green-900/20 border-green-700/40 text-green-300' :
+          'bg-blue-900/20 border-blue-700/40 text-blue-300'
+        }`}>
+          {msg.type === 'error' ? <XCircle size={16} className="mt-0.5 flex-shrink-0" /> :
+           msg.type === 'success' ? <CheckCircle size={16} className="mt-0.5 flex-shrink-0" /> :
+           <Mail size={16} className="mt-0.5 flex-shrink-0" />}
+          <span>{msg.text}</span>
+        </div>
+      )}
+
+      {/* Modal de confirmación */}
+      {confirmOpen && (
+        <div className="fixed inset-0 bg-black/70 z-[200] flex items-center justify-center px-4">
+          <div className="bg-[#1a1a2e] border border-gray-700 rounded-2xl max-w-md w-full p-6 shadow-2xl">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="bg-amber-600/80 p-2.5 rounded-xl">
+                <Shield size={18} className="text-white" />
+              </div>
+              <h3 className="text-white font-bold text-lg">Confirmar cambio de correo</h3>
+            </div>
+            <p className="text-sm text-gray-300 mb-4">Estás a punto de cambiar el correo registrado de:</p>
+            <div className="bg-black/40 border border-gray-700 rounded-lg p-3 mb-2">
+              <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Actual</p>
+              <p className="text-white font-mono text-sm break-all">{oldEmail}</p>
+            </div>
+            <div className="text-center my-2 text-gray-500">↓</div>
+            <div className="bg-emerald-900/15 border border-emerald-700/40 rounded-lg p-3 mb-5">
+              <p className="text-xs text-emerald-400 uppercase tracking-wider mb-1">Nuevo</p>
+              <p className="text-white font-mono text-sm break-all">{newEmail}</p>
+            </div>
+            <p className="text-xs text-gray-400 mb-5">La cuenta se activa automáticamente. El usuario podrá ingresar inmediatamente con su nueva dirección y la misma contraseña.</p>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setConfirmOpen(false)}
+                disabled={saving}
+                className="flex-1 bg-gray-700 hover:bg-gray-600 text-white px-4 py-2.5 rounded-lg font-medium text-sm transition disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={performChange}
+                disabled={saving}
+                className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2.5 rounded-lg font-bold text-sm transition flex items-center justify-center gap-2 disabled:opacity-50"
+              >
+                {saving ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle size={14} />}
+                Confirmar cambio
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function UserVerifyManager({ currentAdminRole }) {
   const [email, setEmail] = useState('');
   const [status, setStatus] = useState('');
   const [loading, setLoading] = useState(false);
+  // Cola de cuentas Hotmail pendientes
+  const [queueRows, setQueueRows] = useState([]);
+  const [queueLoading, setQueueLoading] = useState(true);
+  // Estado por fila (verifying/activating)
+  const [rowState, setRowState] = useState({});
 
   const isSuperAdmin = currentAdminRole === 'super_admin';
+
+  const loadQueue = useCallback(async () => {
+    if (!supabase) return;
+    setQueueLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('cpg_email_verification_queue')
+        .select('*')
+        .is('activated_at', null)
+        .order('created_at', { ascending: false });
+      if (!error) setQueueRows(data || []);
+    } catch {}
+    setQueueLoading(false);
+  }, []);
+
+  useEffect(() => { if (isSuperAdmin) loadQueue(); }, [isSuperAdmin, loadQueue]);
 
   if (!isSuperAdmin) {
     return (
@@ -4344,50 +5027,211 @@ function UserVerifyManager({ currentAdminRole }) {
     setLoading(false);
   };
 
+  // ── Acciones por fila de cola ──
+  const setRow = (id, patch) => setRowState(prev => ({ ...prev, [id]: { ...(prev[id] || {}), ...patch } }));
+
+  const checkRow = async (row) => {
+    setRow(row.id, { loading: 'check', status: 'Consultando…' });
+    try {
+      const { data, error } = await supabase.rpc('check_user_status', { target_email: row.email });
+      setRow(row.id, { loading: null, status: error ? 'Error: ' + error.message : (data?.message || JSON.stringify(data)) });
+    } catch (e) {
+      setRow(row.id, { loading: null, status: 'Error: ' + (e?.message || e) });
+    }
+  };
+
+  const activateRow = async (row) => {
+    if (!confirm(`¿Activar la cuenta de ${row.email}?\nSe marcará como resuelta y desaparecerá de esta cola.`)) return;
+    setRow(row.id, { loading: 'activate', status: 'Activando…' });
+    try {
+      const { data, error } = await supabase.rpc('activate_user_by_email', { target_email: row.email });
+      if (error) {
+        setRow(row.id, { loading: null, status: 'Error: ' + error.message });
+        return;
+      }
+      // Marcar como resuelto en la cola
+      const { data: { session } } = await supabase.auth.getSession();
+      const adminEmail = session?.user?.email || 'admin';
+      await supabase
+        .from('cpg_email_verification_queue')
+        .update({ activated_at: new Date().toISOString(), activated_by: adminEmail })
+        .eq('id', row.id);
+      // Quitar de la lista local
+      setQueueRows(prev => prev.filter(r => r.id !== row.id));
+    } catch (e) {
+      setRow(row.id, { loading: null, status: 'Error: ' + (e?.message || e) });
+    }
+  };
+
+  const dismissRow = async (row) => {
+    if (!confirm(`¿Descartar ${row.email} de la cola?\nEsto solo lo quita de la lista (no toca la cuenta).`)) return;
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const adminEmail = session?.user?.email || 'admin';
+      await supabase
+        .from('cpg_email_verification_queue')
+        .update({ activated_at: new Date().toISOString(), activated_by: adminEmail, notes: 'Descartado sin activar' })
+        .eq('id', row.id);
+      setQueueRows(prev => prev.filter(r => r.id !== row.id));
+    } catch {}
+  };
+
+  const fmtDate = (iso) => {
+    try { return new Date(iso).toLocaleString('es-GT', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }); }
+    catch { return iso; }
+  };
+
   return (
-    <div className="p-6 space-y-4">
-      <p className="text-sm text-gray-400">
-        Consulta el estado de verificación de una cuenta o actívala manualmente si el usuario no recibió el correo de confirmación.
-      </p>
-      <div className="flex gap-3 items-end">
-        <div className="flex-1">
-          <label className="block text-xs text-gray-400 mb-1">Correo electrónico del usuario</label>
-          <input
-            type="email"
-            value={email}
-            onChange={e => { setEmail(e.target.value); setStatus(''); }}
-            onKeyDown={e => { if (e.key === 'Enter') handleCheck(); }}
-            placeholder="usuario@ejemplo.com"
-            className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2.5 text-white text-sm focus:border-blue-500 outline-none"
-          />
+    <div className="p-6 space-y-6">
+      {/* ═══ Cola de cuentas problemáticas pendientes ═══ */}
+      <section>
+        <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+          <div className="flex items-center gap-2.5">
+            <div className="bg-gradient-to-br from-amber-500 to-orange-600 p-2 rounded-lg shadow-lg shadow-amber-900/30">
+              <Mail size={16} className="text-white" />
+            </div>
+            <div>
+              <h3 className="text-white font-bold text-sm">Cuentas pendientes de activación</h3>
+              <p className="text-[11px] text-gray-500">Correos Hotmail / Outlook / Live / MSN que crearon cuenta y suelen no recibir el correo de verificación</p>
+            </div>
+          </div>
+          <button
+            onClick={loadQueue}
+            disabled={queueLoading}
+            className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-white border border-gray-700 hover:border-gray-500 rounded-full px-3 py-1.5 transition disabled:opacity-50"
+            title="Recargar lista"
+          >
+            {queueLoading ? <Loader2 size={12} className="animate-spin" /> : <Search size={12} />}
+            Recargar
+          </button>
         </div>
-        <button
-          onClick={handleCheck}
-          disabled={loading}
-          className="flex items-center gap-2 bg-blue-700 hover:bg-blue-600 disabled:opacity-50 px-4 py-2.5 rounded-lg text-sm font-bold transition"
-        >
-          {loading ? <Loader2 size={15} className="animate-spin" /> : <Search size={15} />}
-          Verificar
-        </button>
-        <button
-          onClick={handleActivate}
-          disabled={loading}
-          className="flex items-center gap-2 bg-green-700 hover:bg-green-600 disabled:opacity-50 px-4 py-2.5 rounded-lg text-sm font-bold transition"
-        >
-          {loading ? <Loader2 size={15} className="animate-spin" /> : <UserCheck size={15} />}
-          Activar cuenta
-        </button>
-      </div>
-      {status && (
-        <div className={`rounded-lg px-4 py-3 text-sm border ${
-          status.startsWith('Error') ? 'bg-red-900/30 border-red-700 text-red-300' :
-          status.includes('NO está') ? 'bg-yellow-900/30 border-yellow-700 text-yellow-300' :
-          status.includes('activado') || status.includes('ya está activo') || status.includes('verificado') ? 'bg-green-900/30 border-green-700 text-green-300' :
-          'bg-gray-800 border-gray-700 text-gray-300'
-        }`}>
-          {status}
+
+        {queueLoading ? (
+          <div className="bg-black/30 border border-gray-800 rounded-xl px-4 py-8 text-center text-gray-500 text-sm">
+            <Loader2 size={20} className="animate-spin mx-auto mb-2 text-amber-500" />
+            Cargando cuentas pendientes…
+          </div>
+        ) : queueRows.length === 0 ? (
+          <div className="bg-emerald-900/10 border border-emerald-700/30 rounded-xl px-4 py-6 text-center">
+            <CheckCircle size={22} className="mx-auto mb-2 text-emerald-500" />
+            <p className="text-emerald-300 text-sm font-semibold">No hay cuentas pendientes</p>
+            <p className="text-emerald-200/60 text-xs mt-0.5">Cuando alguien con correo problemático cree una cuenta, aparecerá aquí.</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {queueRows.map(row => {
+              const st = rowState[row.id] || {};
+              return (
+                <div key={row.id} className="bg-[#1a1a1a] border border-gray-800 hover:border-gray-700 rounded-xl px-4 py-3 transition">
+                  <div className="flex items-start justify-between gap-3 flex-wrap">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="text-white font-semibold text-sm truncate">{row.email}</p>
+                        <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-900/40 text-amber-300 font-bold">{row.domain || 'pendiente'}</span>
+                      </div>
+                      <div className="flex items-center gap-3 mt-1 text-xs text-gray-500 flex-wrap">
+                        {row.name && <span><span className="text-gray-400">Nombre:</span> {row.name}</span>}
+                        {row.collegiate_number && <span><span className="text-gray-400">Colegiado:</span> {row.collegiate_number}</span>}
+                        <span><span className="text-gray-400">Creado:</span> {fmtDate(row.created_at)}</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                      <button
+                        onClick={() => checkRow(row)}
+                        disabled={!!st.loading}
+                        className="flex items-center gap-1 text-xs bg-blue-900/40 hover:bg-blue-800/60 border border-blue-700/50 text-blue-300 px-2.5 py-1.5 rounded-lg transition disabled:opacity-50 font-medium"
+                        title="Verificar estado de la cuenta en Supabase"
+                      >
+                        {st.loading === 'check' ? <Loader2 size={12} className="animate-spin" /> : <Search size={12} />}
+                        Verificar
+                      </button>
+                      <button
+                        onClick={() => activateRow(row)}
+                        disabled={!!st.loading}
+                        className="flex items-center gap-1 text-xs bg-green-900/40 hover:bg-green-800/60 border border-green-700/50 text-green-300 px-2.5 py-1.5 rounded-lg transition disabled:opacity-50 font-medium"
+                        title="Activar cuenta manualmente y quitar de esta lista"
+                      >
+                        {st.loading === 'activate' ? <Loader2 size={12} className="animate-spin" /> : <UserCheck size={12} />}
+                        Activar
+                      </button>
+                      <button
+                        onClick={() => dismissRow(row)}
+                        disabled={!!st.loading}
+                        className="flex items-center text-xs bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-400 hover:text-white p-1.5 rounded-lg transition disabled:opacity-50"
+                        title="Descartar de la cola (sin activar la cuenta)"
+                      >
+                        <X size={12} />
+                      </button>
+                    </div>
+                  </div>
+                  {st.status && (
+                    <div className={`mt-2 rounded-lg px-3 py-1.5 text-xs border ${
+                      st.status.startsWith('Error') ? 'bg-red-900/20 border-red-700/40 text-red-300' :
+                      st.status.includes('NO está') ? 'bg-yellow-900/20 border-yellow-700/40 text-yellow-300' :
+                      (st.status.includes('activado') || st.status.includes('ya está activo') || st.status.includes('verificado')) ? 'bg-green-900/20 border-green-700/40 text-green-300' :
+                      'bg-gray-900/30 border-gray-700/40 text-gray-400'
+                    }`}>
+                      {st.status}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      {/* ═══ Búsqueda manual (para casos no-hotmail) ═══ */}
+      <section className="border-t border-gray-800 pt-5">
+        <div className="flex items-center gap-2.5 mb-3">
+          <div className="bg-blue-600/80 p-2 rounded-lg">
+            <Search size={15} className="text-white" />
+          </div>
+          <div>
+            <h3 className="text-white font-bold text-sm">Búsqueda manual</h3>
+            <p className="text-[11px] text-gray-500">Verifica o activa cualquier correo, no solo los de la cola</p>
+          </div>
         </div>
-      )}
+        <div className="flex gap-3 items-end flex-wrap">
+          <div className="flex-1 min-w-[200px]">
+            <label className="block text-xs text-gray-400 mb-1">Correo electrónico</label>
+            <input
+              type="email"
+              value={email}
+              onChange={e => { setEmail(e.target.value); setStatus(''); }}
+              onKeyDown={e => { if (e.key === 'Enter') handleCheck(); }}
+              placeholder="usuario@ejemplo.com"
+              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2.5 text-white text-sm focus:border-blue-500 outline-none"
+            />
+          </div>
+          <button
+            onClick={handleCheck}
+            disabled={loading}
+            className="flex items-center gap-2 bg-blue-700 hover:bg-blue-600 disabled:opacity-50 px-4 py-2.5 rounded-lg text-sm font-bold transition"
+          >
+            {loading ? <Loader2 size={15} className="animate-spin" /> : <Search size={15} />}
+            Verificar
+          </button>
+          <button
+            onClick={handleActivate}
+            disabled={loading}
+            className="flex items-center gap-2 bg-green-700 hover:bg-green-600 disabled:opacity-50 px-4 py-2.5 rounded-lg text-sm font-bold transition"
+          >
+            {loading ? <Loader2 size={15} className="animate-spin" /> : <UserCheck size={15} />}
+            Activar cuenta
+          </button>
+        </div>
+        {status && (
+          <div className={`mt-3 rounded-lg px-4 py-3 text-sm border ${
+            status.startsWith('Error') ? 'bg-red-900/30 border-red-700 text-red-300' :
+            status.includes('NO está') ? 'bg-yellow-900/30 border-yellow-700 text-yellow-300' :
+            status.includes('activado') || status.includes('ya está activo') || status.includes('verificado') ? 'bg-green-900/30 border-green-700 text-green-300' :
+            'bg-gray-800 border-gray-700 text-gray-300'
+          }`}>
+            {status}
+          </div>
+        )}
+      </section>
     </div>
   );
 }
@@ -4818,7 +5662,7 @@ function AuditLogViewer() {
 }
 
 // ── ADMIN DASHBOARD ───────────────────────────────
-function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSession, onSaveLiveSession, onVideosChange, onActivitiesChange, onGenerateCertificate, certTemplate, onSaveCertConfig, siteLogos, onSaveSiteLogos, adminRole, commissions = [] }) {
+function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSession, onSaveLiveSession, onVideosChange, onActivitiesChange, onGenerateCertificate, certTemplate, onSaveCertConfig, siteLogos, onSaveSiteLogos, adminRole, commissions = [], currentAdminEmail = '', onNavButtonsChange = null }) {
   const [editingVideo, setEditingVideo] = useState(null);
   const [manualCertVideo, setManualCertVideo] = useState(null);
   const [manualProfile, setManualProfile] = useState({ name: '', collegiateNumber: '', status: '' });
@@ -4830,6 +5674,8 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
   const [showLogoManager, setShowLogoManager] = useState(false);
   const [showAdminUsersSection, setShowAdminUsersSection] = useState(false);
   const [showUserVerifySection, setShowUserVerifySection] = useState(false);
+  const [showEmailChangeSection, setShowEmailChangeSection] = useState(false);
+  const [showNavButtonsSection, setShowNavButtonsSection] = useState(false);
   const [showVolunteerCertSection, setShowVolunteerCertSection] = useState(false);
   const [volunteerReprintCert, setVolunteerReprintCert] = useState(null); // registro completo a reimprimir
   const [volunteerAutoDownload, setVolunteerAutoDownload] = useState(false); // descarga directa sin abrir editor
@@ -5654,12 +6500,46 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
             <div className="bg-teal-600 p-2 rounded-lg"><UserCheck size={18} className="text-white" /></div>
             <div className="text-left">
               <h2 className="text-xl font-bold text-white">Verificar y activar cuentas de usuarios</h2>
-              <p className="text-xs text-gray-400">Consultar estado de cuenta o activar manualmente sin correo de verificación</p>
+              <p className="text-xs text-gray-400">Cuentas Hotmail/Outlook pendientes + búsqueda manual</p>
             </div>
           </div>
           <span className="text-gray-400 text-lg">{showUserVerifySection ? '▲' : '▼'}</span>
         </button>
         {showUserVerifySection && <div className="border-t border-gray-800"><UserVerifyManager currentAdminRole={adminRole} /></div>}
+      </div>
+      )}
+
+      {/* ── CAMBIAR CORREO REGISTRADO ── */}
+      {adminRole === 'super_admin' && (
+      <div className="bg-[#1b1b1b] border border-gray-800 rounded-2xl mb-6 overflow-hidden">
+        <button type="button" onClick={() => setShowEmailChangeSection(v => !v)} className="w-full flex items-center justify-between px-6 py-4 hover:bg-white/5 transition">
+          <div className="flex items-center gap-3">
+            <div className="bg-gradient-to-br from-emerald-500 to-emerald-700 p-2 rounded-lg shadow-lg shadow-emerald-900/30"><Mail size={18} className="text-white" /></div>
+            <div className="text-left">
+              <h2 className="text-xl font-bold text-white">Cambiar correo registrado</h2>
+              <p className="text-xs text-gray-400">Cambiar el correo de un usuario que perdió acceso o quiere actualizarlo</p>
+            </div>
+          </div>
+          <span className="text-gray-400 text-lg">{showEmailChangeSection ? '▲' : '▼'}</span>
+        </button>
+        {showEmailChangeSection && <div className="border-t border-gray-800"><EmailChangeManager currentAdminRole={adminRole} currentAdminEmail={currentAdminEmail} /></div>}
+      </div>
+      )}
+
+      {/* ── BOTONES PERSONALIZABLES DEL MENÚ SUPERIOR ── */}
+      {adminRole === 'super_admin' && (
+      <div className="bg-[#1b1b1b] border border-gray-800 rounded-2xl mb-6 overflow-hidden">
+        <button type="button" onClick={() => setShowNavButtonsSection(v => !v)} className="w-full flex items-center justify-between px-6 py-4 hover:bg-white/5 transition">
+          <div className="flex items-center gap-3">
+            <div className="bg-gradient-to-br from-cyan-500 to-cyan-700 p-2 rounded-lg shadow-lg shadow-cyan-900/30"><Settings size={18} className="text-white" /></div>
+            <div className="text-left">
+              <h2 className="text-xl font-bold text-white">Botones del menú superior</h2>
+              <p className="text-xs text-gray-400">Agregar accesos directos al congreso, eventos, sitios externos, etc.</p>
+            </div>
+          </div>
+          <span className="text-gray-400 text-lg">{showNavButtonsSection ? '▲' : '▼'}</span>
+        </button>
+        {showNavButtonsSection && <div className="border-t border-gray-800"><NavButtonsManager currentAdminRole={adminRole} currentAdminEmail={currentAdminEmail} onChange={onNavButtonsChange} /></div>}
       </div>
       )}
 
