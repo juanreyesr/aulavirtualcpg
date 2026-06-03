@@ -1247,13 +1247,20 @@ export default function App() {
   const [certTemplate, setCertTemplate] = useState(DEFAULT_CERT_CONFIG);
   const [siteLogos, setSiteLogos] = useState(DEFAULT_SITE_LOGOS);
 
-  // ── Tracker de clicks en botones del nav (silencioso, fire-and-forget) ──
+  // ── Tracker de clicks en botones del nav (silencioso pero realmente ejecutado) ──
+  // IMPORTANTE: supabase.rpc(...) es LAZY — sin .then() / await no se ejecuta.
+  // Forzamos la ejecución con .then() para que la petición salga del cliente.
   const trackClick = useCallback((key, label = null) => {
     if (!supabase || !key) return;
-    // Silencioso: no esperamos respuesta, no bloqueamos la navegación, ignoramos errores
     try {
-      supabase.rpc('increment_button_click', { p_key: key, p_label: label });
-    } catch {}
+      supabase
+        .rpc('increment_button_click', { p_key: key, p_label: label })
+        .then(({ error }) => {
+          if (error) console.warn('[trackClick] error:', error.message);
+        });
+    } catch (e) {
+      console.warn('[trackClick] exception:', e?.message);
+    }
   }, []);
 
   // ── Botones personalizables del nav (gestionables desde admin) ──
