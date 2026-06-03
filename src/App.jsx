@@ -1248,24 +1248,36 @@ export default function App() {
   const [siteLogos, setSiteLogos] = useState(DEFAULT_SITE_LOGOS);
 
   // ── Tracker de clicks en botones del nav ──
-  // Usa fetch con keepalive: true para que la petición SOBREVIVA a navegaciones
-  // (window.location.href = ... como pasa en "Créditos Académicos"). El SDK
-  // de Supabase con .then() funciona para clicks que no navegan, pero el
-  // fetch keepalive es robusto en todos los casos.
+  // Usa navigator.sendBeacon — diseñado específicamente para enviar datos
+  // ANTES de que la página se descargue. Garantiza que clicks como
+  // "Créditos Académicos" (que hacen window.location.href = ...) sean
+  // registrados sin importar la velocidad de la navegación.
+  //
+  // sendBeacon no permite headers custom, por eso usamos el wrapper en
+  // schema public (public.increment_button_click) que sí está accesible
+  // sin Content-Profile. El apikey va en la URL como query param.
   const trackClick = useCallback((key, label = null) => {
     if (!key || !SUPABASE_URL || !SUPABASE_ANON_KEY) return;
     try {
-      const url = `${SUPABASE_URL}/rest/v1/rpc/increment_button_click`;
+      const url = `${SUPABASE_URL}/rest/v1/rpc/increment_button_click?apikey=${encodeURIComponent(SUPABASE_ANON_KEY)}`;
+      const payload = JSON.stringify({ p_key: key, p_label: label });
+      const blob = new Blob([payload], { type: 'application/json' });
+
+      // 1ª opción: sendBeacon (más robusto en navegaciones)
+      if (typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
+        const ok = navigator.sendBeacon(url, blob);
+        if (ok) return;
+      }
+      // Fallback: fetch con keepalive
       fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Content-Profile': 'aulacaeduc', // schema (mismo que usa el SDK)
           'apikey': SUPABASE_ANON_KEY,
           'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
         },
-        body: JSON.stringify({ p_key: key, p_label: label }),
-        keepalive: true, // ← clave: el browser no aborta el request al navegar
+        body: payload,
+        keepalive: true,
       }).catch(e => console.warn('[trackClick]', e?.message));
     } catch (e) {
       console.warn('[trackClick] exception:', e?.message);
