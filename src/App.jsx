@@ -5,7 +5,7 @@ import {
   Download, Loader2, UserCheck, UserX, Edit2, Users, Radio, Wifi, Video,
   Search, Mail, Shield, History, QrCode, KeyRound, Upload, Image, Type, Settings, Printer, RefreshCw
 } from 'lucide-react';
-import { supabase } from './supabaseClient';
+import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from './supabaseClient';
 // html2canvas + jspdf se cargan dinámicamente al descargar PDFs (lazy)
 // Componentes pesados de admin se lazy-loadan (lazy + Suspense más abajo)
 const CommissionsManager = React.lazy(() => import('./components/CommissionsManager'));
@@ -1247,17 +1247,26 @@ export default function App() {
   const [certTemplate, setCertTemplate] = useState(DEFAULT_CERT_CONFIG);
   const [siteLogos, setSiteLogos] = useState(DEFAULT_SITE_LOGOS);
 
-  // ── Tracker de clicks en botones del nav (silencioso pero realmente ejecutado) ──
-  // IMPORTANTE: supabase.rpc(...) es LAZY — sin .then() / await no se ejecuta.
-  // Forzamos la ejecución con .then() para que la petición salga del cliente.
+  // ── Tracker de clicks en botones del nav ──
+  // Usa fetch con keepalive: true para que la petición SOBREVIVA a navegaciones
+  // (window.location.href = ... como pasa en "Créditos Académicos"). El SDK
+  // de Supabase con .then() funciona para clicks que no navegan, pero el
+  // fetch keepalive es robusto en todos los casos.
   const trackClick = useCallback((key, label = null) => {
-    if (!supabase || !key) return;
+    if (!key || !SUPABASE_URL || !SUPABASE_ANON_KEY) return;
     try {
-      supabase
-        .rpc('increment_button_click', { p_key: key, p_label: label })
-        .then(({ error }) => {
-          if (error) console.warn('[trackClick] error:', error.message);
-        });
+      const url = `${SUPABASE_URL}/rest/v1/rpc/increment_button_click`;
+      fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Profile': 'aulacaeduc', // schema (mismo que usa el SDK)
+          'apikey': SUPABASE_ANON_KEY,
+          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        },
+        body: JSON.stringify({ p_key: key, p_label: label }),
+        keepalive: true, // ← clave: el browser no aborta el request al navegar
+      }).catch(e => console.warn('[trackClick]', e?.message));
     } catch (e) {
       console.warn('[trackClick] exception:', e?.message);
     }
@@ -5790,28 +5799,40 @@ function UsageStatsReport() {
       return data || [];
     };
 
-    // Carga paralela de los datasets necesarios
+    // Fetch del set de admins reales (para filtrar acciones administrativas)
+    const adminListResp = await supabase.from('cpg_admin_users').select('email');
+    const adminEmails = new Set((adminListResp.data || []).map(a => (a.email || '').toLowerCase().trim()));
+    // Incluir super admin del código
+    adminEmails.add('lic.juanreyesr@gmail.com');
+
+    // Videos + activities viven en cpg_content (JSONB en una sola fila id=1)
+    const contentResp = await supabase.from('cpg_content').select('videos, activities').eq('id', 1).single();
+    const videos = contentResp.data?.videos || [];
+    const activities = contentResp.data?.activities || [];
+
+    // Carga paralela del resto
     const [
-      videos, certificates, activities, liveSessions, liveAttendance,
+      certificates, liveSessions, liveAttendance,
       commissions, userProfiles, viewCounts, hotmailQueue, buttonClicks, auditLog,
     ] = await Promise.all([
-      fetchTable('cpg_videos'),
       fetchTable('cpg_certificates', 'issued_at'),
-      fetchTable('cpg_activities'),
       fetchTable('cpg_live_sessions_log', 'started_at'),
       fetchTable('cpg_live_attendance', 'joined_at'),
       fetchTable('cpg_commissions'),
       fetchTable('cpg_user_profiles', 'created_at'),
-      fetchTable('cpg_view_counts'),
+      fetchTable('cpg_video_views'), // ← nombre real de la tabla
       fetchTable('cpg_email_verification_queue', 'created_at'),
       fetchTable('cpg_button_clicks'),
       fetchTable('cpg_audit_log', 'created_at'),
     ]);
+    // Filtrar audit log a solo admins reales (igual que el visor)
+    const auditLogClean = auditLog.filter(l => adminEmails.has((l.admin_email || '').toLowerCase().trim()));
     setProgress('Construyendo informe…');
 
     // ── PORTADA ──
     const now = new Date();
     const periodo = (dateFrom || dateTo) ? `${dateFrom || '(inicio)'} a ${dateTo || '(hoy)'}` : 'Todo el histórico';
+    const totalReproducciones = viewCounts.reduce((acc, v) => acc + (v.view_count || 0), 0);
     sheets.push({
       sheetName: 'Portada',
       rows: [
@@ -5825,12 +5846,14 @@ function UsageStatsReport() {
         ['Total de estadísticas incluidas', totalSelected],
         [],
         ['Resumen rápido'],
+        ['Reproducciones acumuladas', totalReproducciones],
         ['Videos publicados', videos.filter(v => !v.scheduledAt || new Date(v.scheduledAt + 'T00:00:00') <= new Date()).length],
         ['Total de certificados emitidos', certificates.length],
         ['Actividades programadas', activities.length],
         ['Sesiones en vivo realizadas', liveSessions.length],
         ['Usuarios registrados', userProfiles.length],
         ['Comisiones acreditantes activas', commissions.filter(c => c.active).length],
+        ['Acciones admin (limpias)', auditLogClean.length],
       ],
     });
 
@@ -5861,10 +5884,22 @@ function UsageStatsReport() {
       ]});
     }
     if (selected.users_by_status) {
+      // El estado del colegiado no se guarda en cpg_user_profiles (viene del API).
+      // Derivar del campo `status` de los certificados emitidos: para cada
+      // colegiado, su última emisión refleja su estado más reciente conocido.
+      const lastStatusByCol = {};
+      [...certificates]
+        .sort((a, b) => new Date(a.issued_at) - new Date(b.issued_at))
+        .forEach(c => { if (c.collegiate_number) lastStatusByCol[c.collegiate_number] = c.status; });
       const byStatus = {};
-      userProfiles.forEach(u => { const s = u.status || 'DESCONOCIDO'; byStatus[s] = (byStatus[s] || 0) + 1; });
+      Object.values(lastStatusByCol).forEach(s => {
+        const k = s || 'DESCONOCIDO';
+        byStatus[k] = (byStatus[k] || 0) + 1;
+      });
       sheets.push({ sheetName: 'Usuarios por estado', rows: [
-        ['Estado', 'Cantidad'],
+        ['Nota', 'Estado derivado de la última emisión de certificado por colegiado'],
+        [],
+        ['Estado', 'Cantidad de colegiados'],
         ...Object.entries(byStatus).sort(([, a], [, b]) => b - a),
       ]});
     }
@@ -5992,14 +6027,23 @@ function UsageStatsReport() {
     }
     if (selected.activities_list) {
       sheets.push({ sheetName: 'Lista de actividades', rows: [
-        ['Título', 'Fecha', 'Modalidad', 'Tiene aval', 'Tiene comisión'],
-        ...activities.map(a => [a.title, a.date || a.scheduledAt || '', a.modality || '', a.hasAval ? 'Sí' : 'No', a.hasCommissions ? 'Sí' : 'No']),
+        ['Título', 'Organizador', 'Fecha', 'Hora', 'Horas', 'Lugar', 'Costo', 'Comisión(es)'],
+        ...activities.map(a => [
+          a.title || '',
+          a.organizer || '',
+          a.date || '',
+          a.time || '',
+          a.horas || '',
+          a.location || '',
+          a.costType === 'free' ? 'Gratuito' : (a.cost ? `Q${a.cost}` : ''),
+          a.hasCommissions ? 'Sí' : 'No',
+        ]),
       ]});
     }
     if (selected.activities_by_month) {
       sheets.push({ sheetName: 'Actividades por mes', rows: [
         ['Mes', 'Cantidad'],
-        ...groupByMonth(activities.map(a => ({ created_at: a.date || a.created_at })), 'created_at'),
+        ...groupByMonth(activities.map(a => ({ _d: a.date })), '_d'),
       ]});
     }
 
@@ -6057,16 +6101,20 @@ function UsageStatsReport() {
     // ─────── ACCIONES ADMIN ───────
     if (selected.admin_actions) {
       const byAdmin = {};
-      auditLog.forEach(l => { byAdmin[l.admin_email] = (byAdmin[l.admin_email] || 0) + 1; });
+      auditLogClean.forEach(l => { byAdmin[l.admin_email] = (byAdmin[l.admin_email] || 0) + 1; });
       sheets.push({ sheetName: 'Acciones por admin', rows: [
+        ['Nota', 'Solo se contabilizan administradores registrados en cpg_admin_users'],
+        [],
         ['Admin', 'Acciones'],
         ...Object.entries(byAdmin).sort(([, a], [, b]) => b - a),
       ]});
     }
     if (selected.admin_actions_by_type) {
       const byAction = {};
-      auditLog.forEach(l => { byAction[l.action] = (byAction[l.action] || 0) + 1; });
+      auditLogClean.forEach(l => { byAction[l.action] = (byAction[l.action] || 0) + 1; });
       sheets.push({ sheetName: 'Acciones por tipo', rows: [
+        ['Nota', 'Solo se contabilizan acciones de admins reales'],
+        [],
         ['Tipo de acción', 'Cantidad'],
         ...Object.entries(byAction).sort(([, a], [, b]) => b - a),
       ]});
