@@ -12,11 +12,6 @@ const CommissionsManager = React.lazy(() => import('./components/CommissionsMana
 const AttendanceReportView = React.lazy(() => import('./components/AttendanceReportView'));
 const VolunteerAccreditationManager = React.lazy(() => import('./components/VolunteerAccreditationManager'));
 
-const ADMIN_CREDENTIALS = {
-  email: 'gestor.caeduc@colegiodepsicologos.org.gt',
-  password: 'CAEDUC2025',
-};
-
 const EDGE_URL = 'https://ilyospunwucdojrnfgti.supabase.co/functions/v1/consultar-colegiado';
 const CREDITOS_EDGE_URL = 'https://ilyospunwucdojrnfgti.supabase.co/functions/v1/consultar-creditos';
 const ADMIN_EDGE_URL = 'https://ilyospunwucdojrnfgti.supabase.co/functions/v1/manage-admin-user';
@@ -1753,16 +1748,23 @@ export default function App() {
     const trimEmail = email.trim().toLowerCase();
     const trimPass = password.trim();
     if (!supabase) { setAuthError('No se encontró la configuración de Supabase.'); return; }
-    // Verificar que el email esté en la tabla de admins y esté activo
+    // 1) Autenticar PRIMERO. La política RLS de cpg_admin_users ahora exige
+    //    sesión de admin para leer la tabla, así que el rol se consulta DESPUÉS del login.
+    const { error } = await supabase.auth.signInWithPassword({ email: trimEmail, password: trimPass });
+    if (error) { setAuthError('Contraseña incorrecta: ' + error.message); return; }
+    // 2) Ya autenticado, verificar que sea admin activo
     const { data: adminRecord } = await supabase
       .from('cpg_admin_users')
       .select('role, active')
       .eq('email', trimEmail)
       .eq('active', true)
       .maybeSingle();
-    if (!adminRecord) { setAuthError('Este correo no tiene permisos de administrador.'); return; }
-    const { error } = await supabase.auth.signInWithPassword({ email: trimEmail, password: trimPass });
-    if (error) { setAuthError('Contraseña incorrecta: ' + error.message); return; }
+    if (!adminRecord) {
+      // No es admin → cerrar la sesión recién abierta y rechazar
+      await supabase.auth.signOut();
+      setAuthError('Este correo no tiene permisos de administrador.');
+      return;
+    }
     setAdminRole(adminRecord.role);
     setIsAdmin(true); setView('admin');
     logAudit(trimEmail, '', 'login', 'session', '', { role: adminRecord.role });
@@ -4988,10 +4990,10 @@ function EmailChangeManager({ currentAdminRole, currentAdminEmail }) {
     }
     setSaving(true); setMsg(null);
     try {
+      // El admin se deriva de la sesión autenticada dentro de la función (seguridad).
       const { data, error } = await supabase.rpc('change_user_email', {
         target_old_email: oldE,
         new_email: newE,
-        p_admin_email: currentAdminEmail || '',
       });
       if (error) throw error;
       if (data?.success === false) {
