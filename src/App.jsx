@@ -2060,7 +2060,7 @@ export default function App() {
         )}
         {view === 'certificate' && manualCertificate && <div className="min-h-screen bg-[#141414] pt-2 px-4 md:px-16 pb-12"><CertificateView video={manualCertificate.video} userProfile={manualCertificate.profile} onBack={handleCloseManualCertificate} certTemplate={certTemplate} commissions={commissions} /></div>}
         {view === 'history' && !sessionUser.isGuest && !reprintCert && <HistoryView sessionUser={sessionUser} onBack={() => setView('home')} onReprintCert={(cert) => setReprintCert(cert)} />}
-        {view === 'history' && reprintCert && <div className="min-h-screen bg-[#141414] pt-2 px-4 md:px-16 pb-12"><CertificateReprintView cert={reprintCert} onBack={() => setReprintCert(null)} certTemplate={certTemplate} videos={videos} /></div>}
+        {view === 'history' && reprintCert && <div className="min-h-screen bg-[#141414] pt-2 px-4 md:px-16 pb-12"><CertificateReprintView cert={reprintCert} onBack={() => setReprintCert(null)} certTemplate={certTemplate} videos={videos} commissions={commissions} /></div>}
       </div>
 
       <footer className="py-12 px-10 bg-black/80 text-gray-500 text-sm border-t border-gray-800 mt-10">
@@ -2766,7 +2766,14 @@ function CertificateCanvas({ certRef, onImageLoaded, tpl, recipientName, statusT
 
 
 // ── REIMPRESIÓN DE CERTIFICADO DESDE HISTORIAL ────────────────
-function CertificateReprintView({ cert, onBack, certTemplate, videos = [] }) {
+// Completa el logo_url faltante en un snapshot de comisiones (certs viejos guardados
+// sin logo_url) buscando la comisión actual por id. No duplica nada.
+const enrichSnapshotLogos = (snapshot, commissions = []) =>
+  (snapshot || []).map(s =>
+    s.logo_url ? s : { ...s, logo_url: (commissions.find(c => c.id === s.id)?.logo_url) || null }
+  );
+
+function CertificateReprintView({ cert, onBack, certTemplate, videos = [], commissions = [] }) {
   // Buscar duración actual del video (si existe) para reflejar correcciones posteriores
   const currentVideo = videos.find(v => v.id === cert.video_id);
   const effectiveDuration = (currentVideo && currentVideo.duration)
@@ -2840,7 +2847,7 @@ function CertificateReprintView({ cert, onBack, certTemplate, videos = [] }) {
           collegiateNumber={cert.collegiate_number} videoTitle={cert.video_title}
           videoDuration={effectiveDuration} dateFormatted={dateFormatted}
           certificateCode={cert.certificate_code} qrUrl={qrUrl}
-          commissionsSnapshot={cert.commissions_snapshot || []}
+          commissionsSnapshot={enrichSnapshotLogos(cert.commissions_snapshot, commissions)}
           />
         </CertScaledPreview>
       </div>
