@@ -2312,20 +2312,12 @@ function CertificateCanvas({ certRef, onImageLoaded, tpl, recipientName, statusT
   const sceneLayout = (hasMultipleSigners && !useTwoRows && totalSigners <= 3
     && L.signLayouts && L.signLayouts[sceneKey]) ? L.signLayouts[sceneKey] : null;
 
-  // Contenido visual de una firma (logo opcional + imagen + línea + nombre/cargo/comisión) escalado a w×h
+  // Contenido visual de una firma (imagen + línea + nombre/cargo/comisión) escalado a w×h.
+  // (El logo de la comisión NO va aquí; se muestra arriba del QR.)
   const renderSignerContent = (signer, w, h) => {
-    const hasLogo = !!signer.logo_url;
-    const logoH = hasLogo ? Math.round(h * 0.22) : 0;
-    const imgH = Math.round(h * (hasLogo ? 0.40 : 0.55));
+    const imgH = Math.round(h * 0.55);
     return (
       <div style={{ width: w + 'px', height: h + 'px', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', alignItems: 'center', textAlign: 'center' }}>
-        {hasLogo && (
-          <div style={{ height: logoH + 'px', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '2px' }}>
-            <img src={signer.logo_url} alt={`Logo ${signer.commission_name}`} crossOrigin="anonymous"
-              style={{ maxWidth: '85%', maxHeight: '100%', objectFit: 'contain', display: 'block' }}
-              onLoad={handleImgLoad} onError={(e) => { e.target.style.display='none'; handleImgLoad(); }} />
-          </div>
-        )}
         {signer.signature_url
           ? <div style={{ height: imgH + 'px', width: '100%', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', overflow: 'visible' }}>
               <img src={signer.signature_url} alt={`Firma ${signer.commission_name}`} crossOrigin="anonymous"
@@ -2342,6 +2334,15 @@ function CertificateCanvas({ certRef, onImageLoaded, tpl, recipientName, statusT
       </div>
     );
   };
+
+  // Logos de comisiones firmantes (únicos por comisión, solo las que tengan logo) → se muestran arriba del QR
+  const uniqueCommLogos = (() => {
+    const seen = new Set(); const out = [];
+    commissionsSnapshot.forEach(c => {
+      if (c.logo_url && c.commission_name && !seen.has(c.commission_name)) { seen.add(c.commission_name); out.push(c); }
+    });
+    return out;
+  })();
 
   return (
     <div ref={certRef} className="relative" style={{ width: '1056px', height: '816px', fontFamily: "'Georgia', 'Times New Roman', serif", background: '#f0ede8', overflow: 'hidden' }}>
@@ -2382,12 +2383,16 @@ function CertificateCanvas({ certRef, onImageLoaded, tpl, recipientName, statusT
         <div className="absolute text-center" style={{ top: L.header.top + 'px', left: '80px', right: '80px' }}>
           <p style={{ fontSize: L.header.fontSize + 'px', fontWeight: 'bold', color: '#1a1a2e', lineHeight: '1.45' }}>{tpl.headerLine1}</p>
           <p style={{ fontSize: L.header.fontSize + 'px', fontWeight: 'bold', color: '#1a1a2e', lineHeight: '1.45' }}>{tpl.headerLine2}</p>
-          {/* Comisiones firmantes adicionales — aparecen en el encabezado */}
-          {commissionsSnapshot.length > 0 && (
-            <p style={{ fontSize: Math.max(13, L.header.fontSize - 4) + 'px', fontWeight: 'bold', color: '#1a1a2e', lineHeight: '1.4', marginTop: '2px' }}>
-              en conjunto con {commissionsSnapshot.map(c => c.commission_name).filter(Boolean).join(' y ')}
-            </p>
-          )}
+          {/* Comisiones firmantes adicionales — nombres únicos (sin duplicar por varios firmantes de la misma comisión) */}
+          {(() => {
+            const uniqueNames = [...new Set(commissionsSnapshot.map(c => c.commission_name).filter(Boolean))];
+            if (uniqueNames.length === 0) return null;
+            return (
+              <p style={{ fontSize: Math.max(13, L.header.fontSize - 4) + 'px', fontWeight: 'bold', color: '#1a1a2e', lineHeight: '1.4', marginTop: '2px' }}>
+                en conjunto con {uniqueNames.join(' y ')}
+              </p>
+            );
+          })()}
           {L.diploma.top === -1 ? (
             <p style={{ fontSize: L.diploma.fontSize + 'px', color: '#444', marginTop: '10px', fontStyle: 'italic' }}>{tpl.diplomaText}</p>
           ) : null}
@@ -2730,6 +2735,27 @@ function CertificateCanvas({ certRef, onImageLoaded, tpl, recipientName, statusT
               ) : (
                 <div style={{ transform: `translate(${-qrX}px, ${-qrY}px)` }}>{qrBlock}</div>
               )}
+            </div>
+          );
+        })()}
+
+        {/* ── LOGOS de comisiones firmantes — arriba del QR ── */}
+        {uniqueCommLogos.length > 0 && (() => {
+          // Posición del QR en coordenadas absolutas (escenario → sceneLayout.qr; auto → esquina inferior derecha)
+          const qrAbs = sceneLayout
+            ? { x: sceneLayout.qr?.x ?? 900, y: sceneLayout.qr?.y ?? 668, w: sceneLayout.qr?.w ?? 110 }
+            : { x: 1056 - 40 - qrW, y: 816 - bottomY - qrH - 22, w: qrW };
+          const boxW = Math.max(qrAbs.w, 120);
+          const boxH = 56;
+          const left = Math.round(qrAbs.x + qrAbs.w / 2 - boxW / 2);
+          const top = Math.round(qrAbs.y - boxH - 8);
+          return (
+            <div className="absolute" style={{ left: left + 'px', top: top + 'px', width: boxW + 'px', height: boxH + 'px', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', gap: '6px' }}>
+              {uniqueCommLogos.map((c, i) => (
+                <img key={i} src={c.logo_url} alt={`Logo ${c.commission_name}`} crossOrigin="anonymous"
+                  style={{ maxHeight: '100%', maxWidth: Math.floor(boxW / uniqueCommLogos.length) - 4 + 'px', objectFit: 'contain', display: 'block' }}
+                  onLoad={handleImgLoad} onError={(e) => { e.target.style.display = 'none'; handleImgLoad(); }} />
+              ))}
             </div>
           );
         })()}
