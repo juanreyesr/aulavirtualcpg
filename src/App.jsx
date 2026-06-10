@@ -111,6 +111,21 @@ const DEFAULT_CERT_CONFIG = {
     qr:         { w: 110, h: 110 },
     bottomY:    25,
     bottomGap:  60,
+    // Layouts ABSOLUTOS por escenario de cantidad de firmas (2 y 3).
+    // Cada firma/sello/QR con left(x)/top(y)/width(w)/height(h) en px sobre el canvas 1056x816.
+    // El admin los ajusta arrastrando en el editor; el caso de 1 firma NO usa esto.
+    signLayouts: {
+      '2': {
+        sigs: [ { x: 170, y: 650, w: 220, h: 150 }, { x: 430, y: 650, w: 220, h: 150 } ],
+        seal: { x: 800, y: 560, w: 100, h: 100 },
+        qr:   { x: 900, y: 668, w: 110, h: 130 },
+      },
+      '3': {
+        sigs: [ { x: 95, y: 655, w: 200, h: 140 }, { x: 310, y: 655, w: 200, h: 140 }, { x: 525, y: 655, w: 200, h: 140 } ],
+        seal: { x: 805, y: 560, w: 95, h: 95 },
+        qr:   { x: 905, y: 670, w: 105, h: 125 },
+      },
+    },
   },
 };
 
@@ -2290,6 +2305,35 @@ function CertificateCanvas({ certRef, onImageLoaded, tpl, recipientName, statusT
   const sealW = useTwoRows ? 85 : hasMultipleSigners ? 100 : (L.seal.w || 130);
   const sealH = useTwoRows ? 85 : hasMultipleSigners ? 100 : (L.seal.h || L.seal.w || 130);
 
+  // ── Layout ABSOLUTO por escenario (2 o 3 firmas) ──
+  // Si hay un layout guardado para esta cantidad de firmas, cada firma/sello/QR
+  // se posiciona y arrastra libremente. El caso de 1 firma y 5+ NO usan esto.
+  const sceneKey = String(totalSigners);
+  const sceneLayout = (hasMultipleSigners && !useTwoRows && totalSigners <= 3
+    && L.signLayouts && L.signLayouts[sceneKey]) ? L.signLayouts[sceneKey] : null;
+
+  // Contenido visual de una firma (imagen + línea + nombre/cargo/comisión) escalado a un bloque w×h
+  const renderSignerContent = (signer, w, h) => {
+    const imgH = Math.round(h * 0.55);
+    return (
+      <div style={{ width: w + 'px', height: h + 'px', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', alignItems: 'center', textAlign: 'center' }}>
+        {signer.signature_url
+          ? <div style={{ height: imgH + 'px', width: '100%', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', overflow: 'visible' }}>
+              <img src={signer.signature_url} alt={`Firma ${signer.commission_name}`} crossOrigin="anonymous"
+                style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', objectPosition: 'center bottom', display: 'block' }}
+                onLoad={handleImgLoad} onError={(e) => { e.target.style.display='none'; handleImgLoad(); }} />
+            </div>
+          : <div style={{ height: imgH + 'px' }} />}
+        <div style={{ borderTop: '1px solid #444', width: '90%', margin: '4px auto 0', height: '1px' }} />
+        <div style={{ paddingTop: '4px' }}>
+          <p style={{ fontSize: '12px', fontWeight: 'bold', color: '#1a1a2e', lineHeight: '1.15', margin: 0 }}>{signer.signer_name}</p>
+          <p style={{ fontSize: '10px', color: '#555', lineHeight: '1.1', margin: '1px 0 0' }}>{signer.signer_title}</p>
+          <p style={{ fontSize: '9px', color: '#888', fontStyle: 'italic', lineHeight: '1.1', margin: '1px 0 0' }}>{signer.commission_name}</p>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div ref={certRef} className="relative" style={{ width: '1056px', height: '816px', fontFamily: "'Georgia', 'Times New Roman', serif", background: '#f0ede8', overflow: 'hidden' }}>
       {tpl.backgroundUrl ? (
@@ -2381,8 +2425,32 @@ function CertificateCanvas({ certRef, onImageLoaded, tpl, recipientName, statusT
           <p style={{ fontSize: L.date.fontSize + 'px', color: '#333' }}>{dateFormatted}</p>
         </div>
 
-        {/* ── FIRMAS: layout dinámico 1 o 2 filas ── */}
-        {rows.map((rowSigners, rowIdx) => {
+        {/* ── FIRMAS (modo ABSOLUTO por escenario): cada firma arrastrable ── */}
+        {sceneLayout && allSigners.map((signer, i) => {
+          const pos = sceneLayout.sigs?.[i] || { x: 100 + i * 220, y: 650, w: 200, h: 140 };
+          const content = renderSignerContent(signer, pos.w, pos.h);
+          return (
+            <div key={`scene-sig-${i}`} className="absolute" style={{ left: 0, top: 0 }}>
+              {interactive && onLayoutChange ? (
+                <DragResizeBox
+                  x={pos.x} y={pos.y} w={pos.w} h={pos.h} anchor="topleft" interactive={true}
+                  label={i === 0 ? 'Firma 1 (Coordinador)' : `Firma ${i + 1}`}
+                  onChange={(p) => {
+                    if ('x' in p) onLayoutChange({ [`signLayouts.${sceneKey}.sigs.${i}.x`]: p.x, [`signLayouts.${sceneKey}.sigs.${i}.y`]: p.y });
+                    else onLayoutChange({ [`signLayouts.${sceneKey}.sigs.${i}.w`]: p.w, [`signLayouts.${sceneKey}.sigs.${i}.h`]: p.h });
+                  }}
+                >
+                  {content}
+                </DragResizeBox>
+              ) : (
+                <div style={{ transform: `translate(${pos.x}px, ${pos.y}px)`, display: 'inline-block' }}>{content}</div>
+              )}
+            </div>
+          );
+        })}
+
+        {/* ── FIRMAS: layout dinámico 1 o 2 filas (auto, cuando NO hay escenario absoluto) ── */}
+        {!sceneLayout && rows.map((rowSigners, rowIdx) => {
           const rowY = useTwoRows ? (rowIdx === 0 ? row1Y : row2Y) : bottomY;
           const rowWidth = rowSigners.length * sigBlockW + (rowSigners.length - 1) * sigBlockGap;
           // Centrar respetando el espacio reservado a la derecha cuando hay múltiples firmas (sello+QR)
@@ -2537,8 +2605,31 @@ function CertificateCanvas({ certRef, onImageLoaded, tpl, recipientName, statusT
           );
         })}
 
-        {/* ── SELLO ── */}
-        {tpl.sealUrl && (() => {
+        {/* ── SELLO (modo ABSOLUTO por escenario) ── */}
+        {tpl.sealUrl && sceneLayout && (() => {
+          const s = sceneLayout.seal || { x: 800, y: 560, w: 100, h: 100 };
+          const sealImg = (
+            <img src={tpl.sealUrl} alt="Sello" crossOrigin="anonymous" style={{ width: s.w + 'px', height: s.h + 'px', objectFit: 'contain', opacity: 0.85, display: 'block' }} onLoad={handleImgLoad} onError={(e) => { e.target.style.display='none'; handleImgLoad(); }} />
+          );
+          return (
+            <div className="absolute" style={{ left: 0, top: 0 }}>
+              {interactive && onLayoutChange ? (
+                <DragResizeBox x={s.x} y={s.y} w={s.w} h={s.h} anchor="topleft" interactive={true} label="Sello"
+                  onChange={(p) => {
+                    if ('x' in p) onLayoutChange({ [`signLayouts.${sceneKey}.seal.x`]: p.x, [`signLayouts.${sceneKey}.seal.y`]: p.y });
+                    else onLayoutChange({ [`signLayouts.${sceneKey}.seal.w`]: p.w, [`signLayouts.${sceneKey}.seal.h`]: p.h });
+                  }}>
+                  {sealImg}
+                </DragResizeBox>
+              ) : (
+                <div style={{ transform: `translate(${s.x}px, ${s.y}px)`, display: 'inline-block' }}>{sealImg}</div>
+              )}
+            </div>
+          );
+        })()}
+
+        {/* ── SELLO (auto, sin escenario) ── */}
+        {tpl.sealUrl && !sceneLayout && (() => {
           const sealOffsetGap = useTwoRows ? 8 : 6;
           // Sello base: por encima del QR, anclado a la derecha
           const sealBaseBottom = bottomY + qrH + 32 + sealOffsetGap;
@@ -2570,8 +2661,35 @@ function CertificateCanvas({ certRef, onImageLoaded, tpl, recipientName, statusT
           );
         })()}
 
-        {/* ── QR ── */}
-        {(() => {
+        {/* ── QR (modo ABSOLUTO por escenario) ── */}
+        {sceneLayout && (() => {
+          const q = sceneLayout.qr || { x: 900, y: 668, w: 110, h: 130 };
+          const qrBlock = (
+            <div style={{ textAlign: 'center', width: q.w + 'px' }}>
+              <img src={qrUrl} alt="QR" crossOrigin="anonymous" style={{ width: q.w + 'px', height: q.w + 'px', display: 'block', margin: '0 auto' }} />
+              <p style={{ fontSize: '9px', color: '#555', marginTop: '3px', fontFamily: "'Courier New', monospace", letterSpacing: '0.3px', fontWeight: 'bold' }}>{certificateCode}</p>
+              <p style={{ fontSize: '8px', color: '#999', marginTop: '1px' }}>Escanea para verificar</p>
+            </div>
+          );
+          return (
+            <div className="absolute" style={{ left: 0, top: 0 }}>
+              {interactive && onLayoutChange ? (
+                <DragResizeBox x={q.x} y={q.y} w={q.w} h={q.h} anchor="topleft" interactive={true} label="QR"
+                  onChange={(p) => {
+                    if ('x' in p) onLayoutChange({ [`signLayouts.${sceneKey}.qr.x`]: p.x, [`signLayouts.${sceneKey}.qr.y`]: p.y });
+                    else onLayoutChange({ [`signLayouts.${sceneKey}.qr.w`]: p.w, [`signLayouts.${sceneKey}.qr.h`]: p.h });
+                  }}>
+                  {qrBlock}
+                </DragResizeBox>
+              ) : (
+                <div style={{ transform: `translate(${q.x}px, ${q.y}px)`, display: 'inline-block' }}>{qrBlock}</div>
+              )}
+            </div>
+          );
+        })()}
+
+        {/* ── QR (auto, sin escenario) ── */}
+        {!sceneLayout && (() => {
           const qrX = L.qr?.x || 0;
           const qrY = L.qr?.y || 0;
           const qrBlock = (
@@ -4063,6 +4181,7 @@ function CertTemplateAdmin({ certTemplate, onSave }) {
   const [saveMsg, setSaveMsg] = useState('');
   const [layoutOpen, setLayoutOpen] = useState(false);
   const [interactiveEdit, setInteractiveEdit] = useState(true);
+  const [editScene, setEditScene] = useState(1); // 1, 2 o 3 firmas a editar
   const previewRef = useRef(null);
 
   useEffect(() => { setForm({ ...DEFAULT_CERT_CONFIG, ...certTemplate }); }, [certTemplate]);
@@ -4086,18 +4205,21 @@ function CertTemplateAdmin({ certTemplate, onSave }) {
     } else next[keys[0]] = val;
     setForm(prev => ({ ...prev, layout: next }));
   };
-  // Aplica varios cambios de layout a la vez (usado por el editor interactivo drag/resize)
+  // Aplica varios cambios de layout a la vez (usado por el editor interactivo drag/resize).
+  // Soporta paths de profundidad arbitraria, p.ej. 'signLayouts.2.sigs.0.x'.
   const setLBatch = (patch) => {
     setForm(prev => {
-      const baseLayout = prev.layout || {};
-      const merged = { ...baseLayout };
+      // Clon profundo para no mutar estado previo
+      const merged = JSON.parse(JSON.stringify(prev.layout || {}));
       Object.entries(patch).forEach(([path, val]) => {
         const keys = path.split('.');
-        if (keys.length === 2) {
-          merged[keys[0]] = { ...(merged[keys[0]] || {}), [keys[1]]: val };
-        } else {
-          merged[keys[0]] = val;
+        let node = merged;
+        for (let i = 0; i < keys.length - 1; i++) {
+          const k = keys[i];
+          if (node[k] === undefined || node[k] === null || typeof node[k] !== 'object') node[k] = {};
+          node = node[k];
         }
+        node[keys[keys.length - 1]] = val;
       });
       return { ...prev, layout: merged };
     });
@@ -4281,6 +4403,27 @@ function CertTemplateAdmin({ certTemplate, onSave }) {
                   {interactiveEdit ? '✓ Edición interactiva' : 'Activar edición interactiva'}
                 </button>
               </div>
+
+              {/* Selector de escenario: cuántas firmas simular para editar su layout */}
+              <div className="flex items-center gap-2 mb-2 flex-wrap">
+                <span className="text-[11px] text-gray-500 uppercase tracking-wide">Editar layout para:</span>
+                {[1, 2, 3].map(n => (
+                  <button
+                    key={n}
+                    type="button"
+                    onClick={() => setEditScene(n)}
+                    className={`text-xs font-bold px-3 py-1.5 rounded-lg border transition ${editScene === n ? 'bg-indigo-600 border-indigo-400 text-white' : 'bg-gray-800 border-gray-700 text-gray-300 hover:bg-gray-700'}`}
+                  >
+                    {n} {n === 1 ? 'firma' : 'firmas'}
+                  </button>
+                ))}
+                {editScene > 1 && (
+                  <span className="text-[11px] text-indigo-300/80 ml-1">
+                    Arrastra cada firma, el sello y el QR. Este layout se usará cuando un certificado tenga {editScene} firmas.
+                  </span>
+                )}
+              </div>
+
               <CertScaledPreview certRef={previewRef} imageLoaded={true} interactive={interactiveEdit}>
                 <CertificateCanvas
                   certRef={previewRef} tpl={form} onImageLoaded={() => {}}
@@ -4290,7 +4433,12 @@ function CertTemplateAdmin({ certTemplate, onSave }) {
                   videoDuration="2" dateFormatted="22 de marzo de 2026"
                   certificateCode="CPG-20260322-0000"
                   qrUrl={getCertQrUrl('CPG-20260322-0000')}
-                  commissionsSnapshot={[]}
+                  commissionsSnapshot={Array.from({ length: Math.max(0, editScene - 1) }, (_, i) => ({
+                    commission_name: `Comisión de ejemplo ${i + 1}`,
+                    signer_name: `Firmante ${i + 2}`,
+                    signer_title: 'Cargo de la comisión',
+                    signature_url: form.signatureUrl || '',
+                  }))}
                   interactive={interactiveEdit}
                   onLayoutChange={setLBatch}
                 />
