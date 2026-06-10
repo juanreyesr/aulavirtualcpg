@@ -1115,7 +1115,7 @@ function BulkCertificateEmitter({ videos, activities, commissions = [], onClose,
     }
     const commissionsSnapshot = commissions
       .filter(c => selectedCommissionIds.includes(c.id))
-      .map(c => ({ id: c.id, commission_name: c.commission_name, signer_name: c.signer_name, signer_title: c.signer_title, signature_url: c.signature_url }));
+      .map(c => ({ id: c.id, commission_name: c.commission_name, signer_name: c.signer_name, signer_title: c.signer_title, signature_url: c.signature_url, logo_url: c.logo_url || null }));
 
     for (const num of numbers) {
       try {
@@ -2220,7 +2220,7 @@ function DragResizeBox({ x = 0, y = 0, w, h, onChange, interactive, children, an
 // ── CERTIFICADO CANVAS COMPARTIDO — v2 con firmas múltiples ──
 function CertificateCanvas({ certRef, onImageLoaded, tpl, recipientName, statusText, collegiateNumber, videoTitle, videoDuration, dateFormatted, certificateCode, qrUrl, commissionsSnapshot = [], interactive = false, onLayoutChange }) {
   const [imagesReady, setImagesReady] = useState(0);
-  const commissionImages = commissionsSnapshot.filter(c => c.signature_url).length;
+  const commissionImages = commissionsSnapshot.filter(c => c.signature_url).length + commissionsSnapshot.filter(c => c.logo_url).length;
   const totalImages = [tpl.logoCpgUrl, tpl.logoCaeducUrl, tpl.signatureUrl, tpl.sealUrl, tpl.backgroundUrl].filter(Boolean).length + commissionImages;
   const handleImgLoad = () => { setImagesReady(p => p + 1); };
   useEffect(() => { if (imagesReady >= totalImages) onImageLoaded?.(); }, [imagesReady, totalImages]);
@@ -2312,11 +2312,20 @@ function CertificateCanvas({ certRef, onImageLoaded, tpl, recipientName, statusT
   const sceneLayout = (hasMultipleSigners && !useTwoRows && totalSigners <= 3
     && L.signLayouts && L.signLayouts[sceneKey]) ? L.signLayouts[sceneKey] : null;
 
-  // Contenido visual de una firma (imagen + línea + nombre/cargo/comisión) escalado a un bloque w×h
+  // Contenido visual de una firma (logo opcional + imagen + línea + nombre/cargo/comisión) escalado a w×h
   const renderSignerContent = (signer, w, h) => {
-    const imgH = Math.round(h * 0.55);
+    const hasLogo = !!signer.logo_url;
+    const logoH = hasLogo ? Math.round(h * 0.22) : 0;
+    const imgH = Math.round(h * (hasLogo ? 0.40 : 0.55));
     return (
       <div style={{ width: w + 'px', height: h + 'px', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', alignItems: 'center', textAlign: 'center' }}>
+        {hasLogo && (
+          <div style={{ height: logoH + 'px', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '2px' }}>
+            <img src={signer.logo_url} alt={`Logo ${signer.commission_name}`} crossOrigin="anonymous"
+              style={{ maxWidth: '85%', maxHeight: '100%', objectFit: 'contain', display: 'block' }}
+              onLoad={handleImgLoad} onError={(e) => { e.target.style.display='none'; handleImgLoad(); }} />
+          </div>
+        )}
         {signer.signature_url
           ? <div style={{ height: imgH + 'px', width: '100%', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', overflow: 'visible' }}>
               <img src={signer.signature_url} alt={`Firma ${signer.commission_name}`} crossOrigin="anonymous"
@@ -2373,6 +2382,12 @@ function CertificateCanvas({ certRef, onImageLoaded, tpl, recipientName, statusT
         <div className="absolute text-center" style={{ top: L.header.top + 'px', left: '80px', right: '80px' }}>
           <p style={{ fontSize: L.header.fontSize + 'px', fontWeight: 'bold', color: '#1a1a2e', lineHeight: '1.45' }}>{tpl.headerLine1}</p>
           <p style={{ fontSize: L.header.fontSize + 'px', fontWeight: 'bold', color: '#1a1a2e', lineHeight: '1.45' }}>{tpl.headerLine2}</p>
+          {/* Comisiones firmantes adicionales — aparecen en el encabezado */}
+          {commissionsSnapshot.length > 0 && (
+            <p style={{ fontSize: Math.max(13, L.header.fontSize - 4) + 'px', fontWeight: 'bold', color: '#1a1a2e', lineHeight: '1.4', marginTop: '2px' }}>
+              en conjunto con {commissionsSnapshot.map(c => c.commission_name).filter(Boolean).join(' y ')}
+            </p>
+          )}
           {L.diploma.top === -1 ? (
             <p style={{ fontSize: L.diploma.fontSize + 'px', color: '#444', marginTop: '10px', fontStyle: 'italic' }}>{tpl.diplomaText}</p>
           ) : null}
@@ -3500,6 +3515,7 @@ function CertificateView({ video, userProfile, sessionUser, onBack, certTemplate
           signer_name: c.signer_name,
           signer_title: c.signer_title,
           signature_url: c.signature_url,
+          logo_url: c.logo_url || null,
         }))
       : [];
     // Chequear si ya existe certificado para este colegiado/curso (anti-duplicado)
@@ -4438,6 +4454,7 @@ function CertTemplateAdmin({ certTemplate, onSave }) {
                     signer_name: `Firmante ${i + 2}`,
                     signer_title: 'Cargo de la comisión',
                     signature_url: form.signatureUrl || '',
+                    logo_url: form.logoCaeducUrl || '', // placeholder para visualizar el logo de comisión
                   }))}
                   interactive={interactiveEdit}
                   onLayoutChange={setLBatch}
