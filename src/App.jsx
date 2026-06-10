@@ -1144,16 +1144,20 @@ function BulkCertificateEmitter({ videos, activities, commissions = [], onClose,
   const errorCount = results ? results.filter(r => r.status === 'error').length : 0;
 
   return (
-    <div className="fixed inset-0 bg-black/70 z-[70] flex items-center justify-center px-4 py-10">
-      <div className="bg-[#141414] border border-gray-800 rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-hidden">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-800">
-          <div>
-            <h3 className="text-xl font-bold text-white flex items-center gap-2"><Award size={20} className="text-yellow-400" /> Emitir certificados masivos</h3>
-            <p className="text-sm text-gray-400">Genera certificados para múltiples colegiados a la vez.</p>
+    // overlay scrolleable: si el modal excede la altura del viewport (zoom, pantallas
+    // chicas), se puede scrollear TODO el overlay y siempre se alcanza header/footer.
+    <div className="fixed inset-0 bg-black/70 z-[70] overflow-y-auto">
+      <div className="flex min-h-full items-center justify-center p-4 py-10">
+        <div className="bg-[#141414] border border-gray-800 rounded-2xl shadow-2xl w-full max-w-3xl my-4">
+          {/* Header sticky para que la X esté siempre visible al hacer scroll */}
+          <div className="flex items-center justify-between px-6 py-4 border-b border-gray-800 sticky top-0 bg-[#141414] z-10 rounded-t-2xl">
+            <div>
+              <h3 className="text-xl font-bold text-white flex items-center gap-2"><Award size={20} className="text-yellow-400" /> Emitir certificados masivos</h3>
+              <p className="text-sm text-gray-400">Genera certificados para múltiples colegiados a la vez.</p>
+            </div>
+            <button onClick={onClose} className="text-gray-400 hover:text-white shrink-0"><X size={18} /></button>
           </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-white"><X size={18} /></button>
-        </div>
-        <div className="px-6 py-6 overflow-y-auto max-h-[75vh] space-y-5">
+          <div className="px-6 py-6 space-y-5">
           {error && <div className="bg-red-500/10 border border-red-500/30 rounded-lg px-4 py-3 text-sm text-red-300 flex items-start gap-2"><XCircle size={16} className="mt-0.5 flex-shrink-0" />{error}</div>}
           <div>
             <p className="text-white font-bold text-sm mb-3 uppercase tracking-wider">1. Actividad o curso</p>
@@ -1210,7 +1214,8 @@ function BulkCertificateEmitter({ videos, activities, commissions = [], onClose,
             </div>
           )}
         </div>
-        <div className="flex justify-end px-6 py-4 border-t border-gray-800"><button onClick={onClose} className="bg-gray-700 hover:bg-gray-600 text-white px-5 py-2 rounded-lg font-semibold text-sm">Cerrar</button></div>
+          <div className="flex justify-end px-6 py-4 border-t border-gray-800"><button onClick={onClose} className="bg-gray-700 hover:bg-gray-600 text-white px-5 py-2 rounded-lg font-semibold text-sm">Cerrar</button></div>
+        </div>
       </div>
     </div>
   );
