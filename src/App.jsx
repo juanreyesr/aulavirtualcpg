@@ -5139,6 +5139,12 @@ function EmailChangeManager({ currentAdminRole, currentAdminEmail }) {
   const [saving, setSaving] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [msg, setMsg] = useState(null);
+  // ── Eliminar cuenta de usuario (typos / duplicados) ──
+  const [delEmail, setDelEmail] = useState('');
+  const [delClearProfile, setDelClearProfile] = useState(false);
+  const [delConfirmOpen, setDelConfirmOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [delMsg, setDelMsg] = useState(null);
 
   const isSuperAdmin = currentAdminRole === 'super_admin';
 
@@ -5211,6 +5217,30 @@ function EmailChangeManager({ currentAdminRole, currentAdminEmail }) {
     }
     setSaving(false);
     setConfirmOpen(false);
+  };
+
+  const performDelete = async () => {
+    const v = delEmail.trim().toLowerCase();
+    if (!v) { setDelMsg({ type: 'error', text: 'Ingresa el correo de la cuenta a eliminar.' }); setDelConfirmOpen(false); return; }
+    setDeleting(true); setDelMsg(null);
+    try {
+      const { data, error } = await supabase.rpc('delete_user_account', {
+        target_email: v,
+        p_clear_profile: delClearProfile,
+      });
+      if (error) throw error;
+      if (data?.success === false) {
+        setDelMsg({ type: 'error', text: data?.message || 'No se pudo eliminar la cuenta.' });
+      } else {
+        setDelMsg({ type: 'success', text: data?.message || 'Cuenta eliminada.' });
+        logAudit(currentAdminEmail, '', 'user_account_deleted', 'user', v, { clearedProfile: delClearProfile });
+        setDelEmail(''); setDelClearProfile(false);
+      }
+    } catch (e) {
+      setDelMsg({ type: 'error', text: 'Error: ' + (e?.message || e) });
+    }
+    setDeleting(false);
+    setDelConfirmOpen(false);
   };
 
   return (
@@ -5293,6 +5323,82 @@ function EmailChangeManager({ currentAdminRole, currentAdminEmail }) {
            msg.type === 'success' ? <CheckCircle size={16} className="mt-0.5 flex-shrink-0" /> :
            <Mail size={16} className="mt-0.5 flex-shrink-0" />}
           <span>{msg.text}</span>
+        </div>
+      )}
+
+      {/* ─── ELIMINAR CUENTA DE USUARIO (typos / duplicados) ─── */}
+      <div className="border-t border-gray-800 pt-5 mt-2">
+        <div className="flex items-center gap-2.5 mb-3">
+          <div className="bg-gradient-to-br from-red-600 to-red-800 p-2 rounded-lg shadow-lg shadow-red-900/30"><Trash2 size={15} className="text-white" /></div>
+          <div>
+            <h3 className="text-white font-bold text-sm">Eliminar cuenta de usuario</h3>
+            <p className="text-[11px] text-gray-500">Para cuentas creadas con un correo mal escrito o duplicadas</p>
+          </div>
+        </div>
+        <div className="bg-red-900/10 border border-red-700/30 rounded-xl px-4 py-3 mb-3 flex items-start gap-2">
+          <XCircle size={15} className="text-red-400 mt-0.5 flex-shrink-0" />
+          <p className="text-xs text-red-200/80">
+            Elimina la cuenta de acceso (correo + contraseña) de un colegiado. Úsalo cuando alguien se registró con un correo
+            equivocado. <span className="text-white font-semibold">Es irreversible</span> y la persona deberá registrarse de nuevo con su correo correcto.
+            No se pueden eliminar cuentas de administradores por aquí.
+          </p>
+        </div>
+        <div className="bg-[#1a1a1a] border border-gray-800 rounded-xl p-4 space-y-3">
+          <input
+            type="email"
+            value={delEmail}
+            onChange={e => { setDelEmail(e.target.value); setDelMsg(null); }}
+            placeholder="correo.mal.escrito@ejemplo.com"
+            className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2.5 text-white text-sm focus:border-red-500 outline-none"
+          />
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" checked={delClearProfile} onChange={e => setDelClearProfile(e.target.checked)} className="w-4 h-4 accent-red-500" />
+            <span className="text-xs text-gray-300">Borrar también el perfil del colegiado vinculado a ese correo</span>
+          </label>
+          <button
+            onClick={() => setDelConfirmOpen(true)}
+            disabled={deleting || !delEmail.trim()}
+            className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-red-700 to-red-600 hover:from-red-600 hover:to-red-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold px-5 py-2.5 rounded-lg transition shadow-lg shadow-red-900/30"
+          >
+            {deleting ? <Loader2 size={15} className="animate-spin" /> : <Trash2 size={15} />}
+            Eliminar cuenta
+          </button>
+        </div>
+        {delMsg && (
+          <div className={`mt-3 rounded-xl px-4 py-3 text-sm border flex items-start gap-2 ${
+            delMsg.type === 'error' ? 'bg-red-900/20 border-red-700/40 text-red-300' : 'bg-green-900/20 border-green-700/40 text-green-300'
+          }`}>
+            {delMsg.type === 'error' ? <XCircle size={16} className="mt-0.5 flex-shrink-0" /> : <CheckCircle size={16} className="mt-0.5 flex-shrink-0" />}
+            <span>{delMsg.text}</span>
+          </div>
+        )}
+      </div>
+
+      {/* Modal de confirmación de ELIMINACIÓN */}
+      {delConfirmOpen && (
+        <div className="fixed inset-0 bg-black/70 z-[200] flex items-center justify-center px-4">
+          <div className="bg-[#1a1a2e] border border-red-800/50 rounded-2xl max-w-md w-full p-6 shadow-2xl">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="bg-red-600 p-2.5 rounded-xl"><Trash2 size={18} className="text-white" /></div>
+              <h3 className="text-white font-bold text-lg">¿Eliminar esta cuenta?</h3>
+            </div>
+            <div className="bg-black/40 border border-gray-700 rounded-lg p-3 mb-4">
+              <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Cuenta a eliminar</p>
+              <p className="text-white font-mono text-sm break-all">{delEmail}</p>
+            </div>
+            <p className="text-xs text-gray-400 mb-5">
+              Esta acción <span className="text-red-300 font-semibold">no se puede deshacer</span>.
+              {delClearProfile ? ' También se borrará el perfil del colegiado vinculado.' : ' El perfil del colegiado se conserva.'}
+              {' '}La persona deberá registrarse de nuevo con su correo correcto.
+            </p>
+            <div className="flex gap-2">
+              <button onClick={() => setDelConfirmOpen(false)} disabled={deleting} className="flex-1 bg-gray-700 hover:bg-gray-600 text-white px-4 py-2.5 rounded-lg font-medium text-sm transition disabled:opacity-50">Cancelar</button>
+              <button onClick={performDelete} disabled={deleting} className="flex-1 bg-red-600 hover:bg-red-500 text-white px-4 py-2.5 rounded-lg font-bold text-sm transition flex items-center justify-center gap-2 disabled:opacity-50">
+                {deleting ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                Sí, eliminar
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
