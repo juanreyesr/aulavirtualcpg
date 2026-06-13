@@ -165,9 +165,10 @@ const extractYouTubeId = (value) => {
   if (!trimmed.includes('http')) return trimmed;
   try {
     const url = new URL(trimmed);
-    if (url.hostname.includes('youtu.be')) return url.pathname.replace('/', '');
+    if (url.hostname.includes('youtu.be')) return url.pathname.replace('/', '').split(/[?&]/)[0];
     if (url.searchParams.has('v')) return url.searchParams.get('v') || '';
-    const m = url.pathname.match(/\/embed\/([^/?]+)/);
+    // Soporta /embed/ID, /live/ID (transmisiones en vivo), /shorts/ID y /v/ID
+    const m = url.pathname.match(/\/(?:embed|live|shorts|v)\/([^/?#]+)/);
     return m ? m[1] : '';
   } catch { return ''; }
 };
