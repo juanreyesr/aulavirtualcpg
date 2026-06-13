@@ -2876,9 +2876,12 @@ function HomeView({ videos, viewCounts, recentVideos, categories, upcomingVideos
   const now = new Date();
 
   const parseActDate = (a) => new Date(a.date + 'T00:00:00');
+  // Una actividad es "pasada" solo si su día es ANTERIOR a hoy. Las de hoy siguen
+  // vigentes todo el día (no se marcan como finalizadas a las 00:00).
+  const startOfToday = new Date(); startOfToday.setHours(0, 0, 0, 0);
   const allActivities = activities.filter(a => a?.date).map(a => ({ ...a, parsedDate: parseActDate(a) })).filter(a => !Number.isNaN(a.parsedDate.valueOf())).sort((a, b) => a.parsedDate - b.parsedDate);
-  const upcomingActs = allActivities.filter(a => a.parsedDate >= now);
-  const pastActs = allActivities.filter(a => a.parsedDate < now).reverse();
+  const upcomingActs = allActivities.filter(a => a.parsedDate >= startOfToday);
+  const pastActs = allActivities.filter(a => a.parsedDate < startOfToday).reverse();
 
   const groupByMonth = (list) => list.reduce((acc, a) => {
     const key = a.parsedDate.getFullYear() + '-' + a.parsedDate.getMonth();
@@ -7291,7 +7294,8 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
             )}
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
               {activities.filter(a => !a.date || a.date.startsWith(filterMonth)).sort((a, b) => (a.date || '').localeCompare(b.date || '')).map(a => {
-                const isPast = new Date(a.date + 'T00:00:00') < new Date();
+                const _startToday = new Date(); _startToday.setHours(0, 0, 0, 0);
+                const isPast = new Date(a.date + 'T00:00:00') < _startToday; // pasada solo si es de un día anterior a hoy
                 return (
                   <div key={a.id} className={`bg-[#141414] border rounded-xl p-4 ${isPast ? 'border-gray-700 opacity-80' : 'border-gray-800'}`}>
                     <div className="flex items-center justify-between gap-3 flex-wrap">
