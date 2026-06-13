@@ -233,6 +233,23 @@ const getVideoEmbedUrl = (video) => {
 const getScheduledDate = (scheduledAt) => scheduledAt ? new Date(scheduledAt + 'T00:00:00') : null;
 const isVideoPublished = (video) => { const d = getScheduledDate(video?.scheduledAt); return !d || d <= new Date(); };
 const formatScheduleDate = (scheduledAt) => { const d = getScheduledDate(scheduledAt); if (!d) return ''; return d.toLocaleDateString('es-GT', { year: 'numeric', month: 'long', day: 'numeric' }); };
+
+// Una actividad es "pasada" cuando ya terminó: fecha + hora de inicio + duración (horas).
+// Si no hay hora válida, se considera vigente hasta el fin de su día.
+const isActivityPast = (a) => {
+  if (!a?.date) return false;
+  const end = new Date(a.date + 'T00:00:00');
+  if (Number.isNaN(end.valueOf())) return false;
+  const t = String(a.time || '').match(/^(\d{1,2}):(\d{2})/);
+  if (t) {
+    end.setHours(Number(t[1]), Number(t[2]), 0, 0);
+    const dur = parseFloat(a.horas);
+    if (!Number.isNaN(dur) && dur > 0) end.setMinutes(end.getMinutes() + Math.round(dur * 60));
+  } else {
+    end.setHours(23, 59, 59, 999); // sin hora → vigente todo el día
+  }
+  return end < new Date();
+};
 const getFirstName = (fullName = '') => { const clean = fullName.replace(/^(Lic\.|Dr\.|Msc\.|Ing\.|Lcda\.|Dra\.)\s*/i, '').trim(); return clean.split(' ')[0] || fullName; };
 
 const getCompletedKey = (num) => 'cpg_completed_' + num;
@@ -2876,12 +2893,10 @@ function HomeView({ videos, viewCounts, recentVideos, categories, upcomingVideos
   const now = new Date();
 
   const parseActDate = (a) => new Date(a.date + 'T00:00:00');
-  // Una actividad es "pasada" solo si su día es ANTERIOR a hoy. Las de hoy siguen
-  // vigentes todo el día (no se marcan como finalizadas a las 00:00).
-  const startOfToday = new Date(); startOfToday.setHours(0, 0, 0, 0);
+  // Pasada = ya terminó (fecha + hora de inicio + duración). Ver isActivityPast.
   const allActivities = activities.filter(a => a?.date).map(a => ({ ...a, parsedDate: parseActDate(a) })).filter(a => !Number.isNaN(a.parsedDate.valueOf())).sort((a, b) => a.parsedDate - b.parsedDate);
-  const upcomingActs = allActivities.filter(a => a.parsedDate >= startOfToday);
-  const pastActs = allActivities.filter(a => a.parsedDate < startOfToday).reverse();
+  const upcomingActs = allActivities.filter(a => !isActivityPast(a));
+  const pastActs = allActivities.filter(a => isActivityPast(a)).reverse();
 
   const groupByMonth = (list) => list.reduce((acc, a) => {
     const key = a.parsedDate.getFullYear() + '-' + a.parsedDate.getMonth();
@@ -7294,8 +7309,7 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
             )}
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
               {activities.filter(a => !a.date || a.date.startsWith(filterMonth)).sort((a, b) => (a.date || '').localeCompare(b.date || '')).map(a => {
-                const _startToday = new Date(); _startToday.setHours(0, 0, 0, 0);
-                const isPast = new Date(a.date + 'T00:00:00') < _startToday; // pasada solo si es de un día anterior a hoy
+                const isPast = isActivityPast(a); // pasada = fecha + hora + duración ya transcurrida
                 return (
                   <div key={a.id} className={`bg-[#141414] border rounded-xl p-4 ${isPast ? 'border-gray-700 opacity-80' : 'border-gray-800'}`}>
                     <div className="flex items-center justify-between gap-3 flex-wrap">
