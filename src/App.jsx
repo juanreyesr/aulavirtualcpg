@@ -3280,7 +3280,15 @@ function VideoCard({ video, viewCount = 0, onClick, isSmall, isPublished, isComp
           <span className="text-[11px] text-green-400 font-semibold">{video.duration} hrs</span>
           <span className="text-gray-600 text-[11px]">•</span>
           <span className="text-[11px] text-gray-400 truncate">{video.category}</span>
-          {isCompleted && <span className="ml-auto text-[10px] text-green-400 font-bold">✓ Visto</span>}
+          <div className="ml-auto flex items-center gap-1.5 flex-shrink-0">
+            {isCompleted && <span className="text-[10px] text-green-400 font-bold">✓ Visto</span>}
+            {/* Videos con evaluación para certificación */}
+            {video.quizEnabled && (
+              <span title="Cuenta con evaluación para generar certificación con créditos académicos">
+                <Award size={13} className="text-yellow-500" />
+              </span>
+            )}
+          </div>
         </div>
       </div>
     </div>
@@ -3397,7 +3405,7 @@ function PlayerView({ video, viewCounts, onBack, sessionUser, userProfile, setUs
                 </button>
               </div>
             ) : (
-              <div className="bg-gray-800/30 p-4 rounded-lg border border-gray-800 text-center text-gray-500 text-sm">Esta clase no requiere evaluación para certificación.</div>
+              <div className="bg-gray-800/30 p-4 rounded-lg border border-gray-800 text-center text-gray-500 text-sm">Este video no cuenta con evaluación para la generación de certificación del mismo por lo que no genera créditos académicos.</div>
             )}
           </div>
         </div>
