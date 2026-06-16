@@ -5256,6 +5256,33 @@ function EmailChangeManager({ currentAdminRole, currentAdminEmail }) {
   const [delConfirmOpen, setDelConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [delMsg, setDelMsg] = useState(null);
+  // Buscar por colegiado para revelar el correo real (el de la web va enmascarado)
+  const [delLookup, setDelLookup] = useState('');
+  const [delSearching, setDelSearching] = useState(false);
+  const [delFound, setDelFound] = useState(null); // { collegiate_number, name, email }
+
+  const handleDelLookup = async () => {
+    const v = delLookup.trim();
+    if (!v) { setDelMsg({ type: 'error', text: 'Escribe el número de colegiado o el correo.' }); return; }
+    setDelSearching(true); setDelMsg(null); setDelFound(null);
+    try {
+      // Buscar por colegiado o por correo en el perfil
+      const byNumber = /^\d+$/.test(v);
+      let q = supabase.from('cpg_user_profiles').select('collegiate_number, name, email');
+      q = byNumber ? q.eq('collegiate_number', v) : q.ilike('email', v);
+      const { data, error } = await q.limit(1).maybeSingle();
+      if (error) throw error;
+      if (data) {
+        setDelFound(data);
+        setDelEmail(data.email || '');
+      } else {
+        setDelMsg({ type: 'error', text: 'No se encontró perfil con ese colegiado/correo.' });
+      }
+    } catch (e) {
+      setDelMsg({ type: 'error', text: 'Error buscando: ' + (e?.message || e) });
+    }
+    setDelSearching(false);
+  };
 
   const isSuperAdmin = currentAdminRole === 'super_admin';
 
@@ -5345,7 +5372,7 @@ function EmailChangeManager({ currentAdminRole, currentAdminEmail }) {
       } else {
         setDelMsg({ type: 'success', text: data?.message || 'Cuenta eliminada.' });
         logAudit(currentAdminEmail, '', 'user_account_deleted', 'user', v, { clearedProfile: delClearProfile });
-        setDelEmail(''); setDelClearProfile(false);
+        setDelEmail(''); setDelClearProfile(false); setDelLookup(''); setDelFound(null);
       }
     } catch (e) {
       setDelMsg({ type: 'error', text: 'Error: ' + (e?.message || e) });
@@ -5455,16 +5482,47 @@ function EmailChangeManager({ currentAdminRole, currentAdminEmail }) {
           </p>
         </div>
         <div className="bg-[#1a1a1a] border border-gray-800 rounded-xl p-4 space-y-3">
-          <input
-            type="email"
-            value={delEmail}
-            onChange={e => { setDelEmail(e.target.value); setDelMsg(null); }}
-            placeholder="correo.mal.escrito@ejemplo.com"
-            className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2.5 text-white text-sm focus:border-red-500 outline-none"
-          />
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input type="checkbox" checked={delClearProfile} onChange={e => setDelClearProfile(e.target.checked)} className="w-4 h-4 accent-red-500" />
-            <span className="text-xs text-gray-300">Borrar también el perfil del colegiado vinculado a ese correo</span>
+          {/* Buscar por colegiado/correo para revelar el correo real */}
+          <div>
+            <label className="block text-gray-400 text-xs mb-1 uppercase tracking-wider">Buscar por colegiado o correo</label>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={delLookup}
+                onChange={e => { setDelLookup(e.target.value); setDelMsg(null); }}
+                onKeyDown={e => { if (e.key === 'Enter') handleDelLookup(); }}
+                placeholder="Ej. 14846  o  correo@ejemplo.com"
+                className="flex-1 bg-black border border-gray-700 rounded-lg px-3 py-2.5 text-white text-sm focus:border-red-500 outline-none"
+              />
+              <button onClick={handleDelLookup} disabled={delSearching || !delLookup.trim()}
+                className="flex items-center gap-1.5 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 px-4 py-2.5 rounded-lg text-sm font-bold transition">
+                {delSearching ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />} Buscar
+              </button>
+            </div>
+            {delFound && (
+              <div className="mt-2 bg-emerald-900/15 border border-emerald-700/30 rounded-lg px-3 py-2 flex items-center gap-3">
+                <CheckCircle size={16} className="text-emerald-400 flex-shrink-0" />
+                <div className="flex-1 text-sm min-w-0">
+                  <p className="text-white font-semibold truncate">{delFound.name || '(sin nombre)'} · No. {delFound.collegiate_number}</p>
+                  <p className="text-xs text-gray-300 break-all">Correo real: <span className="font-mono text-emerald-300">{delFound.email}</span></p>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div>
+            <label className="block text-gray-400 text-xs mb-1 uppercase tracking-wider">Correo de la cuenta a eliminar</label>
+            <input
+              type="email"
+              value={delEmail}
+              onChange={e => { setDelEmail(e.target.value); setDelMsg(null); }}
+              placeholder="correo.mal.escrito@ejemplo.com"
+              className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2.5 text-white text-sm focus:border-red-500 outline-none"
+            />
+          </div>
+          <label className="flex items-start gap-2 cursor-pointer">
+            <input type="checkbox" checked={delClearProfile} onChange={e => setDelClearProfile(e.target.checked)} className="w-4 h-4 accent-red-500 mt-0.5" />
+            <span className="text-xs text-gray-300">Borrar también el perfil del colegiado <span className="text-amber-300">(necesario para que la persona pueda registrarse de nuevo — si no lo marcas, seguirá apareciendo "colegiado ya registrado")</span></span>
           </label>
           <button
             onClick={() => setDelConfirmOpen(true)}
