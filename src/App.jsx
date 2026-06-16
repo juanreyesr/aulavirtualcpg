@@ -1654,6 +1654,7 @@ export default function App() {
         email: extraFields.email || sessionUser.email || '',
         department: extraFields.department || '',
         phone: extraFields.phone || '',
+        country: extraFields.country || '',
         platform: liveSession.platform,
         session_title: liveSession.title,
       });
@@ -3955,7 +3956,8 @@ function LiveAdminPanel({ liveSession, onSave, onOpenAttendance, commissions = [
         </div>
         <div className="md:col-span-2">
           <label className="block text-sm text-gray-400 mb-1">Enlace de la transmisión</label>
-          <input type="url" value={form.url} onChange={e => setForm({ ...form, url: e.target.value })} placeholder={currentPlatform?.hint} className="w-full bg-black border border-gray-700 rounded-lg p-2.5 text-white focus:border-blue-500 outline-none" />
+          <input type="url" value={form.url} onChange={e => { const url = e.target.value; const detected = detectPlatform(url); setForm(prev => ({ ...prev, url, platform: detected || prev.platform })); }} placeholder={currentPlatform?.hint} className="w-full bg-black border border-gray-700 rounded-lg p-2.5 text-white focus:border-blue-500 outline-none" />
+          <p className="text-[11px] text-gray-600 mt-1">La plataforma se detecta automáticamente al pegar el enlace.</p>
         </div>
       </div>
 
@@ -4156,17 +4158,53 @@ function ExternalLiveEmbed({ session, meta }) {
 // ── LIVE SESSION VIEW ─────────────────────────────
 function LiveSessionView({ session, onBack, sessionUser, onRegisterAttendance }) {
   const [attended, setAttended] = useState(false);
-  const [showForm, setShowForm] = useState(false);
-  const [attForm, setAttForm] = useState({ department: '', phone: '', email: sessionUser?.email || '' });
+  const [attForm, setAttForm] = useState({ department: '', phone: '', email: sessionUser?.email || '', abroad: false, country: '' });
   const [attError, setAttError] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  // Precargar datos de la última asistencia del colegiado (correo, teléfono,
+  // departamento, país) para que registrar sea prácticamente un solo clic.
+  useEffect(() => {
+    if (sessionUser?.isGuest || !sessionUser?.collegiateNumber || !supabase) return;
+    let active = true;
+    (async () => {
+      try {
+        const { data } = await supabase.from('cpg_live_attendance')
+          .select('email, phone, department, country')
+          .eq('collegiate_number', sessionUser.collegiateNumber)
+          .order('joined_at', { ascending: false })
+          .limit(1).maybeSingle();
+        if (active && data) {
+          setAttForm(prev => ({
+            ...prev,
+            email: prev.email || data.email || '',
+            phone: data.phone || prev.phone,
+            department: data.department || prev.department,
+            country: data.country || '',
+            abroad: !!data.country,
+          }));
+        }
+      } catch {}
+    })();
+    return () => { active = false; };
+  }, [sessionUser]);
 
   const handleSubmitAttendance = async () => {
-    if (!attForm.department) { setAttError('Selecciona tu departamento.'); return; }
+    if (attForm.abroad) {
+      if (!attForm.country.trim()) { setAttError('Escribe el país en el que te encuentras.'); return; }
+    } else if (!attForm.department) {
+      setAttError('Selecciona tu departamento.'); return;
+    }
     if (!attForm.phone.trim()) { setAttError('Ingresa tu número de teléfono.'); return; }
-    setAttError('');
-    await onRegisterAttendance({ email: attForm.email, department: attForm.department, phone: attForm.phone.trim() });
+    setAttError(''); setSaving(true);
+    await onRegisterAttendance({
+      email: attForm.email,
+      department: attForm.abroad ? '' : attForm.department,
+      phone: attForm.phone.trim(),
+      country: attForm.abroad ? attForm.country.trim() : '',
+    });
+    setSaving(false);
     setAttended(true);
-    setShowForm(false);
   };
 
   // Reutilizamos el extractor canónico definido al inicio del archivo
@@ -4186,18 +4224,11 @@ function LiveSessionView({ session, onBack, sessionUser, onRegisterAttendance })
         <h1 className="text-2xl md:text-3xl font-bold text-white mb-2">{session?.title || 'Transmisión en vivo'}</h1>
         {session?.started_at && <p className="text-sm text-gray-400 mb-6">Inició: {new Date(session.started_at).toLocaleTimeString('es-GT', { hour: '2-digit', minute: '2-digit' })}</p>}
 
-        {/* ── REGISTRO DE ASISTENCIA ── */}
-        {!sessionUser?.isGuest && !attended && !showForm && (
-          <button onClick={() => setShowForm(true)} className="inline-flex items-center gap-3 mb-6 px-5 py-3 rounded-xl border border-blue-700 bg-blue-900/20 text-blue-300 hover:bg-blue-900/40 transition font-semibold text-sm">
-            <Users size={18} /> Registrar mi asistencia a esta sesión
-          </button>
-        )}
-
-        {/* Formulario de asistencia */}
-        {!sessionUser?.isGuest && showForm && !attended && (
+        {/* ── REGISTRO DE ASISTENCIA (obligatorio antes de ver/entrar) ── */}
+        {!sessionUser?.isGuest && !attended && (
           <div className="mb-6 bg-[#1a1a1a] border border-blue-700/40 rounded-2xl p-5 max-w-lg">
-            <h3 className="text-white font-bold text-lg mb-1">Registrar asistencia</h3>
-            <p className="text-gray-400 text-sm mb-4">Completa los datos para registrar tu asistencia a esta sesión.</p>
+            <h3 className="text-white font-bold text-lg mb-1 flex items-center gap-2"><Users size={18} className="text-blue-400" /> Marca tu asistencia</h3>
+            <p className="text-gray-400 text-sm mb-4">Para ver la transmisión o entrar al enlace, primero registra tu asistencia. Tus datos vienen precargados — solo confirma (o edítalos si cambió algo).</p>
             {attError && <div className="mb-3 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2 text-sm text-red-300">{attError}</div>}
 
             <div className="space-y-3">
@@ -4205,13 +4236,28 @@ function LiveSessionView({ session, onBack, sessionUser, onRegisterAttendance })
                 <label className="block text-gray-400 text-xs mb-1 uppercase tracking-wider">Correo electrónico</label>
                 <input type="email" value={attForm.email} onChange={e => setAttForm({ ...attForm, email: e.target.value })} className="w-full bg-black border border-gray-700 rounded-lg p-2.5 text-white text-sm focus:border-blue-500 outline-none" placeholder="tucorreo@ejemplo.com" />
               </div>
-              <div>
-                <label className="block text-gray-400 text-xs mb-1 uppercase tracking-wider">Departamento <span className="text-red-400">*</span></label>
-                <select value={attForm.department} onChange={e => { setAttForm({ ...attForm, department: e.target.value }); setAttError(''); }} className="w-full bg-black border border-gray-700 rounded-lg p-2.5 text-white text-sm focus:border-blue-500 outline-none">
-                  <option value="">— Selecciona tu departamento —</option>
-                  {GUATEMALA_DEPARTMENTS.map(d => <option key={d} value={d}>{d}</option>)}
-                </select>
-              </div>
+
+              {/* Checkbox extranjero */}
+              <label className="flex items-center gap-2 cursor-pointer py-1">
+                <input type="checkbox" checked={attForm.abroad} onChange={e => { setAttForm({ ...attForm, abroad: e.target.checked }); setAttError(''); }} className="w-4 h-4 accent-blue-500" />
+                <span className="text-sm text-gray-300">Estoy en el extranjero</span>
+              </label>
+
+              {attForm.abroad ? (
+                <div>
+                  <label className="block text-gray-400 text-xs mb-1 uppercase tracking-wider">País donde te encuentras <span className="text-red-400">*</span></label>
+                  <input type="text" value={attForm.country} onChange={e => { setAttForm({ ...attForm, country: e.target.value }); setAttError(''); }} className="w-full bg-black border border-gray-700 rounded-lg p-2.5 text-white text-sm focus:border-blue-500 outline-none" placeholder="Ej. México, España, Estados Unidos…" />
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-gray-400 text-xs mb-1 uppercase tracking-wider">Departamento <span className="text-red-400">*</span></label>
+                  <select value={attForm.department} onChange={e => { setAttForm({ ...attForm, department: e.target.value }); setAttError(''); }} className="w-full bg-black border border-gray-700 rounded-lg p-2.5 text-white text-sm focus:border-blue-500 outline-none">
+                    <option value="">— Selecciona tu departamento —</option>
+                    {GUATEMALA_DEPARTMENTS.map(d => <option key={d} value={d}>{d}</option>)}
+                  </select>
+                </div>
+              )}
+
               <div>
                 <label className="block text-gray-400 text-xs mb-1 uppercase tracking-wider">Teléfono <span className="text-red-400">*</span></label>
                 <input type="tel" value={attForm.phone} onChange={e => { setAttForm({ ...attForm, phone: e.target.value }); setAttError(''); }} className="w-full bg-black border border-gray-700 rounded-lg p-2.5 text-white text-sm focus:border-blue-500 outline-none" placeholder="Ej. 5555-1234" />
@@ -4219,10 +4265,9 @@ function LiveSessionView({ session, onBack, sessionUser, onRegisterAttendance })
             </div>
 
             <div className="flex gap-3 mt-4">
-              <button onClick={handleSubmitAttendance} className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-5 py-2.5 rounded-lg transition flex items-center gap-2 text-sm">
-                <CheckCircle size={16} /> Confirmar asistencia
+              <button onClick={handleSubmitAttendance} disabled={saving} className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold px-5 py-2.5 rounded-lg transition flex items-center gap-2 text-sm">
+                {saving ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle size={16} />} Confirmar asistencia y ver transmisión
               </button>
-              <button onClick={() => setShowForm(false)} className="text-gray-400 hover:text-white text-sm transition">Cancelar</button>
             </div>
           </div>
         )}
@@ -4235,16 +4280,29 @@ function LiveSessionView({ session, onBack, sessionUser, onRegisterAttendance })
           </div>
         )}
 
-        {sessionUser?.isGuest && <div className="inline-flex items-center gap-2 mb-6 px-4 py-2 rounded-xl border border-yellow-700 bg-yellow-900/20 text-yellow-300 text-sm"><Lock size={15} /> Ingresa con tu número de colegiado para registrar asistencia</div>}
+        {sessionUser?.isGuest && <div className="inline-flex items-center gap-2 mb-6 px-4 py-2 rounded-xl border border-yellow-700 bg-yellow-900/20 text-yellow-300 text-sm"><Lock size={15} /> Ingresa con tu número de colegiado para registrar asistencia y ver la transmisión</div>}
 
-        {/* Video embed */}
-        {session?.platform === 'youtube' && session?.url && (
-          <div className="rounded-2xl overflow-hidden border border-gray-800 shadow-2xl bg-black aspect-video w-full">
-            <iframe src={`https://www.youtube.com/embed/${extractYouTubeId(session.url)}?autoplay=1&rel=0&modestbranding=1`} title="Transmisión en vivo" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen className="w-full h-full" />
-          </div>
-        )}
-        {(session?.platform === 'zoom' || session?.platform === 'meet' || session?.platform === 'teams') && session?.url && (
-          <ExternalLiveEmbed session={session} meta={meta} />
+        {/* ── ACCESO A LA TRANSMISIÓN: solo después de marcar asistencia ── */}
+        {!attended ? (
+          !sessionUser?.isGuest && session?.url && (
+            <div className="rounded-2xl border border-blue-800/50 bg-blue-900/10 p-10 text-center">
+              <Lock size={40} className="mx-auto mb-4 text-blue-400" />
+              <p className="text-blue-200 font-semibold">Marca tu asistencia para ver la transmisión</p>
+              <p className="text-blue-300/70 text-sm mt-1">El enlace y el video se habilitan al confirmar tu asistencia arriba.</p>
+            </div>
+          )
+        ) : (
+          <>
+            {/* Video embed — visible solo tras marcar asistencia */}
+            {session?.platform === 'youtube' && session?.url && (
+              <div className="rounded-2xl overflow-hidden border border-gray-800 shadow-2xl bg-black aspect-video w-full">
+                <iframe src={`https://www.youtube.com/embed/${extractYouTubeId(session.url)}?autoplay=1&rel=0&modestbranding=1`} title="Transmisión en vivo" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen className="w-full h-full" />
+              </div>
+            )}
+            {(session?.platform === 'zoom' || session?.platform === 'meet' || session?.platform === 'teams') && session?.url && (
+              <ExternalLiveEmbed session={session} meta={meta} />
+            )}
+          </>
         )}
         {!session?.url && (
           <div className="rounded-2xl border border-yellow-800 bg-yellow-900/10 p-10 text-center text-yellow-400">
