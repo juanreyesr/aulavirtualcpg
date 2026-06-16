@@ -1338,6 +1338,38 @@ export default function App() {
   // ── Actualizar sesión: reconsulta datos del colegiado para reflejar cambios (estado, pagos, etc.) ──
   const [refreshingSession, setRefreshingSession] = useState(false);
   const [refreshMsg, setRefreshMsg] = useState('');
+  // ── Cambiar mi propio correo registrado (autogestión) ──
+  const [showEmailEdit, setShowEmailEdit] = useState(false);
+  const [newOwnEmail, setNewOwnEmail] = useState('');
+  const [ownEmailMsg, setOwnEmailMsg] = useState('');
+  const [savingOwnEmail, setSavingOwnEmail] = useState(false);
+
+  const handleChangeOwnEmail = useCallback(async () => {
+    const v = newOwnEmail.trim().toLowerCase();
+    if (!v || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) { setOwnEmailMsg('Escribe un correo válido.'); return; }
+    if (!supabase) { setOwnEmailMsg('Sin conexión.'); return; }
+    setSavingOwnEmail(true); setOwnEmailMsg('');
+    try {
+      const { data, error } = await supabase.rpc('change_own_email', { new_email: v });
+      if (error) throw error;
+      if (data?.success === false) {
+        setOwnEmailMsg(data?.message || 'No se pudo cambiar el correo.');
+      } else {
+        // Actualizar la sesión local con el nuevo correo
+        setSessionUser(prev => {
+          const updated = { ...prev, email: v };
+          try { localStorage.setItem('cpg_session', JSON.stringify(updated)); } catch {}
+          return updated;
+        });
+        setOwnEmailMsg('✓ Correo actualizado. Úsalo para ingresar de ahora en adelante.');
+        setNewOwnEmail('');
+        setTimeout(() => { setShowEmailEdit(false); setOwnEmailMsg(''); }, 2500);
+      }
+    } catch (e) {
+      setOwnEmailMsg('Error: ' + (e?.message || e));
+    }
+    setSavingOwnEmail(false);
+  }, [newOwnEmail]);
 
   const handleRefreshSession = useCallback(async () => {
     if (!sessionUser || sessionUser.isGuest || !sessionUser.collegiateNumber) return;
@@ -1959,6 +1991,42 @@ export default function App() {
                     {refreshMsg && (
                       <p className={`text-[10px] text-center mb-2 ${refreshMsg.startsWith('✓') ? 'text-emerald-400' : 'text-red-400'}`}>{refreshMsg}</p>
                     )}
+
+                    {/* Cambiar mi correo registrado (autogestión del usuario) */}
+                    {!showEmailEdit ? (
+                      <button
+                        onClick={() => { setShowEmailEdit(true); setNewOwnEmail(''); setOwnEmailMsg(''); }}
+                        className="w-full text-xs text-amber-400 hover:text-amber-200 border border-amber-800/60 hover:border-amber-600 rounded-lg py-2 transition flex items-center justify-center gap-1.5 mb-2"
+                        title="Cambia el correo con el que ingresas al aula"
+                      >
+                        <Mail size={11} /> Cambiar mi correo registrado
+                      </button>
+                    ) : (
+                      <div className="border border-amber-800/50 rounded-lg p-3 mb-2 bg-amber-900/10">
+                        <p className="text-[11px] text-amber-200/90 mb-1.5">Nuevo correo (ingresarás con este de ahora en adelante):</p>
+                        <input
+                          type="email"
+                          value={newOwnEmail}
+                          onChange={e => { setNewOwnEmail(e.target.value); setOwnEmailMsg(''); }}
+                          placeholder="nuevo.correo@ejemplo.com"
+                          className="w-full bg-black border border-gray-700 rounded-lg px-2.5 py-2 text-white text-xs focus:border-amber-500 outline-none mb-2"
+                        />
+                        {ownEmailMsg && (
+                          <p className={`text-[10px] mb-2 ${ownEmailMsg.startsWith('✓') ? 'text-emerald-400' : 'text-red-400'}`}>{ownEmailMsg}</p>
+                        )}
+                        <div className="flex gap-2">
+                          <button
+                            onClick={handleChangeOwnEmail}
+                            disabled={savingOwnEmail || !newOwnEmail.trim()}
+                            className="flex-1 text-xs bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white font-bold rounded-lg py-2 transition flex items-center justify-center gap-1.5"
+                          >
+                            {savingOwnEmail ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle size={12} />} Guardar
+                          </button>
+                          <button onClick={() => setShowEmailEdit(false)} disabled={savingOwnEmail} className="text-xs text-gray-400 hover:text-white px-3 rounded-lg border border-gray-700">Cancelar</button>
+                        </div>
+                      </div>
+                    )}
+
                     <button onClick={() => { navigateToCreditos(sessionUser); setShowProfile(false); }} className="w-full text-xs text-blue-400 hover:text-blue-200 border border-blue-800 hover:border-blue-600 rounded-lg py-2 transition flex items-center justify-center gap-1.5 mb-2">
                       <ExternalLink size={11} /> Ver historial completo en Créditos
                     </button>
