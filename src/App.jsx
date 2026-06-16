@@ -3763,6 +3763,32 @@ function LiveAdminPanel({ liveSession, onSave, onOpenAttendance, commissions = [
   const isActive = liveSession?.active;
   const currentPlatform = PLATFORMS.find(p => p.id === form.platform);
 
+  // ── Sincronizar el formulario con la transmisión ACTIVA ──
+  // Carga los datos de la sesión en vivo (de la BD compartida) al montar el panel,
+  // al iniciar una nueva sesión, y al entrar desde otro dispositivo. Así, tras salir
+  // y volver — o desde cualquier equipo — se puede editar la transmisión (p.ej.
+  // cambiar el enlace de Zoom por YouTube) SIN tener que finalizar y empezar de cero.
+  // Solo re-sincroniza cuando cambia la sesión (started_at), no en cada poll, para
+  // no pisar lo que el administrador esté escribiendo.
+  const syncedSessionRef = useRef(null);
+  useEffect(() => {
+    if (liveSession?.active) {
+      if (syncedSessionRef.current !== liveSession.started_at) {
+        syncedSessionRef.current = liveSession.started_at;
+        setForm({
+          title: liveSession.title || '',
+          platform: liveSession.platform || 'youtube',
+          url: liveSession.url || '',
+          hasCommissions: Array.isArray(liveSession.commissions_snapshot) && liveSession.commissions_snapshot.length > 0,
+          commissions: (liveSession.commissions_snapshot || []).map(c => c?.id).filter(v => v != null),
+        });
+      }
+    } else {
+      syncedSessionRef.current = null;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveSession?.active, liveSession?.started_at]);
+
   const detectPlatform = (url) => {
     if (!url) return null;
     const lower = url.toLowerCase();
