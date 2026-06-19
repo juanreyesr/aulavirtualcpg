@@ -7091,11 +7091,16 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
     }
     // Recargar la tabla
     setCertsLoaded(false);
-    const allCerts = await fetchAllCerts();
-    setCertsData(allCerts);
-    setCertsLoaded(true);
-    setVerifyStatusLoading(false);
-    setVerifyStatusMsg(`✓ ${updated} colegiado(s) actualizados`);
+    try {
+      const allCerts = await fetchAllCerts();
+      setCertsData(allCerts);
+      setCertsLoaded(true);
+      setVerifyStatusMsg(`✓ ${updated} colegiado(s) actualizados`);
+    } catch (err) {
+      setVerifyStatusMsg(`Error al recargar certificados: ${err.message}`);
+    } finally {
+      setVerifyStatusLoading(false);
+    }
     setTimeout(() => setVerifyStatusMsg(''), 5000);
   };
 
