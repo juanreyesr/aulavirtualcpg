@@ -7091,11 +7091,16 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
     }
     // Recargar la tabla
     setCertsLoaded(false);
-    const { data } = await supabase.from('cpg_certificates').select('*').order('issued_at', { ascending: false });
-    if (data) setCertsData(data);
-    setCertsLoaded(true);
-    setVerifyStatusLoading(false);
-    setVerifyStatusMsg(`✓ ${updated} colegiado(s) actualizados`);
+    try {
+      const allCerts = await fetchAllCerts();
+      setCertsData(allCerts);
+      setCertsLoaded(true);
+      setVerifyStatusMsg(`✓ ${updated} colegiado(s) actualizados`);
+    } catch (err) {
+      setVerifyStatusMsg(`Error al recargar certificados: ${err.message}`);
+    } finally {
+      setVerifyStatusLoading(false);
+    }
     setTimeout(() => setVerifyStatusMsg(''), 5000);
   };
 
@@ -7220,12 +7225,29 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
     setShowReportModal(false);
   };
 
+  const fetchAllCerts = async () => {
+    const PAGE = 1000;
+    let all = [], from = 0, done = false;
+    while (!done) {
+      const { data, error } = await supabase
+        .from('cpg_certificates')
+        .select('*')
+        .order('issued_at', { ascending: false })
+        .range(from, from + PAGE - 1);
+      if (error) throw error;
+      if (data?.length) all = all.concat(data);
+      done = !data || data.length < PAGE;
+      from += PAGE;
+    }
+    return all;
+  };
+
   const loadAdminCerts = async () => {
     if (!supabase || certsLoaded) return;
     setCertsLoading(true);
     try {
-      const { data } = await supabase.from('cpg_certificates').select('*').order('issued_at', { ascending: false });
-      setCertsData(data || []);
+      const all = await fetchAllCerts();
+      setCertsData(all);
       setCertsLoaded(true);
     } catch {}
     setCertsLoading(false);
