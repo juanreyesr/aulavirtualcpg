@@ -5363,19 +5363,25 @@ function EmailChangeManager({ currentAdminRole, currentAdminEmail }) {
   }
 
   const handleSearch = async () => {
-    const v = oldEmail.trim().toLowerCase();
-    if (!v) { setMsg({ type: 'error', text: 'Ingresa el correo actual del usuario.' }); return; }
+    const raw = oldEmail.trim();
+    const v = raw.toLowerCase();
+    if (!v) { setMsg({ type: 'error', text: 'Ingresa el correo actual o el número de colegiado del usuario.' }); return; }
     setSearching(true); setMsg(null); setProfileMatch(null);
     try {
-      const { data, error } = await supabase
-        .from('cpg_user_profiles')
-        .select('collegiate_number, name, email')
-        .ilike('email', v)
-        .limit(1)
-        .maybeSingle();
+      // Si lo ingresado son solo dígitos, buscamos por número de colegiado;
+      // de lo contrario, por correo.
+      const byNumber = /^\d+$/.test(raw);
+      let q = supabase.from('cpg_user_profiles').select('collegiate_number, name, email');
+      q = byNumber ? q.eq('collegiate_number', raw) : q.ilike('email', v);
+      const { data, error } = await q.limit(1).maybeSingle();
       if (error) throw error;
       if (data) {
         setProfileMatch(data);
+        // Al buscar por colegiado obtenemos el correo real registrado: lo fijamos
+        // como "correo actual" para que el cambio funcione aunque el agremiado no lo recuerde.
+        if (data.email) setOldEmail(data.email);
+      } else if (byNumber) {
+        setMsg({ type: 'error', text: 'No se encontró ningún perfil con ese número de colegiado.' });
       } else {
         setMsg({ type: 'info', text: 'No encontramos perfil con ese correo en la tabla local. Aun así puedes intentar el cambio (puede que solo exista en Supabase Auth).' });
       }
@@ -5463,16 +5469,16 @@ function EmailChangeManager({ currentAdminRole, currentAdminEmail }) {
       <div className="bg-[#1a1a1a] border border-gray-800 rounded-xl p-4 space-y-3">
         <div className="flex items-center gap-2">
           <div className="bg-blue-600/80 p-1.5 rounded-lg"><Search size={13} className="text-white" /></div>
-          <h3 className="text-white font-semibold text-sm">1. Buscar usuario por correo actual</h3>
+          <h3 className="text-white font-semibold text-sm">1. Buscar usuario por correo o número de colegiado</h3>
         </div>
         <div className="flex gap-3 items-end flex-wrap">
           <div className="flex-1 min-w-[200px]">
             <input
-              type="email"
+              type="text"
               value={oldEmail}
               onChange={e => { setOldEmail(e.target.value); setProfileMatch(null); setMsg(null); }}
               onKeyDown={e => { if (e.key === 'Enter') handleSearch(); }}
-              placeholder="correo.actual@ejemplo.com"
+              placeholder="correo.actual@ejemplo.com  o  7881"
               className="w-full bg-black border border-gray-700 rounded-lg px-3 py-2.5 text-white text-sm focus:border-blue-500 outline-none"
             />
           </div>
@@ -5491,6 +5497,7 @@ function EmailChangeManager({ currentAdminRole, currentAdminEmail }) {
             <div className="flex-1 text-sm">
               <p className="text-white font-semibold">{profileMatch.name || '(sin nombre)'}</p>
               <p className="text-xs text-gray-400">Colegiado: <span className="text-gray-200 font-mono">{profileMatch.collegiate_number || '—'}</span></p>
+              <p className="text-xs text-gray-400">Correo actual: <span className="text-gray-200">{profileMatch.email || '—'}</span></p>
             </div>
           </div>
         )}
