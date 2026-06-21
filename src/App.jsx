@@ -4250,6 +4250,22 @@ function LiveSessionView({ session, onBack, sessionUser, onRegisterAttendance })
   const [attError, setAttError] = useState('');
   const [saving, setSaving] = useState(false);
 
+  // Check if user already registered for this session (persists across navigation/reloads).
+  useEffect(() => {
+    if (sessionUser?.isGuest || !sessionUser?.collegiateNumber || !supabase || !session?.title) return;
+    let active = true;
+    (async () => {
+      try {
+        const { data } = await supabase.rpc('check_attendance_registered', {
+          p_collegiate: sessionUser.collegiateNumber,
+          p_session_title: session.title,
+        });
+        if (active && data === true) setAttended(true);
+      } catch {}
+    })();
+    return () => { active = false; };
+  }, [sessionUser, session?.title]);
+
   // Precargar datos de la última asistencia del colegiado (correo, teléfono,
   // departamento, país) para que registrar sea prácticamente un solo clic.
   // Se usa una función RPC (SECURITY DEFINER) porque la lectura directa de la
