@@ -4252,29 +4252,26 @@ function LiveSessionView({ session, onBack, sessionUser, onRegisterAttendance })
 
   // Precargar datos de la última asistencia del colegiado (correo, teléfono,
   // departamento, país) para que registrar sea prácticamente un solo clic.
-  // Busca primero el registro más reciente con teléfono no vacío para evitar
-  // pre-llenar campos vacíos de sesiones donde el usuario marcó como extranjero.
+  // Se usa una función RPC (SECURITY DEFINER) porque la lectura directa de la
+  // tabla está restringida solo a admins; la función devuelve únicamente el
+  // último registro con teléfono no vacío del colegiado solicitado.
   useEffect(() => {
     if (sessionUser?.isGuest || !sessionUser?.collegiateNumber || !supabase) return;
     let active = true;
     (async () => {
       try {
-        // Primer intento: último registro con teléfono no vacío
-        const { data } = await supabase.from('cpg_live_attendance')
-          .select('email, phone, department, country')
-          .eq('collegiate_number', sessionUser.collegiateNumber)
-          .neq('phone', '')
-          .not('phone', 'is', null)
-          .order('joined_at', { ascending: false })
-          .limit(1).maybeSingle();
-        if (active && data) {
+        const { data } = await supabase.rpc('get_attendance_prefill', {
+          p_collegiate: sessionUser.collegiateNumber,
+        });
+        const row = Array.isArray(data) ? data[0] : data;
+        if (active && row) {
           setAttForm(prev => ({
             ...prev,
-            email: prev.email || data.email || '',
-            phone: prev.phone || data.phone || '',
-            department: prev.department || data.department || '',
-            country: prev.country || data.country || '',
-            abroad: !!(prev.country || data.country),
+            email: prev.email || row.email || '',
+            phone: prev.phone || row.phone || '',
+            department: prev.department || row.department || '',
+            country: prev.country || row.country || '',
+            abroad: !!(prev.country || row.country),
           }));
         }
       } catch {}
