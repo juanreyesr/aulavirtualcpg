@@ -5379,7 +5379,13 @@ function EmailChangeManager({ currentAdminRole, currentAdminEmail }) {
         setProfileMatch(data);
         // Al buscar por colegiado obtenemos el correo real registrado: lo fijamos
         // como "correo actual" para que el cambio funcione aunque el agremiado no lo recuerde.
-        if (data.email) setOldEmail(data.email);
+        if (data.email) {
+          setOldEmail(data.email);
+        } else if (byNumber) {
+          // Evita que el número de colegiado quede como "correo actual" y provoque un cambio inválido.
+          setOldEmail('');
+          setMsg({ type: 'error', text: 'El perfil fue encontrado, pero no tiene un correo electrónico registrado.' });
+        }
       } else if (byNumber) {
         setMsg({ type: 'error', text: 'No se encontró ningún perfil con ese número de colegiado.' });
       } else {
