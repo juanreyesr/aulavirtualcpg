@@ -1678,9 +1678,10 @@ export default function App() {
   };
 
   const registerAttendance = async (extraFields = {}) => {
-    if (!supabase || !sessionUser || sessionUser.isGuest || !liveSession?.active) return;
+    if (!supabase || !sessionUser || sessionUser.isGuest) return { success: false, message: 'No autenticado.' };
+    if (!liveSession?.active) return { success: false, message: 'La sesión ya no está activa.' };
     try {
-      await supabase.from('cpg_live_attendance').insert({
+      const { error } = await supabase.from('cpg_live_attendance').insert({
         collegiate_number: sessionUser.collegiateNumber,
         name: sessionUser.name,
         email: extraFields.email || sessionUser.email || '',
@@ -1690,7 +1691,11 @@ export default function App() {
         platform: liveSession.platform,
         session_title: liveSession.title,
       });
-    } catch {}
+      if (error) return { success: false, message: error.message };
+      return { success: true };
+    } catch (e) {
+      return { success: false, message: e?.message || 'Error desconocido.' };
+    }
   };
 
   // ── Cargar y guardar config de plantilla de certificado ──
@@ -3942,6 +3947,13 @@ function LiveAdminPanel({ liveSession, onSave, onOpenAttendance, commissions = [
   };
   const handleShowAttendees = async () => { if (!showAttendees) await loadAttendees(); setShowAttendees(p => !p); };
 
+  // Auto-refresh cada 20s mientras el panel de asistentes esté abierto
+  useEffect(() => {
+    if (!showAttendees) return;
+    const interval = setInterval(() => { loadAttendees(); }, 20000);
+    return () => clearInterval(interval);
+  }, [showAttendees]);
+
   const loadSessionsLog = async () => {
     if (!supabase) return; setLoadingLog(true);
     try { const { data } = await supabase.from('cpg_live_sessions_log').select('*').order('ended_at', { ascending: false }); setSessionsLog(data || []); } catch {}
@@ -4116,9 +4128,17 @@ function LiveAdminPanel({ liveSession, onSave, onOpenAttendance, commissions = [
       {/* ── ASISTENTES ── */}
       {showAttendees && (
         <div className="mt-6 border-t border-gray-800 pt-5">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-bold text-white">Registro de asistencia ({attendees.length})</h3>
-            {attendees.length > 0 && <button onClick={exportAttendance} className="flex items-center gap-2 bg-emerald-700 hover:bg-emerald-600 px-3 py-1.5 rounded text-xs font-semibold"><Download size={14} /> Exportar CSV</button>}
+          <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+            <h3 className="font-bold text-white flex items-center gap-2">
+              Registro de asistencia ({attendees.length})
+              <span className="text-[10px] text-gray-500 font-normal">· se actualiza cada 20s</span>
+            </h3>
+            <div className="flex gap-2">
+              <button onClick={loadAttendees} disabled={loadingAtt} className="flex items-center gap-1.5 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 px-3 py-1.5 rounded text-xs font-semibold transition">
+                {loadingAtt ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />} Actualizar
+              </button>
+              {attendees.length > 0 && <button onClick={exportAttendance} className="flex items-center gap-2 bg-emerald-700 hover:bg-emerald-600 px-3 py-1.5 rounded text-xs font-semibold"><Download size={14} /> Exportar CSV</button>}
+            </div>
           </div>
           {loadingAtt && <div className="text-center py-6"><Loader2 className="animate-spin mx-auto text-gray-500" size={24} /></div>}
           {!loadingAtt && attendees.length === 0 && <p className="text-gray-500 text-sm text-center py-4">No hay registros de asistencia aún.</p>}
@@ -4232,24 +4252,29 @@ function LiveSessionView({ session, onBack, sessionUser, onRegisterAttendance })
 
   // Precargar datos de la última asistencia del colegiado (correo, teléfono,
   // departamento, país) para que registrar sea prácticamente un solo clic.
+  // Busca primero el registro más reciente con teléfono no vacío para evitar
+  // pre-llenar campos vacíos de sesiones donde el usuario marcó como extranjero.
   useEffect(() => {
     if (sessionUser?.isGuest || !sessionUser?.collegiateNumber || !supabase) return;
     let active = true;
     (async () => {
       try {
+        // Primer intento: último registro con teléfono no vacío
         const { data } = await supabase.from('cpg_live_attendance')
           .select('email, phone, department, country')
           .eq('collegiate_number', sessionUser.collegiateNumber)
+          .neq('phone', '')
+          .not('phone', 'is', null)
           .order('joined_at', { ascending: false })
           .limit(1).maybeSingle();
         if (active && data) {
           setAttForm(prev => ({
             ...prev,
             email: prev.email || data.email || '',
-            phone: data.phone || prev.phone,
-            department: data.department || prev.department,
-            country: data.country || '',
-            abroad: !!data.country,
+            phone: prev.phone || data.phone || '',
+            department: prev.department || data.department || '',
+            country: prev.country || data.country || '',
+            abroad: !!(prev.country || data.country),
           }));
         }
       } catch {}
@@ -4265,14 +4290,18 @@ function LiveSessionView({ session, onBack, sessionUser, onRegisterAttendance })
     }
     if (!attForm.phone.trim()) { setAttError('Ingresa tu número de teléfono.'); return; }
     setAttError(''); setSaving(true);
-    await onRegisterAttendance({
+    const result = await onRegisterAttendance({
       email: attForm.email,
       department: attForm.abroad ? '' : attForm.department,
       phone: attForm.phone.trim(),
       country: attForm.abroad ? attForm.country.trim() : '',
     });
     setSaving(false);
-    setAttended(true);
+    if (result?.success === false) {
+      setAttError(result.message || 'No se pudo registrar la asistencia. Intenta de nuevo.');
+    } else {
+      setAttended(true);
+    }
   };
 
   // Reutilizamos el extractor canónico definido al inicio del archivo
