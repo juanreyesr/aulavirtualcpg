@@ -217,17 +217,21 @@ const getVimeoEmbedUrl = (rawValue) => {
 
 // ── UTILS GENERALES ──────────────────────────────
 const getVideoThumbnail = (video) => {
-  // 1. Prioridad: thumbnail manual
   if (video?.thumbnail?.trim()) return video.thumbnail.trim();
-  // 2. Vimeo: placeholder temático (no hay API pública confiable para eventos)
   if (video?.platform === 'vimeo') return 'https://via.placeholder.com/640x360/1a1a2e/60a5fa?text=▶+Vimeo';
-  // 3. YouTube: generar desde el ID
+  if (video?.platform === 'teams') return 'https://via.placeholder.com/640x360/1e1b4b/818cf8?text=▶+Teams';
   return getYouTubeThumbnail(video?.youtubeId);
 };
 
 // Helper: genera la URL correcta del embed según la plataforma
 const getVideoEmbedUrl = (video) => {
   if (video?.platform === 'vimeo') return getVimeoEmbedUrl(video.youtubeId);
+  if (video?.platform === 'teams') {
+    const url = video.youtubeId?.trim() || '';
+    // SharePoint embed URLs and classic Stream URLs can be iframed directly
+    if (url.includes('sharepoint.com') || url.includes('microsoftstream.com')) return url;
+    return null; // non-embeddable Teams link — PlayerView shows external button
+  }
   return 'https://www.youtube-nocookie.com/embed/' + extractYouTubeId(video?.youtubeId) + '?playsinline=1&rel=0';
 };
 
@@ -3438,11 +3442,12 @@ function PlayerView({ video, viewCounts, onBack, sessionUser, userProfile, setUs
     setShowQuiz(true);
   };
 
-  // ── CAMBIO 3: Iframe condicional YouTube / Vimeo ──
   const embedUrl = getVideoEmbedUrl(video);
   const iframeAllow = video.platform === 'vimeo'
     ? 'autoplay; fullscreen; picture-in-picture'
-    : 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share';
+    : video.platform === 'teams'
+      ? 'autoplay; fullscreen'
+      : 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share';
 
   return (
     <div className="min-h-screen bg-[#141414] pt-2 px-4 md:px-16 pb-12">
@@ -3455,21 +3460,36 @@ function PlayerView({ video, viewCounts, onBack, sessionUser, userProfile, setUs
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2">
             <div className="aspect-video w-full bg-black rounded-lg overflow-hidden shadow-2xl shadow-blue-900/20 border border-gray-800">
-              <iframe
-                width="100%"
-                height="100%"
-                src={embedUrl}
-                title={video.title}
-                frameBorder="0"
-                allow={iframeAllow}
-                allowFullScreen
-              />
+              {embedUrl ? (
+                <iframe
+                  width="100%"
+                  height="100%"
+                  src={embedUrl}
+                  title={video.title}
+                  frameBorder="0"
+                  allow={iframeAllow}
+                  allowFullScreen
+                />
+              ) : (
+                <div className="w-full h-full flex flex-col items-center justify-center gap-4 bg-[#1e1b4b]">
+                  <div className="text-5xl">💼</div>
+                  <p className="text-purple-200 font-semibold">Este video está en Microsoft Teams</p>
+                  <a href={video.youtubeId} target="_blank" rel="noopener noreferrer" className="px-5 py-2.5 bg-purple-700 hover:bg-purple-600 text-white rounded-lg font-semibold text-sm transition">
+                    Abrir en Teams
+                  </a>
+                </div>
+              )}
             </div>
-            {/* Badge de plataforma debajo del player */}
             {video.platform === 'vimeo' && (
               <div className="mt-2 flex items-center gap-2 text-xs text-gray-500">
                 <span className="bg-[#1ab7ea]/20 text-[#1ab7ea] px-2 py-0.5 rounded font-bold">VIMEO</span>
                 <span>Contenido alojado en Vimeo</span>
+              </div>
+            )}
+            {video.platform === 'teams' && (
+              <div className="mt-2 flex items-center gap-2 text-xs text-gray-500">
+                <span className="bg-purple-900/40 text-purple-300 px-2 py-0.5 rounded font-bold">TEAMS</span>
+                <span>Contenido alojado en Microsoft Teams</span>
               </div>
             )}
             <div className="mt-4">
@@ -7066,6 +7086,8 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
   const [showEmailChangeSection, setShowEmailChangeSection] = useState(false);
   const [showNavButtonsSection, setShowNavButtonsSection] = useState(false);
   const [showVolunteerCertSection, setShowVolunteerCertSection] = useState(false);
+  const [collapsedCats, setCollapsedCats] = useState({});
+  const [showAllVideos, setShowAllVideos] = useState(false);
   const [volunteerReprintCert, setVolunteerReprintCert] = useState(null); // registro completo a reimprimir
   const [volunteerAutoDownload, setVolunteerAutoDownload] = useState(false); // descarga directa sin abrir editor
   const volunteerSectionRef = useRef(null);
@@ -7337,23 +7359,40 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
             <div className="space-y-4">
               <div><label className="block text-sm text-gray-400">Título</label><input type="text" value={formData.title} onChange={e => setFormData({ ...formData, title: e.target.value })} className="w-full bg-gray-900 border border-gray-700 p-2 rounded text-white" /></div>
-              <div><label className="block text-sm text-gray-400">Categoría</label><input type="text" value={formData.category} onChange={e => setFormData({ ...formData, category: e.target.value })} className="w-full bg-gray-900 border border-gray-700 p-2 rounded text-white" /></div>
+              <div>
+                <label className="block text-sm text-gray-400">Categoría</label>
+                <input
+                  type="text"
+                  list="admin-categories-list"
+                  value={formData.category}
+                  onChange={e => setFormData({ ...formData, category: e.target.value })}
+                  className="w-full bg-gray-900 border border-gray-700 p-2 rounded text-white"
+                  placeholder="Selecciona o escribe una categoría nueva"
+                />
+                <datalist id="admin-categories-list">
+                  {[...new Set(videos.map(v => v.category).filter(Boolean))].sort().map(cat => (
+                    <option key={cat} value={cat} />
+                  ))}
+                </datalist>
+              </div>
 
-              {/* ── CAMBIO 4: Selector de plataforma + campo dinámico ── */}
               <div>
                 <label className="block text-sm text-gray-400 mb-1.5">Plataforma de video</label>
-                <div className="flex gap-2">
-                  <button type="button" onClick={() => setFormData({ ...formData, platform: 'youtube', youtubeId: '' })} className={`flex items-center gap-1.5 px-4 py-2 rounded-lg border text-sm font-semibold transition ${formData.platform !== 'vimeo' ? 'border-red-600 bg-red-900/30 text-red-300' : 'border-gray-700 text-gray-500 hover:border-gray-500'}`}>
+                <div className="flex gap-2 flex-wrap">
+                  <button type="button" onClick={() => setFormData({ ...formData, platform: 'youtube', youtubeId: '' })} className={`flex items-center gap-1.5 px-4 py-2 rounded-lg border text-sm font-semibold transition ${formData.platform === 'youtube' ? 'border-red-600 bg-red-900/30 text-red-300' : 'border-gray-700 text-gray-500 hover:border-gray-500'}`}>
                     <Play size={14} /> YouTube
                   </button>
                   <button type="button" onClick={() => setFormData({ ...formData, platform: 'vimeo', youtubeId: '' })} className={`flex items-center gap-1.5 px-4 py-2 rounded-lg border text-sm font-semibold transition ${formData.platform === 'vimeo' ? 'border-[#1ab7ea] bg-[#1ab7ea]/20 text-[#1ab7ea]' : 'border-gray-700 text-gray-500 hover:border-gray-500'}`}>
                     <Video size={14} /> Vimeo
                   </button>
+                  <button type="button" onClick={() => setFormData({ ...formData, platform: 'teams', youtubeId: '' })} className={`flex items-center gap-1.5 px-4 py-2 rounded-lg border text-sm font-semibold transition ${formData.platform === 'teams' ? 'border-purple-500 bg-purple-900/30 text-purple-300' : 'border-gray-700 text-gray-500 hover:border-gray-500'}`}>
+                    💼 Teams
+                  </button>
                 </div>
               </div>
               <div>
                 <label className="block text-sm text-gray-400">
-                  {formData.platform === 'vimeo' ? 'URL, ID o código iframe de Vimeo' : 'YouTube ID o URL'}
+                  {formData.platform === 'vimeo' ? 'URL, ID o código iframe de Vimeo' : formData.platform === 'teams' ? 'URL del video de Teams / SharePoint' : 'YouTube ID o URL'}
                 </label>
                 <input
                   type="text"
@@ -7362,7 +7401,9 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
                   className="w-full bg-gray-900 border border-gray-700 p-2 rounded text-white"
                   placeholder={formData.platform === 'vimeo'
                     ? 'Pega URL, ID numérico, o el <iframe> completo de Vimeo'
-                    : 'ID del video o URL completa de YouTube'
+                    : formData.platform === 'teams'
+                      ? 'Pega el enlace del video grabado de Teams o SharePoint'
+                      : 'ID del video o URL completa de YouTube'
                   }
                 />
                 {formData.platform === 'vimeo' && (
@@ -7374,13 +7415,21 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
                       <li>URL de video: <span className="font-mono text-[10px]">https://vimeo.com/123456789</span></li>
                       <li>Solo el ID numérico: <span className="font-mono text-[10px]">123456789</span></li>
                     </ul>
-                    {/* Preview del embed URL generado */}
                     {formData.youtubeId && (
                       <div className="mt-2 pt-2 border-t border-blue-700/30">
                         <p className="text-[10px] text-gray-500">URL de embed generada:</p>
                         <p className="text-[10px] font-mono text-green-400 break-all">{getVimeoEmbedUrl(formData.youtubeId)}</p>
                       </div>
                     )}
+                  </div>
+                )}
+                {formData.platform === 'teams' && (
+                  <div className="mt-2 bg-purple-900/20 border border-purple-700/30 rounded-lg px-3 py-2">
+                    <p className="text-xs text-purple-300 font-semibold mb-1">Formatos aceptados:</p>
+                    <ul className="text-xs text-purple-200/70 space-y-0.5 list-disc list-inside">
+                      <li>URL de SharePoint Stream (se incrusta en la plataforma)</li>
+                      <li>Enlace de Teams (abre en la app de Teams)</li>
+                    </ul>
                   </div>
                 )}
               </div>
@@ -7987,16 +8036,22 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
         {showAdminUsersSection && <div className="border-t border-gray-800"><AdminUsersManager currentAdminRole={adminRole} /></div>}
       </div>
 
-      <h2 className="text-xl font-bold mb-4">Cursos</h2>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-12">
-        {videos.map(video => (
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-xl font-bold">Cursos</h2>
+        <button onClick={() => setShowAllVideos(v => !v)} className="text-sm text-blue-400 hover:text-blue-300 underline underline-offset-2 transition">
+          {showAllVideos ? 'Ver por categoría' : 'Mostrar todos'}
+        </button>
+      </div>
+      {(() => {
+        const sorted = [...videos].sort((a, b) => Number(b.id) - Number(a.id));
+        const VideoCard = ({ video }) => (
           <div key={video.id} className="bg-gray-900 rounded-lg overflow-hidden border border-gray-800 flex flex-col">
             <div className="h-40 relative">
-              <img src={getVideoThumbnail(video)} className="w-full h-full object-cover" alt="" onError={(e) => { const t = e.currentTarget; if (video.platform === 'vimeo') { t.src = 'https://via.placeholder.com/640x360/1a1a2e/60a5fa?text=▶+Vimeo'; return; } const s = t.dataset.fallbackStage || 'hqdefault'; if (s === 'hqdefault') { t.dataset.fallbackStage = 'mqdefault'; t.src = getYouTubeThumbnail(video.youtubeId, 'mqdefault'); return; } t.src = getYouTubeThumbnail(''); }} />
+              <img src={getVideoThumbnail(video)} className="w-full h-full object-cover" alt="" onError={(e) => { const t = e.currentTarget; if (video.platform === 'vimeo') { t.src = 'https://via.placeholder.com/640x360/1a1a2e/60a5fa?text=▶+Vimeo'; return; } if (video.platform === 'teams') { t.src = 'https://via.placeholder.com/640x360/1e1b4b/818cf8?text=▶+Teams'; return; } const s = t.dataset.fallbackStage || 'hqdefault'; if (s === 'hqdefault') { t.dataset.fallbackStage = 'mqdefault'; t.src = getYouTubeThumbnail(video.youtubeId, 'mqdefault'); return; } t.src = getYouTubeThumbnail(''); }} />
               <div className="absolute top-2 right-2 bg-black/70 px-2 py-1 text-xs rounded text-white">ID: {video.id}</div>
               <div className="absolute top-2 left-2 bg-green-600/90 px-2 py-1 text-xs rounded text-white flex items-center gap-1"><Eye size={12} /> {viewCounts[video.id] || 0} visitas</div>
-              {/* Badge de plataforma en admin */}
               {video.platform === 'vimeo' && <div className="absolute bottom-2 left-2 bg-[#1ab7ea]/90 px-1.5 py-0.5 text-[10px] rounded font-bold text-white">VIMEO</div>}
+              {video.platform === 'teams' && <div className="absolute bottom-2 left-2 bg-purple-700/90 px-1.5 py-0.5 text-[10px] rounded font-bold text-white">TEAMS</div>}
             </div>
             <div className="p-4 flex-1"><h3 className="font-bold text-lg mb-1">{video.title}</h3><p className="text-sm text-gray-400 mb-2">{video.category}</p><div className="flex items-center gap-2 text-xs mb-4 flex-wrap">{video.quizEnabled ? <span className="text-green-400 border border-green-400/30 px-2 py-0.5 rounded">Evaluación Activa</span> : <span className="text-gray-500">Sin Evaluación</span>}{!isVideoPublished(video) && <span className="text-yellow-400 border border-yellow-400/30 px-2 py-0.5 rounded">Programado {formatScheduleDate(video.scheduledAt)}</span>}</div></div>
             <div className="p-4 border-t border-gray-800 flex gap-2">
@@ -8005,8 +8060,43 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
               <button onClick={() => handleDelete(video.id)} className="px-3 bg-red-900/40 hover:bg-red-900/60 text-red-300 rounded transition"><Trash2 size={16} /></button>
             </div>
           </div>
-        ))}
-      </div>
+        );
+        if (showAllVideos) {
+          return (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-12">
+              {sorted.map(video => <VideoCard key={video.id} video={video} />)}
+            </div>
+          );
+        }
+        // Group by category preserving newest-first order within each category
+        const catOrder = [];
+        const byCat = {};
+        sorted.forEach(video => {
+          const cat = video.category || 'Sin categoría';
+          if (!byCat[cat]) { byCat[cat] = []; catOrder.push(cat); }
+          byCat[cat].push(video);
+        });
+        return (
+          <div className="pb-12 space-y-4">
+            {catOrder.map(cat => {
+              const collapsed = collapsedCats[cat] ?? false;
+              return (
+                <div key={cat} className="bg-[#1b1b1b] border border-gray-800 rounded-xl overflow-hidden">
+                  <button type="button" onClick={() => setCollapsedCats(prev => ({ ...prev, [cat]: !collapsed }))} className="w-full flex items-center justify-between px-5 py-3 hover:bg-white/5 transition">
+                    <span className="font-semibold text-white">{cat} <span className="text-gray-500 font-normal text-sm">({byCat[cat].length})</span></span>
+                    <span className="text-gray-400 text-sm">{collapsed ? '▼' : '▲'}</span>
+                  </button>
+                  {!collapsed && (
+                    <div className="border-t border-gray-800 p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {byCat[cat].map(video => <VideoCard key={video.id} video={video} />)}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        );
+      })()}
 
       {showBulkCert && <BulkCertificateEmitter videos={videos} activities={activities} commissions={commissions} onClose={() => setShowBulkCert(false)} onCertsCreated={() => { setCertsLoaded(false); loadAdminCerts(); }} />}
       {showAttendanceReport && <AttendanceReportView videos={videos} activities={activities} commissions={commissions} onClose={() => { setShowAttendanceReport(false); setCertsLoaded(false); }} />}
