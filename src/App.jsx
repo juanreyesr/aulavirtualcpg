@@ -8044,7 +8044,7 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
       </div>
       {(() => {
         const sorted = [...videos].sort((a, b) => Number(b.id) - Number(a.id));
-        const VideoCard = ({ video }) => (
+        const renderVideoCard = (video) => (
           <div key={video.id} className="bg-gray-900 rounded-lg overflow-hidden border border-gray-800 flex flex-col">
             <div className="h-40 relative">
               <img src={getVideoThumbnail(video)} className="w-full h-full object-cover" alt="" onError={(e) => { const t = e.currentTarget; if (video.platform === 'vimeo') { t.src = 'https://via.placeholder.com/640x360/1a1a2e/60a5fa?text=▶+Vimeo'; return; } if (video.platform === 'teams') { t.src = 'https://via.placeholder.com/640x360/1e1b4b/818cf8?text=▶+Teams'; return; } const s = t.dataset.fallbackStage || 'hqdefault'; if (s === 'hqdefault') { t.dataset.fallbackStage = 'mqdefault'; t.src = getYouTubeThumbnail(video.youtubeId, 'mqdefault'); return; } t.src = getYouTubeThumbnail(''); }} />
@@ -8064,7 +8064,7 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
         if (showAllVideos) {
           return (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-12">
-              {sorted.map(video => <VideoCard key={video.id} video={video} />)}
+              {sorted.map(video => renderVideoCard(video))}
             </div>
           );
         }
@@ -8088,7 +8088,7 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
                   </button>
                   {!collapsed && (
                     <div className="border-t border-gray-800 p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {byCat[cat].map(video => <VideoCard key={video.id} video={video} />)}
+                      {byCat[cat].map(video => renderVideoCard(video))}
                     </div>
                   )}
                 </div>
