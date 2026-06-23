@@ -8079,7 +8079,7 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
         return (
           <div className="pb-12 space-y-4">
             {catOrder.map(cat => {
-              const collapsed = collapsedCats[cat] ?? false;
+              const collapsed = collapsedCats[cat] ?? true;
               return (
                 <div key={cat} className="bg-[#1b1b1b] border border-gray-800 rounded-xl overflow-hidden">
                   <button type="button" onClick={() => setCollapsedCats(prev => ({ ...prev, [cat]: !collapsed }))} className="w-full flex items-center justify-between px-5 py-3 hover:bg-white/5 transition">
