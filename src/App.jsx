@@ -1298,15 +1298,13 @@ export default function App() {
     try {
       const url = `${SUPABASE_URL}/rest/v1/rpc/increment_button_click?apikey=${encodeURIComponent(SUPABASE_ANON_KEY)}`;
       const payload = JSON.stringify({ p_key: key, p_label: label });
-      const blob = new Blob([payload], { type: 'application/json' });
 
-      // 1ª opción: sendBeacon (más robusto en navegaciones)
-      if (typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
-        const ok = navigator.sendBeacon(url, blob);
-        if (ok) return;
-      }
-      // Fallback: fetch con keepalive
-      fetch(url, {
+      // Método principal: fetch con keepalive. Maneja el preflight CORS de
+      // Supabase correctamente y sobrevive a la navegación gracias a keepalive.
+      // (No usamos sendBeacon como principal porque, al enviar
+      // Content-Type: application/json, requiere un preflight CORS que
+      // sendBeacon no puede realizar y la petición se descarta en silencio.)
+      const doFetch = () => fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1316,6 +1314,18 @@ export default function App() {
         body: payload,
         keepalive: true,
       }).catch(e => console.warn('[trackClick]', e?.message));
+
+      const p = doFetch();
+      // Respaldo: si el fetch falla de inmediato, intenta sendBeacon.
+      if (p && typeof p.catch === 'function') {
+        p.catch(() => {
+          try {
+            if (typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
+              navigator.sendBeacon(url, new Blob([payload], { type: 'application/json' }));
+            }
+          } catch {}
+        });
+      }
     } catch (e) {
       console.warn('[trackClick] exception:', e?.message);
     }
