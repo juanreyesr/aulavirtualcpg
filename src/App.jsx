@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useCallback, useRef, useLayoutEffect, useMemo, Suspense } from 'react';
 import {
   Play, CheckCircle, XCircle, LogOut, Plus, Trash2, Award,
-  ChevronLeft, ChevronDown, Lock, ExternalLink, X, CalendarDays, Eye,
+  ChevronLeft, ChevronDown, Lock, ExternalLink, X, CalendarDays, Eye, EyeOff,
   Download, Loader2, UserCheck, UserX, Edit2, Users, Radio, Wifi, Video,
-  Search, Mail, Shield, History, QrCode, KeyRound, Upload, Image, Type, Settings, Printer, RefreshCw
+  Search, Mail, Shield, History, QrCode, KeyRound, Upload, Image, Type, Settings, Printer, RefreshCw, Copy
 } from 'lucide-react';
 import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from './supabaseClient';
 // html2canvas + jspdf se cargan dinámicamente al descargar PDFs (lazy)
@@ -589,6 +589,89 @@ function PasswordResetView({ onDone }) {
               </button>
               <button onClick={() => { window.history.replaceState(null, '', window.location.pathname); onDone(); }} className="w-full text-gray-500 hover:text-gray-300 text-sm py-3 transition mt-2">
                 Cancelar y volver al inicio
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Cambio de contraseña OBLIGATORIO tras ingresar con una temporal ──
+function ForcePasswordChangeView({ onDone }) {
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPw, setShowPw] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState(false);
+
+  const handleSubmit = async () => {
+    if (!newPassword || newPassword.length < 6) { setError('La contraseña debe tener al menos 6 caracteres.'); return; }
+    if (newPassword !== confirmPassword) { setError('Las contraseñas no coinciden.'); return; }
+    if (!supabase) { setError('Supabase no configurado.'); return; }
+    setLoading(true); setError('');
+    try {
+      // Cambia la contraseña Y limpia la marca de contraseña temporal, sin cerrar sesión.
+      const { error: updateErr } = await supabase.auth.updateUser({
+        password: newPassword,
+        data: { must_change_password: false },
+      });
+      if (updateErr) { setError('No se pudo actualizar la contraseña: ' + updateErr.message); setLoading(false); return; }
+      setSuccess(true);
+      setTimeout(() => { onDone(); }, 1800);
+    } catch (e) { setError('Error: ' + e.message); }
+    setLoading(false);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black z-[100] overflow-y-auto">
+      <div className="absolute inset-0 bg-gradient-to-br from-[#0a0a1a] via-[#0e0e0e] to-[#1a0a2e]" />
+      <div className="relative z-10 w-full max-w-md mx-auto px-4 py-8 min-h-full flex flex-col justify-center">
+        <div className="flex flex-col items-center mb-6 gap-2">
+          <img src="/logo-cpg-grande.png" alt="CPG" className="w-20 h-20 object-contain drop-shadow-2xl" onError={(e) => { e.target.style.display = 'none'; }} />
+          <div className="text-center">
+            <h1 className="text-lg font-bold text-white leading-tight">Colegio de Psicólogos de Guatemala</h1>
+            <p className="text-blue-400 text-xs tracking-widest uppercase mt-1">Aula Virtual — CAEDUC</p>
+          </div>
+        </div>
+        <div className="bg-[#1a1a1a] border border-gray-800 rounded-2xl p-6 shadow-2xl">
+          {success ? (
+            <div className="text-center py-6">
+              <div className="w-16 h-16 bg-green-800/30 border border-green-600/40 rounded-full flex items-center justify-center mx-auto mb-4">
+                <CheckCircle size={32} className="text-green-400" />
+              </div>
+              <h2 className="text-white font-bold text-xl mb-2">Contraseña actualizada</h2>
+              <p className="text-gray-400 text-sm">Ingresando al aula virtual...</p>
+            </div>
+          ) : (
+            <>
+              <div className="flex items-center gap-3 mb-4">
+                <div className="bg-indigo-600 p-2.5 rounded-xl"><KeyRound size={20} className="text-white" /></div>
+                <div>
+                  <h2 className="text-white font-bold text-xl">Crea tu contraseña</h2>
+                  <p className="text-gray-400 text-sm">Ingresaste con una contraseña temporal.</p>
+                </div>
+              </div>
+              <div className="mb-4 bg-amber-900/20 border border-amber-700/40 rounded-lg px-4 py-3 flex items-start gap-2">
+                <Shield size={16} className="text-amber-400 mt-0.5 flex-shrink-0" />
+                <p className="text-xs text-amber-200/90">Por seguridad, debes crear una contraseña nueva para continuar. <span className="text-white font-semibold">Guárdala bien</span> — la usarás para tus próximos ingresos.</p>
+              </div>
+              {error && <div className="mb-4 bg-red-500/10 border border-red-500/30 rounded-lg px-4 py-3 text-sm text-red-300 flex items-start gap-2"><XCircle size={16} className="mt-0.5 flex-shrink-0" />{error}</div>}
+              <div className="mb-4">
+                <label className="block text-gray-400 text-xs mb-1.5 uppercase tracking-wider">Nueva contraseña</label>
+                <div className="relative">
+                  <input type={showPw ? 'text' : 'password'} value={newPassword} onChange={e => { setNewPassword(e.target.value); setError(''); }} className="w-full bg-black border border-gray-700 rounded-lg p-3 pr-11 text-white focus:border-indigo-500 outline-none transition" placeholder="Mínimo 6 caracteres" />
+                  <button type="button" onClick={() => setShowPw(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300">{showPw ? <EyeOff size={18} /> : <Eye size={18} />}</button>
+                </div>
+              </div>
+              <div className="mb-5">
+                <label className="block text-gray-400 text-xs mb-1.5 uppercase tracking-wider">Repite la contraseña</label>
+                <input type={showPw ? 'text' : 'password'} value={confirmPassword} onChange={e => { setConfirmPassword(e.target.value); setError(''); }} onKeyDown={e => e.key === 'Enter' && handleSubmit()} className="w-full bg-black border border-gray-700 rounded-lg p-3 text-white focus:border-indigo-500 outline-none transition" placeholder="Repite la contraseña" />
+              </div>
+              <button onClick={handleSubmit} disabled={loading} className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-800 disabled:cursor-not-allowed text-white font-bold py-3 rounded-lg transition flex items-center justify-center gap-2">
+                {loading ? <><Loader2 size={18} className="animate-spin" /> Guardando...</> : <><KeyRound size={18} /> Guardar y continuar</>}
               </button>
             </>
           )}
@@ -1435,6 +1518,8 @@ export default function App() {
 
   // ── FIX #2: estado para recovery mode ──
   const [showPasswordReset, setShowPasswordReset] = useState(false);
+  // ── Cambio de contraseña obligatorio (tras ingresar con contraseña temporal) ──
+  const [forcePwChange, setForcePwChange] = useState(false);
   // ── Entrega 2: estados para comisiones y asistencia ──
   const [commissions, setCommissions] = useState([]);
   const [showProfile, setShowProfile] = useState(false);
@@ -1550,6 +1635,10 @@ export default function App() {
       if (event === 'PASSWORD_RECOVERY') {
         setShowPasswordReset(true);
         return;
+      }
+      // Contraseña temporal: si la cuenta está marcada, forzar cambio antes de continuar.
+      if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION') && session?.user?.user_metadata?.must_change_password) {
+        setForcePwChange(true);
       }
       if (event === 'SIGNED_IN' && session) {
         const pending = localStorage.getItem('cpg_google_pending');
@@ -1889,6 +1978,9 @@ export default function App() {
 
   // ── FIX #2: Mostrar formulario de nueva contraseña si estamos en recovery ──
   if (showPasswordReset) return <PasswordResetView onDone={() => { setShowPasswordReset(false); window.location.href = APP_URL; }} />;
+
+  // ── Contraseña temporal: obligar a crear una nueva antes de entrar ──
+  if (forcePwChange) return <ForcePasswordChangeView onDone={() => { setForcePwChange(false); }} />;
 
   if (!sessionUser) return <LoginColModal onSession={(user) => {
     localStorage.setItem('cpg_session', JSON.stringify(user));
@@ -5400,6 +5492,63 @@ function EmailChangeManager({ currentAdminRole, currentAdminEmail }) {
   const [delLookup, setDelLookup] = useState('');
   const [delSearching, setDelSearching] = useState(false);
   const [delFound, setDelFound] = useState(null); // { collegiate_number, name, email }
+  // ── Crear contraseña temporal ──
+  const [tmpLookup, setTmpLookup] = useState('');
+  const [tmpGenerating, setTmpGenerating] = useState(false);
+  const [tmpResult, setTmpResult] = useState(null); // { email, password }
+  const [tmpMsg, setTmpMsg] = useState(null);
+  const [tmpCopied, setTmpCopied] = useState(false);
+
+  // Genera una contraseña legible (evita caracteres ambiguos como 0/O, 1/l/I)
+  const genTempPassword = () => {
+    const upper = 'ABCDEFGHJKMNPQRSTUVWXYZ';
+    const lower = 'abcdefghijkmnpqrstuvwxyz';
+    const digits = '23456789';
+    const pick = (set, n) => Array.from({ length: n }, () => set[Math.floor(Math.random() * set.length)]).join('');
+    return `${pick(upper, 1)}${pick(lower, 3)}-${pick(digits, 4)}-${pick(lower, 3)}`;
+  };
+
+  const handleGenerateTemp = async () => {
+    const v = tmpLookup.trim();
+    if (!v) { setTmpMsg({ type: 'error', text: 'Escribe el número de colegiado o el correo del usuario.' }); return; }
+    setTmpGenerating(true); setTmpMsg(null); setTmpResult(null); setTmpCopied(false);
+    try {
+      // Si es numérico, resolver el correo real a partir del número de colegiado
+      let email = v.toLowerCase();
+      if (/^\d+$/.test(v)) {
+        const { data, error } = await supabase
+          .from('cpg_user_profiles')
+          .select('email, name, collegiate_number')
+          .eq('collegiate_number', v)
+          .limit(1)
+          .maybeSingle();
+        if (error) throw error;
+        if (!data?.email) { setTmpMsg({ type: 'error', text: 'No se encontró un correo registrado para ese colegiado.' }); setTmpGenerating(false); return; }
+        email = data.email.toLowerCase();
+      }
+      const pwd = genTempPassword();
+      const { data, error } = await supabase.rpc('set_temporary_password', { target_email: email, new_password: pwd });
+      if (error) throw error;
+      if (data?.success === false) {
+        setTmpMsg({ type: 'error', text: data?.message || 'No se pudo asignar la contraseña temporal.' });
+      } else {
+        setTmpResult({ email, password: pwd });
+        logAudit(currentAdminEmail, '', 'temp_password_set', 'user', email, {});
+      }
+    } catch (e) {
+      setTmpMsg({ type: 'error', text: 'Error: ' + (e?.message || e) });
+    }
+    setTmpGenerating(false);
+  };
+
+  const copyTempPassword = async () => {
+    if (!tmpResult?.password) return;
+    try {
+      await navigator.clipboard.writeText(tmpResult.password);
+      setTmpCopied(true);
+      setTimeout(() => setTmpCopied(false), 2000);
+    } catch { /* clipboard no disponible */ }
+  };
 
   const handleDelLookup = async () => {
     const v = delLookup.trim();
@@ -5425,14 +5574,6 @@ function EmailChangeManager({ currentAdminRole, currentAdminEmail }) {
   };
 
   const isSuperAdmin = currentAdminRole === 'super_admin';
-
-  if (!isSuperAdmin) {
-    return (
-      <div className="p-6">
-        <p className="text-gray-400">Solo los administradores con rol <span className="text-white font-bold">Super Admin</span> pueden cambiar correos registrados.</p>
-      </div>
-    );
-  }
 
   const handleSearch = async () => {
     const raw = oldEmail.trim();
@@ -5535,6 +5676,8 @@ function EmailChangeManager({ currentAdminRole, currentAdminEmail }) {
 
   return (
     <div className="p-6 space-y-5">
+      {/* Cambio de correo — solo Super Admin */}
+      {isSuperAdmin && (<>
       <div className="flex items-start gap-3 bg-amber-900/15 border border-amber-700/30 rounded-xl px-4 py-3">
         <Shield size={16} className="text-amber-400 mt-0.5 flex-shrink-0" />
         <div className="text-xs text-amber-200/90">
@@ -5616,8 +5759,69 @@ function EmailChangeManager({ currentAdminRole, currentAdminEmail }) {
           <span>{msg.text}</span>
         </div>
       )}
+      </>)}
 
-      {/* ─── ELIMINAR CUENTA DE USUARIO (typos / duplicados) ─── */}
+      {/* ─── CREAR CONTRASEÑA TEMPORAL (todos los administradores) ─── */}
+      <div className={isSuperAdmin ? 'border-t border-gray-800 pt-5 mt-2' : ''}>
+        <div className="flex items-center gap-2.5 mb-3">
+          <div className="bg-gradient-to-br from-indigo-600 to-indigo-800 p-2 rounded-lg shadow-lg shadow-indigo-900/30"><KeyRound size={15} className="text-white" /></div>
+          <div>
+            <h3 className="text-white font-bold text-sm">Crear contraseña temporal</h3>
+            <p className="text-[11px] text-gray-500">Para usuarios que no logran recuperar su contraseña</p>
+          </div>
+        </div>
+        <div className="bg-indigo-900/10 border border-indigo-700/30 rounded-xl px-4 py-3 mb-3 flex items-start gap-2">
+          <Shield size={15} className="text-indigo-400 mt-0.5 flex-shrink-0" />
+          <p className="text-xs text-indigo-200/80">
+            Genera una contraseña provisional y compártela con el colegiado. Al iniciar sesión con ella, el aula virtual
+            le pedirá <span className="text-white font-semibold">obligatoriamente crear una nueva contraseña</span> antes de entrar.
+            No funciona con cuentas de administradores.
+          </p>
+        </div>
+        <div className="bg-[#1a1a1a] border border-gray-800 rounded-xl p-4 space-y-3">
+          <div>
+            <label className="block text-gray-400 text-xs mb-1 uppercase tracking-wider">Número de colegiado o correo</label>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={tmpLookup}
+                onChange={e => { setTmpLookup(e.target.value); setTmpMsg(null); setTmpResult(null); }}
+                onKeyDown={e => { if (e.key === 'Enter') handleGenerateTemp(); }}
+                placeholder="Ej. 14846  o  correo@ejemplo.com"
+                className="flex-1 bg-black border border-gray-700 rounded-lg px-3 py-2.5 text-white text-sm focus:border-indigo-500 outline-none"
+              />
+              <button onClick={handleGenerateTemp} disabled={tmpGenerating || !tmpLookup.trim()}
+                className="flex items-center gap-1.5 bg-gradient-to-r from-indigo-700 to-indigo-600 hover:from-indigo-600 hover:to-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed px-4 py-2.5 rounded-lg text-sm font-bold transition whitespace-nowrap">
+                {tmpGenerating ? <Loader2 size={14} className="animate-spin" /> : <KeyRound size={14} />} Generar
+              </button>
+            </div>
+          </div>
+
+          {tmpResult && (
+            <div className="bg-emerald-900/15 border border-emerald-700/30 rounded-lg px-4 py-3">
+              <p className="text-xs text-gray-400 mb-1">Contraseña temporal para <span className="text-emerald-300 break-all">{tmpResult.email}</span>:</p>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 bg-black/60 border border-emerald-700/40 rounded-lg px-3 py-2 text-emerald-200 font-mono text-base tracking-wide select-all break-all">{tmpResult.password}</code>
+                <button onClick={copyTempPassword} className="flex items-center gap-1.5 bg-gray-700 hover:bg-gray-600 px-3 py-2 rounded-lg text-xs font-bold transition whitespace-nowrap">
+                  {tmpCopied ? <><CheckCircle size={13} className="text-emerald-400" /> Copiado</> : <><Copy size={13} /> Copiar</>}
+                </button>
+              </div>
+              <p className="text-[11px] text-amber-300/90 mt-2">⚠️ Guarda y comparte esta contraseña ahora — no se volverá a mostrar. El usuario deberá cambiarla al ingresar.</p>
+            </div>
+          )}
+
+          {tmpMsg && (
+            <div className={`rounded-lg px-3 py-2 text-sm border flex items-start gap-2 ${
+              tmpMsg.type === 'error' ? 'bg-red-900/20 border-red-700/40 text-red-300' : 'bg-blue-900/20 border-blue-700/40 text-blue-300'
+            }`}>
+              <XCircle size={15} className="mt-0.5 flex-shrink-0" /><span>{tmpMsg.text}</span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ─── ELIMINAR CUENTA DE USUARIO (typos / duplicados) — solo Super Admin ─── */}
+      {isSuperAdmin && (
       <div className="border-t border-gray-800 pt-5 mt-2">
         <div className="flex items-center gap-2.5 mb-3">
           <div className="bg-gradient-to-br from-red-600 to-red-800 p-2 rounded-lg shadow-lg shadow-red-900/30"><Trash2 size={15} className="text-white" /></div>
@@ -5695,6 +5899,7 @@ function EmailChangeManager({ currentAdminRole, currentAdminEmail }) {
           </div>
         )}
       </div>
+      )}
 
       {/* Modal de confirmación de ELIMINACIÓN */}
       {delConfirmOpen && (
@@ -7998,14 +8203,14 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
       )}
 
       {/* ── CAMBIAR CORREO REGISTRADO ── */}
-      {adminRole === 'super_admin' && (
+      {(adminRole === 'super_admin' || adminRole === 'admin') && (
       <div className="bg-[#1b1b1b] border border-gray-800 rounded-2xl mb-6 overflow-hidden">
         <button type="button" onClick={() => setShowEmailChangeSection(v => !v)} className="w-full flex items-center justify-between px-6 py-4 hover:bg-white/5 transition">
           <div className="flex items-center gap-3">
-            <div className="bg-gradient-to-br from-emerald-500 to-emerald-700 p-2 rounded-lg shadow-lg shadow-emerald-900/30"><Mail size={18} className="text-white" /></div>
+            <div className="bg-gradient-to-br from-emerald-500 to-emerald-700 p-2 rounded-lg shadow-lg shadow-emerald-900/30"><KeyRound size={18} className="text-white" /></div>
             <div className="text-left">
-              <h2 className="text-xl font-bold text-white">Cambiar correo registrado</h2>
-              <p className="text-xs text-gray-400">Cambiar el correo de un usuario que perdió acceso o quiere actualizarlo</p>
+              <h2 className="text-xl font-bold text-white">Acceso de usuarios</h2>
+              <p className="text-xs text-gray-400">{adminRole === 'super_admin' ? 'Contraseñas temporales, cambio de correo y borrado de cuentas' : 'Genera contraseñas temporales para usuarios sin acceso'}</p>
             </div>
           </div>
           <span className="text-gray-400 text-lg">{showEmailChangeSection ? '▲' : '▼'}</span>
