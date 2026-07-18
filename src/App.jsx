@@ -5575,14 +5575,6 @@ function EmailChangeManager({ currentAdminRole, currentAdminEmail }) {
 
   const isSuperAdmin = currentAdminRole === 'super_admin';
 
-  if (!isSuperAdmin) {
-    return (
-      <div className="p-6">
-        <p className="text-gray-400">Solo los administradores con rol <span className="text-white font-bold">Super Admin</span> pueden cambiar correos registrados.</p>
-      </div>
-    );
-  }
-
   const handleSearch = async () => {
     const raw = oldEmail.trim();
     const v = raw.toLowerCase();
@@ -5684,6 +5676,8 @@ function EmailChangeManager({ currentAdminRole, currentAdminEmail }) {
 
   return (
     <div className="p-6 space-y-5">
+      {/* Cambio de correo — solo Super Admin */}
+      {isSuperAdmin && (<>
       <div className="flex items-start gap-3 bg-amber-900/15 border border-amber-700/30 rounded-xl px-4 py-3">
         <Shield size={16} className="text-amber-400 mt-0.5 flex-shrink-0" />
         <div className="text-xs text-amber-200/90">
@@ -5765,9 +5759,10 @@ function EmailChangeManager({ currentAdminRole, currentAdminEmail }) {
           <span>{msg.text}</span>
         </div>
       )}
+      </>)}
 
-      {/* ─── CREAR CONTRASEÑA TEMPORAL ─── */}
-      <div className="border-t border-gray-800 pt-5 mt-2">
+      {/* ─── CREAR CONTRASEÑA TEMPORAL (todos los administradores) ─── */}
+      <div className={isSuperAdmin ? 'border-t border-gray-800 pt-5 mt-2' : ''}>
         <div className="flex items-center gap-2.5 mb-3">
           <div className="bg-gradient-to-br from-indigo-600 to-indigo-800 p-2 rounded-lg shadow-lg shadow-indigo-900/30"><KeyRound size={15} className="text-white" /></div>
           <div>
@@ -5825,7 +5820,8 @@ function EmailChangeManager({ currentAdminRole, currentAdminEmail }) {
         </div>
       </div>
 
-      {/* ─── ELIMINAR CUENTA DE USUARIO (typos / duplicados) ─── */}
+      {/* ─── ELIMINAR CUENTA DE USUARIO (typos / duplicados) — solo Super Admin ─── */}
+      {isSuperAdmin && (
       <div className="border-t border-gray-800 pt-5 mt-2">
         <div className="flex items-center gap-2.5 mb-3">
           <div className="bg-gradient-to-br from-red-600 to-red-800 p-2 rounded-lg shadow-lg shadow-red-900/30"><Trash2 size={15} className="text-white" /></div>
@@ -5903,6 +5899,7 @@ function EmailChangeManager({ currentAdminRole, currentAdminEmail }) {
           </div>
         )}
       </div>
+      )}
 
       {/* Modal de confirmación de ELIMINACIÓN */}
       {delConfirmOpen && (
@@ -8206,14 +8203,14 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
       )}
 
       {/* ── CAMBIAR CORREO REGISTRADO ── */}
-      {adminRole === 'super_admin' && (
+      {(adminRole === 'super_admin' || adminRole === 'admin') && (
       <div className="bg-[#1b1b1b] border border-gray-800 rounded-2xl mb-6 overflow-hidden">
         <button type="button" onClick={() => setShowEmailChangeSection(v => !v)} className="w-full flex items-center justify-between px-6 py-4 hover:bg-white/5 transition">
           <div className="flex items-center gap-3">
-            <div className="bg-gradient-to-br from-emerald-500 to-emerald-700 p-2 rounded-lg shadow-lg shadow-emerald-900/30"><Mail size={18} className="text-white" /></div>
+            <div className="bg-gradient-to-br from-emerald-500 to-emerald-700 p-2 rounded-lg shadow-lg shadow-emerald-900/30"><KeyRound size={18} className="text-white" /></div>
             <div className="text-left">
-              <h2 className="text-xl font-bold text-white">Cambiar correo registrado</h2>
-              <p className="text-xs text-gray-400">Cambiar el correo de un usuario que perdió acceso o quiere actualizarlo</p>
+              <h2 className="text-xl font-bold text-white">Acceso de usuarios</h2>
+              <p className="text-xs text-gray-400">{adminRole === 'super_admin' ? 'Contraseñas temporales, cambio de correo y borrado de cuentas' : 'Genera contraseñas temporales para usuarios sin acceso'}</p>
             </div>
           </div>
           <span className="text-gray-400 text-lg">{showEmailChangeSection ? '▲' : '▼'}</span>
