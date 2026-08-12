@@ -51,6 +51,22 @@ const DEFAULT_SITE_LOGOS = {
   loginLogoCpg: '/logo-cpg-grande.png',
 };
 
+const DEFAULT_HOMEPAGE_PROMO = {
+  active: false,
+  imageUrl: '',
+  linkUrl: '',
+  altText: 'Actividad destacada',
+};
+
+const isValidPublicUrl = (value) => {
+  try {
+    const url = new URL(String(value || '').trim());
+    return url.protocol === 'https:' || url.protocol === 'http:';
+  } catch {
+    return false;
+  }
+};
+
 const GUATEMALA_DEPARTMENTS = [
   'Guatemala', 'El Progreso', 'Sacatepéquez', 'Chimaltenango', 'Escuintla',
   'Santa Rosa', 'Sololá', 'Totonicapán', 'Quetzaltenango', 'Suchitepéquez',
@@ -137,6 +153,21 @@ const uploadCertAsset = async (file, filename) => {
   const { error } = await supabase.storage.from('cert-assets').upload(path, file, { cacheControl: '3600', upsert: true });
   if (error) throw new Error('Error subiendo imagen: ' + error.message);
   const { data: { publicUrl } } = supabase.storage.from('cert-assets').getPublicUrl(path);
+  return publicUrl;
+};
+
+// Sube publicidad únicamente al bucket aislado de Aula Virtual.
+const uploadHomepagePromoAsset = async (file) => {
+  if (!supabase || !file) return null;
+  const ext = file.name.split('.').pop()?.toLowerCase() || 'png';
+  const path = `banner-${Date.now()}.${ext}`;
+  const { error } = await supabase.storage.from('cpg-homepage-promos').upload(path, file, {
+    cacheControl: '3600',
+    contentType: file.type,
+    upsert: false,
+  });
+  if (error) throw new Error('Error subiendo imagen: ' + error.message);
+  const { data: { publicUrl } } = supabase.storage.from('cpg-homepage-promos').getPublicUrl(path);
   return publicUrl;
 };
 
@@ -1366,6 +1397,7 @@ export default function App() {
   const [reprintCert, setReprintCert] = useState(null);
   const [certTemplate, setCertTemplate] = useState(DEFAULT_CERT_CONFIG);
   const [siteLogos, setSiteLogos] = useState(DEFAULT_SITE_LOGOS);
+  const [homepagePromo, setHomepagePromo] = useState(DEFAULT_HOMEPAGE_PROMO);
 
   // ── Tracker de clicks en botones del nav ──
   // Usa navigator.sendBeacon — diseñado específicamente para enviar datos
@@ -1826,11 +1858,59 @@ export default function App() {
     } catch {}
   };
 
+  const loadHomepagePromo = async () => {
+    if (!supabase) return;
+    try {
+      const { data, error } = await supabase
+        .from('cpg_homepage_promo')
+        .select('active, image_url, link_url, alt_text')
+        .eq('id', 1)
+        .maybeSingle();
+      if (error) throw error;
+      if (data) {
+        setHomepagePromo({
+          active: Boolean(data.active),
+          imageUrl: data.image_url || '',
+          linkUrl: data.link_url || '',
+          altText: data.alt_text || DEFAULT_HOMEPAGE_PROMO.altText,
+        });
+      }
+    } catch (error) {
+      console.warn('[homepagePromo] No se pudo cargar la configuración:', error?.message);
+    }
+  };
+
   const saveSiteLogos = async (newLogos) => {
     const merged = { ...siteLogos, ...newLogos };
+    if (!supabase) {
+      setSiteLogos(merged);
+      return merged;
+    }
+    const { error } = await supabase.from('cpg_site_config').upsert({ id: 1, config: merged, updated_at: new Date().toISOString() }, { onConflict: 'id' });
+    if (error) throw error;
     setSiteLogos(merged);
-    if (!supabase) return;
-    await supabase.from('cpg_site_config').upsert({ id: 1, config: merged, updated_at: new Date().toISOString() }, { onConflict: 'id' });
+    return merged;
+  };
+
+  const saveHomepagePromo = async (newPromo) => {
+    const normalized = { ...DEFAULT_HOMEPAGE_PROMO, ...newPromo };
+    if (!supabase) {
+      setHomepagePromo(normalized);
+      return normalized;
+    }
+    const { data: { session } } = await supabase.auth.getSession();
+    const { error } = await supabase.from('cpg_homepage_promo').upsert({
+      id: 1,
+      active: Boolean(normalized.active),
+      image_url: normalized.imageUrl || '',
+      link_url: normalized.linkUrl || '',
+      alt_text: normalized.altText || DEFAULT_HOMEPAGE_PROMO.altText,
+      updated_at: new Date().toISOString(),
+      updated_by: session?.user?.id || null,
+    }, { onConflict: 'id' });
+    if (error) throw error;
+    setHomepagePromo(normalized);
+    return normalized;
   };
 
   const saveCertConfig = async (newConfig) => {
@@ -1862,7 +1942,7 @@ export default function App() {
           if (!error) {
             if (data?.videos?.length) { setVideos(data.videos); localStorage.setItem('cpg_videos', JSON.stringify(data.videos)); }
             if (data?.activities?.length) { setActivities(data.activities); localStorage.setItem('cpg_activities', JSON.stringify(data.activities)); }
-            if (data?.videos?.length || data?.activities?.length) { await loadViewCounts(); await loadLiveSession(); await loadCertConfig(); await loadSiteLogos(); await loadCommissions(); return; }
+            if (data?.videos?.length || data?.activities?.length) { await loadViewCounts(); await loadLiveSession(); await loadCertConfig(); await loadSiteLogos(); await loadHomepagePromo(); await loadCommissions(); return; }
           }
         } catch {}
       }
@@ -1874,6 +1954,7 @@ export default function App() {
       await loadLiveSession();
       await loadCertConfig();
       await loadSiteLogos();
+      await loadHomepagePromo();
       await loadCommissions();
     };
     loadContent();
@@ -2240,7 +2321,7 @@ export default function App() {
           </div>
         )}
 
-        {view === 'home' && <HomeView videos={videos} viewCounts={viewCounts} recentVideos={recentVideos} categories={categories} upcomingVideos={upcomingVideos} activities={activities} completedVideos={completedVideos} sessionUser={sessionUser} searchQuery={searchQuery} setSearchQuery={setSearchQuery} onVideoSelect={(v) => { if (!isVideoPublished(v)) return; setSelectedVideo(v); incrementViewCount(v.id); setView('player'); }} />}
+        {view === 'home' && <HomeView videos={videos} viewCounts={viewCounts} recentVideos={recentVideos} categories={categories} upcomingVideos={upcomingVideos} activities={activities} completedVideos={completedVideos} sessionUser={sessionUser} searchQuery={searchQuery} setSearchQuery={setSearchQuery} homepagePromo={homepagePromo} onVideoSelect={(v) => { if (!isVideoPublished(v)) return; setSelectedVideo(v); incrementViewCount(v.id); setView('player'); }} />}
         {view === 'live' && <LiveSessionView session={liveSession} onBack={() => setView('home')} sessionUser={sessionUser} onRegisterAttendance={registerAttendance} />}
         {view === 'player' && selectedVideo && <PlayerView video={selectedVideo} viewCounts={viewCounts} onBack={() => setView('home')} sessionUser={sessionUser} userProfile={userProfile} setUserProfile={setUserProfile} isCompleted={completedVideos.has(selectedVideo.id)} onMarkCompleted={() => markVideoCompleted(selectedVideo.id)} certTemplate={certTemplate} commissions={commissions} />}
         {view === 'login' && <LoginView onLogin={handleLogin} onBack={() => setView('home')} authError={authError} />}
@@ -2253,7 +2334,7 @@ export default function App() {
               </div>
             </div>
           }>
-            <AdminDashboard videos={videos} viewCounts={viewCounts} totalViews={totalViews} activities={activities} liveSession={liveSession} onSaveLiveSession={saveLiveSession} onVideosChange={persistVideos} onActivitiesChange={persistActivities} onGenerateCertificate={handleManualCertificate} certTemplate={certTemplate} onSaveCertConfig={saveCertConfig} siteLogos={siteLogos} onSaveSiteLogos={saveSiteLogos} adminRole={adminRole} commissions={commissions} currentAdminEmail={sessionUser?.email || ''} onNavButtonsChange={loadNavButtons} />
+            <AdminDashboard videos={videos} viewCounts={viewCounts} totalViews={totalViews} activities={activities} liveSession={liveSession} onSaveLiveSession={saveLiveSession} onVideosChange={persistVideos} onActivitiesChange={persistActivities} onGenerateCertificate={handleManualCertificate} certTemplate={certTemplate} onSaveCertConfig={saveCertConfig} siteLogos={siteLogos} onSaveSiteLogos={saveSiteLogos} homepagePromo={homepagePromo} onSaveHomepagePromo={saveHomepagePromo} adminRole={adminRole} commissions={commissions} currentAdminEmail={sessionUser?.email || ''} onNavButtonsChange={loadNavButtons} />
           </Suspense>
         )}
         {view === 'certificate' && manualCertificate && <div className="min-h-screen bg-[#141414] pt-2 px-4 md:px-16 pb-12"><CertificateView video={manualCertificate.video} userProfile={manualCertificate.profile} onBack={handleCloseManualCertificate} certTemplate={certTemplate} commissions={commissions} /></div>}
@@ -3054,7 +3135,7 @@ function CertificateReprintView({ cert, onBack, certTemplate, videos = [], commi
 }
 
 // ── HOME VIEW ─────────────────────────────────────
-function HomeView({ videos, viewCounts, recentVideos, categories, upcomingVideos, activities, completedVideos, sessionUser, searchQuery, setSearchQuery, onVideoSelect }) {
+function HomeView({ videos, viewCounts, recentVideos, categories, upcomingVideos, activities, completedVideos, sessionUser, searchQuery, setSearchQuery, homepagePromo, onVideoSelect }) {
   const heroVideo = recentVideos[0];
   const [activeCategory, setActiveCategory] = useState(null);
   const [showCalendar, setShowCalendar] = useState(false);
@@ -3062,6 +3143,11 @@ function HomeView({ videos, viewCounts, recentVideos, categories, upcomingVideos
   const [showSyncModal, setShowSyncModal] = useState(false);
   const [showEmbedCalendar, setShowEmbedCalendar] = useState(false);
   const isGuest = sessionUser?.isGuest;
+  const showHomepagePromo = Boolean(
+    homepagePromo?.active &&
+    homepagePromo?.imageUrl &&
+    isValidPublicUrl(homepagePromo?.linkUrl)
+  );
 
   const searchResults = searchQuery.trim()
     ? videos.filter(v => {
@@ -3199,23 +3285,44 @@ function HomeView({ videos, viewCounts, recentVideos, categories, upcomingVideos
               </div>
             </div>
           )}
-          {/* ── Calendario (mitad derecha en desktop) ── */}
-          <div className={`${heroVideo ? 'md:w-1/2' : 'w-full'} flex items-center p-5 md:p-8 bg-[#0f0f0f]`}>
-            <div className="bg-[#1c1c1c] border border-gray-800 rounded-2xl p-5 md:p-7 w-full shadow-[0_0_30px_rgba(59,130,246,0.15)] flex flex-col gap-5">
+          {/* ── Publicidad + calendario (mitad derecha en desktop) ── */}
+          <div className={`${heroVideo ? 'md:w-1/2' : 'w-full'} flex items-center p-4 md:p-6 bg-[#0f0f0f]`}>
+            <div className={`w-full ${heroVideo ? '' : 'max-w-6xl mx-auto'} flex flex-col gap-3`}>
+              {showHomepagePromo && (
+                <a
+                  href={homepagePromo.linkUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label={`${homepagePromo.altText || 'Actividad destacada'} (abre en una pestaña nueva)`}
+                  className="group relative block w-full h-40 sm:h-44 md:h-[180px] overflow-hidden rounded-2xl border border-blue-500/30 bg-[#1c1c1c] shadow-[0_0_30px_rgba(59,130,246,0.14)] focus:outline-none focus-visible:ring-4 focus-visible:ring-blue-400/70 touch-manipulation"
+                >
+                  <img
+                    src={homepagePromo.imageUrl}
+                    alt={homepagePromo.altText || 'Actividad destacada'}
+                    className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
+                    loading="eager"
+                  />
+                  <span className="absolute bottom-3 right-3 inline-flex min-h-11 items-center gap-2 rounded-full border border-white/20 bg-black/75 px-4 py-2 text-xs font-bold text-white shadow-lg backdrop-blur-sm transition group-hover:bg-blue-600">
+                    Ver actividad <ExternalLink size={14} aria-hidden="true" />
+                  </span>
+                </a>
+              )}
+              <div className={`bg-[#1c1c1c] border border-gray-800 rounded-2xl w-full shadow-[0_0_30px_rgba(59,130,246,0.15)] flex flex-col ${showHomepagePromo ? 'p-4 gap-3' : 'p-5 md:p-7 gap-5'}`}>
               <div>
-                <p className="text-sm uppercase tracking-[0.25em] text-blue-400">Calendario de capacitación</p>
-                <h2 className="text-xl md:text-2xl font-bold text-white mt-1">Actividades programadas</h2>
-                <p className="text-gray-400 mt-1 text-sm">Consulta las fechas, organizadores y enlaces de inscripción.</p>
+                <p className={`${showHomepagePromo ? 'text-xs' : 'text-sm'} uppercase tracking-[0.25em] text-blue-400`}>Calendario de capacitación</p>
+                <h2 className={`${showHomepagePromo ? 'text-lg md:text-xl' : 'text-xl md:text-2xl'} font-bold text-white mt-1`}>Actividades programadas</h2>
+                {!showHomepagePromo && <p className="text-gray-400 mt-1 text-sm">Consulta las fechas, organizadores y enlaces de inscripción.</p>}
               </div>
               <div className="flex flex-col sm:flex-row gap-2">
                 <button type="button" onClick={() => setShowCalendar(true)}
-                  className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl font-semibold flex items-center gap-2 text-sm">
+                  className="min-h-11 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl font-semibold flex items-center justify-center gap-2 text-sm touch-manipulation">
                   <CalendarDays size={18} /> Ver calendario
                 </button>
                 <button type="button" onClick={() => setShowSyncModal(true)}
-                  className="bg-emerald-700 hover:bg-emerald-600 border border-emerald-600/60 text-white px-5 py-2.5 rounded-xl font-semibold flex items-center gap-2 text-sm">
+                  className="min-h-11 bg-emerald-700 hover:bg-emerald-600 border border-emerald-600/60 text-white px-4 py-2 rounded-xl font-semibold flex items-center justify-center gap-2 text-sm touch-manipulation">
                   <CalendarDays size={16} /> Agregar a mi calendario
                 </button>
+              </div>
               </div>
             </div>
           </div>
@@ -4997,6 +5104,154 @@ function LogoManagerModal({ siteLogos, onSave, onClose }) {
         </div>
         <div className="flex justify-end px-6 py-4 border-t border-gray-800">
           <button onClick={onClose} className="bg-gray-700 hover:bg-gray-600 text-white px-5 py-2 rounded-lg font-semibold text-sm">Cerrar</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── GESTOR DE PUBLICIDAD EN PORTADA ─────────────
+function HomepagePromoManagerModal({ promo, onSave, onClose }) {
+  const [form, setForm] = useState({ ...DEFAULT_HOMEPAGE_PROMO, ...(promo || {}) });
+  const [uploading, setUploading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState(null);
+
+  const handleUpload = async (file) => {
+    if (!file) return;
+    if (!file.type?.startsWith('image/')) {
+      setMsg({ type: 'error', text: 'Selecciona un archivo de imagen válido.' });
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setMsg({ type: 'error', text: 'La imagen no debe superar 5 MB.' });
+      return;
+    }
+    setUploading(true);
+    setMsg(null);
+    try {
+      const url = await uploadHomepagePromoAsset(file);
+      if (url) {
+        setForm(prev => ({ ...prev, imageUrl: url }));
+        setMsg({ type: 'success', text: 'Imagen cargada. Revisa la vista previa y guarda los cambios.' });
+      }
+    } catch (error) {
+      setMsg({ type: 'error', text: error?.message || 'No se pudo cargar la imagen.' });
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleSave = async () => {
+    const normalized = {
+      active: Boolean(form.active),
+      imageUrl: String(form.imageUrl || '').trim(),
+      linkUrl: String(form.linkUrl || '').trim(),
+      altText: String(form.altText || '').trim() || DEFAULT_HOMEPAGE_PROMO.altText,
+    };
+    if (normalized.active && !normalized.imageUrl) {
+      setMsg({ type: 'error', text: 'Sube una imagen antes de activar la publicidad.' });
+      return;
+    }
+    if (normalized.active && !isValidPublicUrl(normalized.linkUrl)) {
+      setMsg({ type: 'error', text: 'Escribe un enlace válido que comience con https:// o http://.' });
+      return;
+    }
+    if (normalized.linkUrl && !isValidPublicUrl(normalized.linkUrl)) {
+      setMsg({ type: 'error', text: 'El enlace debe comenzar con https:// o http://.' });
+      return;
+    }
+    setSaving(true);
+    setMsg(null);
+    try {
+      await onSave(normalized);
+      setForm(normalized);
+      logAuditAuto('homepage_promo_saved', 'site_config', 'homepagePromo', { active: normalized.active });
+      setMsg({ type: 'success', text: normalized.active ? 'Publicidad guardada y visible en la portada.' : 'Publicidad guardada y desactivada.' });
+    } catch (error) {
+      setMsg({ type: 'error', text: 'No se pudo guardar: ' + (error?.message || 'error desconocido') });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/75 z-[70] flex items-center justify-center px-4 py-6" role="dialog" aria-modal="true" aria-labelledby="homepage-promo-title">
+      <div className="bg-[#141414] border border-gray-800 rounded-2xl shadow-2xl w-full max-w-3xl max-h-[92vh] overflow-hidden">
+        <div className="flex items-start justify-between gap-4 px-5 md:px-6 py-4 border-b border-gray-800">
+          <div>
+            <h3 id="homepage-promo-title" className="text-xl font-bold text-white flex items-center gap-2"><Image size={20} className="text-blue-400" /> Imagen de portada</h3>
+            <p className="text-sm text-gray-400 mt-1">Publica una actividad con acceso directo a su página, inscripción o reunión de Zoom.</p>
+          </div>
+          <button type="button" onClick={onClose} className="min-w-11 min-h-11 -mr-2 -mt-2 flex items-center justify-center text-gray-400 hover:text-white rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400" aria-label="Cerrar"><X size={20} /></button>
+        </div>
+
+        <div className="px-5 md:px-6 py-5 overflow-y-auto max-h-[72vh] space-y-5">
+          {msg && (
+            <div role="status" className={`rounded-xl px-4 py-3 text-sm font-semibold border ${msg.type === 'error' ? 'bg-red-900/20 border-red-700/50 text-red-200' : 'bg-emerald-900/20 border-emerald-700/50 text-emerald-200'}`}>
+              {msg.text}
+            </div>
+          )}
+
+          <div className="flex items-center justify-between gap-4 rounded-xl border border-gray-800 bg-black/30 p-4">
+            <div>
+              <p className="text-white font-semibold">Mostrar publicidad en la portada</p>
+              <p className="text-xs text-gray-500 mt-1">Puedes desactivarla sin perder la imagen ni el enlace.</p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={form.active}
+              onClick={() => setForm(prev => ({ ...prev, active: !prev.active }))}
+              className={`relative inline-flex h-11 w-[76px] shrink-0 items-center rounded-full border transition focus:outline-none focus-visible:ring-4 focus-visible:ring-blue-400/60 ${form.active ? 'bg-emerald-600 border-emerald-400' : 'bg-gray-800 border-gray-600'}`}
+            >
+              <span className={`absolute text-[9px] font-bold uppercase tracking-wide ${form.active ? 'left-2 text-white' : 'right-2 text-gray-300'}`}>{form.active ? 'Activa' : 'Inactiva'}</span>
+              <span className={`h-8 w-8 rounded-full bg-white shadow-lg transition-transform ${form.active ? 'translate-x-[40px]' : 'translate-x-1'}`} />
+            </button>
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between gap-3 mb-2 flex-wrap">
+              <div>
+                <label className="block text-sm font-semibold text-white">Imagen publicitaria</label>
+                <p className="text-xs text-gray-500">Se recorta automáticamente dentro de un espacio fijo. Recomendado: 1600 × 600 px.</p>
+              </div>
+              <label className="min-h-11 inline-flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:bg-blue-900 text-white px-4 py-2 rounded-xl cursor-pointer transition text-sm font-semibold">
+                {uploading ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
+                {uploading ? 'Subiendo…' : form.imageUrl ? 'Cambiar imagen' : 'Subir imagen'}
+                <input type="file" accept="image/png,image/jpeg,image/webp,image/avif" className="hidden" onChange={event => { handleUpload(event.target.files?.[0]); event.target.value = ''; }} disabled={uploading || saving} />
+              </label>
+            </div>
+            <div className="relative w-full h-40 sm:h-52 overflow-hidden rounded-2xl border border-gray-700 bg-[#0d0d0d]">
+              {form.imageUrl ? (
+                <img src={form.imageUrl} alt="Vista previa de la publicidad" className="h-full w-full object-cover" />
+              ) : (
+                <div className="h-full flex flex-col items-center justify-center text-gray-600 gap-2"><Image size={36} /><p className="text-sm">Aún no hay una imagen</p></div>
+              )}
+              <span className="absolute bottom-3 right-3 rounded-full border border-white/20 bg-black/75 px-4 py-2 text-xs font-bold text-white">Ver actividad</span>
+            </div>
+            {form.imageUrl && <button type="button" onClick={() => setForm(prev => ({ ...prev, imageUrl: '', active: false }))} className="mt-2 min-h-11 text-xs text-red-400 hover:text-red-300">Quitar imagen de la configuración</button>}
+          </div>
+
+          <div className="grid grid-cols-1 gap-4">
+            <div>
+              <label htmlFor="homepage-promo-url" className="block text-sm font-semibold text-white mb-1.5">Enlace de la actividad</label>
+              <input id="homepage-promo-url" type="url" inputMode="url" value={form.linkUrl} onChange={event => setForm(prev => ({ ...prev, linkUrl: event.target.value }))} className="w-full min-h-11 bg-black border border-gray-700 rounded-xl px-3 py-2.5 text-white text-base focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30" placeholder="https://zoom.us/... o https://sitio-web.com/actividad" />
+              <p className="text-xs text-gray-500 mt-1.5">Al tocar la imagen, este enlace se abrirá en una pestaña nueva.</p>
+            </div>
+            <div>
+              <label htmlFor="homepage-promo-alt" className="block text-sm font-semibold text-white mb-1.5">Descripción accesible de la imagen</label>
+              <input id="homepage-promo-alt" type="text" value={form.altText} onChange={event => setForm(prev => ({ ...prev, altText: event.target.value }))} maxLength={140} className="w-full min-h-11 bg-black border border-gray-700 rounded-xl px-3 py-2.5 text-white text-base focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30" placeholder="Ej. Taller de intervención en crisis — 25 de agosto" />
+            </div>
+          </div>
+        </div>
+
+        <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 px-5 md:px-6 py-4 border-t border-gray-800 bg-black/20">
+          <button type="button" onClick={onClose} disabled={saving || uploading} className="min-h-11 px-5 py-2 rounded-xl bg-gray-800 hover:bg-gray-700 text-white font-semibold disabled:opacity-50">Cerrar</button>
+          <button type="button" onClick={handleSave} disabled={saving || uploading} className="min-h-11 px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold flex items-center justify-center gap-2 disabled:bg-emerald-900 disabled:cursor-wait">
+            {saving ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle size={16} />}
+            {saving ? 'Guardando…' : 'Guardar cambios'}
+          </button>
         </div>
       </div>
     </div>
@@ -7286,7 +7541,7 @@ function AuditLogViewer() {
 }
 
 // ── ADMIN DASHBOARD ───────────────────────────────
-function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSession, onSaveLiveSession, onVideosChange, onActivitiesChange, onGenerateCertificate, certTemplate, onSaveCertConfig, siteLogos, onSaveSiteLogos, adminRole, commissions = [], currentAdminEmail = '', onNavButtonsChange = null }) {
+function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSession, onSaveLiveSession, onVideosChange, onActivitiesChange, onGenerateCertificate, certTemplate, onSaveCertConfig, siteLogos, onSaveSiteLogos, homepagePromo, onSaveHomepagePromo, adminRole, commissions = [], currentAdminEmail = '', onNavButtonsChange = null }) {
   const [editingVideo, setEditingVideo] = useState(null);
   const [manualCertVideo, setManualCertVideo] = useState(null);
   const [manualProfile, setManualProfile] = useState({ name: '', collegiateNumber: '', status: '' });
@@ -7296,6 +7551,7 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
   const [showCertsSection, setShowCertsSection] = useState(false);
   const [showCertTemplateSection, setShowCertTemplateSection] = useState(false);
   const [showLogoManager, setShowLogoManager] = useState(false);
+  const [showHomepagePromoManager, setShowHomepagePromoManager] = useState(false);
   const [showAdminUsersSection, setShowAdminUsersSection] = useState(false);
   const [showUserVerifySection, setShowUserVerifySection] = useState(false);
   const [showEmailChangeSection, setShowEmailChangeSection] = useState(false);
@@ -7704,6 +7960,13 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
         <div className="flex flex-wrap gap-2">
           <button onClick={handleCreate} className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded font-bold flex items-center gap-2"><Plus size={20} /> Nuevo Video</button>
           <button onClick={() => { setEditingActivity({ id: Date.now() }); setActivityForm(EMPTY_ACTIVITY_FORM); }} className="bg-indigo-600 hover:bg-indigo-700 px-4 py-2 rounded font-bold flex items-center gap-2"><CalendarDays size={18} /> Nueva actividad</button>
+          {adminRole === 'super_admin' && (
+            <button onClick={() => setShowHomepagePromoManager(true)} className="min-h-11 bg-cyan-600 hover:bg-cyan-500 px-4 py-2 rounded font-bold flex items-center gap-2">
+              <Image size={18} /> Imagen de portada
+              <span className={`h-2.5 w-2.5 rounded-full ring-2 ring-white/30 ${homepagePromo?.active ? 'bg-emerald-300' : 'bg-gray-300/70'}`} aria-hidden="true" />
+              <span className="sr-only">{homepagePromo?.active ? 'Publicidad activa' : 'Publicidad inactiva'}</span>
+            </button>
+          )}
           <button onClick={() => setShowLogoManager(true)} className="bg-pink-600 hover:bg-pink-700 px-4 py-2 rounded font-bold flex items-center gap-2"><Image size={18} /> Logos del sitio</button>
         </div>
       </div>
@@ -8316,6 +8579,7 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
       {showBulkCert && <BulkCertificateEmitter videos={videos} activities={activities} commissions={commissions} onClose={() => setShowBulkCert(false)} onCertsCreated={() => { setCertsLoaded(false); loadAdminCerts(); }} />}
       {showAttendanceReport && <AttendanceReportView videos={videos} activities={activities} commissions={commissions} onClose={() => { setShowAttendanceReport(false); setCertsLoaded(false); }} />}
       {showLogoManager && <LogoManagerModal siteLogos={siteLogos} onSave={onSaveSiteLogos} onClose={() => setShowLogoManager(false)} />}
+      {showHomepagePromoManager && adminRole === 'super_admin' && <HomepagePromoManagerModal promo={homepagePromo} onSave={onSaveHomepagePromo} onClose={() => setShowHomepagePromoManager(false)} />}
 
       {manualCertVideo && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 px-4">
