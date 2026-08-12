@@ -3299,7 +3299,7 @@ function HomeView({ videos, viewCounts, recentVideos, categories, upcomingVideos
                   <img
                     src={homepagePromo.imageUrl}
                     alt={homepagePromo.altText || 'Actividad destacada'}
-                    className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
+                    className="h-full w-full object-contain bg-[#111] transition-opacity duration-200 group-hover:opacity-95"
                     loading="eager"
                   />
                   <span className="absolute bottom-3 right-3 inline-flex min-h-11 items-center gap-2 rounded-full border border-white/20 bg-black/75 px-4 py-2 text-xs font-bold text-white shadow-lg backdrop-blur-sm transition group-hover:bg-blue-600">
@@ -5214,7 +5214,7 @@ function HomepagePromoManagerModal({ promo, onSave, onClose }) {
             <div className="flex items-center justify-between gap-3 mb-2 flex-wrap">
               <div>
                 <label className="block text-sm font-semibold text-white">Imagen publicitaria</label>
-                <p className="text-xs text-gray-500">Se recorta automáticamente dentro de un espacio fijo. Recomendado: 1600 × 600 px.</p>
+                <p className="text-xs text-gray-500">Se ajusta completa dentro de un espacio fijo, sin recortar información. Recomendado: 1600 × 600 px.</p>
               </div>
               <label className="min-h-11 inline-flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:bg-blue-900 text-white px-4 py-2 rounded-xl cursor-pointer transition text-sm font-semibold">
                 {uploading ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
@@ -5224,7 +5224,7 @@ function HomepagePromoManagerModal({ promo, onSave, onClose }) {
             </div>
             <div className="relative w-full h-40 sm:h-52 overflow-hidden rounded-2xl border border-gray-700 bg-[#0d0d0d]">
               {form.imageUrl ? (
-                <img src={form.imageUrl} alt="Vista previa de la publicidad" className="h-full w-full object-cover" />
+                <img src={form.imageUrl} alt="Vista previa de la publicidad" className="h-full w-full object-contain bg-[#111]" />
               ) : (
                 <div className="h-full flex flex-col items-center justify-center text-gray-600 gap-2"><Image size={36} /><p className="text-sm">Aún no hay una imagen</p></div>
               )}
