@@ -6,6 +6,7 @@ import {
   Search, Mail, Shield, History, QrCode, KeyRound, Upload, Image, Type, Settings, Printer, RefreshCw, Copy
 } from 'lucide-react';
 import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from './supabaseClient';
+import { createEmptyQuestions, parseQuizImport, validateCertificateQuiz } from './utils/quizImport';
 // html2canvas + jspdf se cargan dinámicamente al descargar PDFs (lazy)
 // Componentes pesados de admin se lazy-loadan (lazy + Suspense más abajo)
 const CommissionsManager = React.lazy(() => import('./components/CommissionsManager'));
@@ -4142,7 +4143,7 @@ function LoginView({ onLogin, onBack, authError }) {
 function QuestionEditor({ question, idx, onQuestionChange }) {
   return (
     <div className="bg-gray-800 p-4 rounded mb-4 border border-gray-700">
-      <div className="mb-2"><label className="text-xs text-blue-300">Pregunta {idx + 1}</label><input type="text" value={question.question} onChange={e => onQuestionChange(idx, c => ({ ...c, question: e.target.value }))} className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-sm text-white" /></div>
+      <div className="mb-2"><label className="text-xs text-blue-300">Pregunta {idx + 1}</label><input type="text" value={question.question} onChange={e => onQuestionChange(idx, c => ({ ...c, question: e.target.value }))} className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-sm text-white" placeholder="Escribe la pregunta" /></div>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
         {question.options.map((opt, optIdx) => (
           <div key={optIdx} className="flex flex-col">
@@ -7696,6 +7697,8 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
   // ── CAMBIO 4+5: formData incluye platform ──
   const [formData, setFormData] = useState({ title: '', category: '', youtubeId: '', duration: '', description: '', thumbnail: '', scheduledAt: '', quizEnabled: false, platform: 'youtube' });
   const [questions, setQuestions] = useState([]);
+  const [quizImportText, setQuizImportText] = useState('');
+  const [quizImportMessage, setQuizImportMessage] = useState('');
   const EMPTY_ACTIVITY_FORM = { title: '', organizer: '', date: '', time: '', horas: '', location: '', registrationLink: '', meetingLink: '', isFull: false, participants: '', costType: 'free', cost: '', scholarshipPct: '', scholarshipAmt: '', hasCommissions: false, commissions: [] };
   const [activityForm, setActivityForm] = useState(EMPTY_ACTIVITY_FORM);
   const [syncMsg, setSyncMsg] = useState('');
@@ -7801,11 +7804,21 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
   };
 
   // ── CAMBIO 5: handleEdit preserva platform ──
-  const handleEdit = (video) => { setSaveError(''); setEditingVideo(video); setFormData({ ...video, scheduledAt: video.scheduledAt || '', thumbnail: video.thumbnail || '', platform: video.platform || 'youtube', hasCommissions: !!video.hasCommissions, commissions: video.commissions || [] }); setQuestions((video.questions || []).map(q => ({ ...q, options: [...(q.options || [])] }))); };
+  const handleEdit = (video) => { setSaveError(''); setQuizImportText(''); setQuizImportMessage(''); setEditingVideo(video); setFormData({ ...video, scheduledAt: video.scheduledAt || '', thumbnail: video.thumbnail || '', platform: video.platform || 'youtube', hasCommissions: !!video.hasCommissions, commissions: video.commissions || [] }); setQuestions((video.questions || []).map(q => ({ ...q, options: [...(q.options || [])] }))); };
   // ── CAMBIO 5: handleCreate con platform default ──
-  const handleCreate = () => { setSaveError(''); const e = { id: Date.now(), title: '', category: '', youtubeId: '', duration: '', description: '', thumbnail: '', scheduledAt: '', quizEnabled: false, viewCount: 0, platform: 'youtube', hasCommissions: false, commissions: [] }; setEditingVideo(e); setFormData(e); setQuestions(Array(10).fill(null).map((_, i) => ({ question: 'Pregunta ' + (i+1), options: ['Opción 1', 'Opción 2', 'Opción 3'], correctAnswer: 0 }))); };
+  const handleCreate = () => { setSaveError(''); setQuizImportText(''); setQuizImportMessage(''); const e = { id: Date.now(), title: '', category: '', youtubeId: '', duration: '', description: '', thumbnail: '', scheduledAt: '', quizEnabled: false, viewCount: 0, platform: 'youtube', hasCommissions: false, commissions: [] }; setEditingVideo(e); setFormData(e); setQuestions(createEmptyQuestions()); };
   const updateQuestion = useCallback((idx, updater) => { setQuestions(prev => prev.map((q, i) => i !== idx ? q : updater(q))); }, []);
+  const handleQuizImport = () => {
+    const result = parseQuizImport(quizImportText);
+    if (!result.ok) { setQuizImportMessage(result.error); return; }
+    setQuestions(result.questions);
+    setQuizImportMessage('Las 10 preguntas se importaron correctamente. Revisa y guarda los cambios.');
+  };
   const handleSave = async () => {
+    if (formData.quizEnabled) {
+      const quizError = validateCertificateQuiz(questions);
+      if (quizError) { setSaveError(quizError); return; }
+    }
     const nv = { ...formData, questions, viewCount: formData.viewCount || 0 };
     setSaveError('');
     try {
@@ -7936,7 +7949,7 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
             <h2 className="text-2xl font-bold">{formData.title ? 'Editar Video' : 'Nuevo Video'}</h2>
             <div className="flex gap-2"><button onClick={() => setEditingVideo(null)} className="px-4 py-2 bg-gray-700 rounded hover:bg-gray-600">Cancelar</button><button onClick={handleSave} className="px-4 py-2 bg-green-600 rounded hover:bg-green-700 font-bold">Guardar Cambios</button></div>
           </div>
-          {saveError && <div className="mb-6 rounded border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-200">{saveError}</div>}
+          {saveError && <div role="alert" className="mb-6 rounded border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-200">{saveError}</div>}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
             <div className="space-y-4">
               <div><label className="block text-sm text-gray-400">Título</label><input type="text" value={formData.title} onChange={e => setFormData({ ...formData, title: e.target.value })} className="w-full bg-gray-900 border border-gray-700 p-2 rounded text-white" /></div>
@@ -8023,8 +8036,21 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
             </div>
           </div>
           <div className="bg-gray-900 p-6 rounded border border-gray-800">
-            <div className="flex items-center gap-3 mb-4"><input type="checkbox" id="quizToggle" checked={formData.quizEnabled} onChange={e => setFormData({ ...formData, quizEnabled: e.target.checked })} className="w-5 h-5 text-blue-600 rounded" /><label htmlFor="quizToggle" className="font-bold text-lg cursor-pointer">Activar Evaluación para Certificado</label></div>
-            {formData.quizEnabled && <div className="space-y-4"><p className="text-yellow-500 text-sm mb-4">Configura exactamente 10 preguntas. Marca la respuesta correcta en cada una.</p>{questions.map((q, idx) => <QuestionEditor key={idx} question={q} idx={idx} onQuestionChange={updateQuestion} />)}</div>}
+            <div className="flex items-center gap-3 mb-4"><input type="checkbox" id="quizToggle" checked={formData.quizEnabled} onChange={e => { const enabled = e.target.checked; setFormData({ ...formData, quizEnabled: enabled }); if (enabled && questions.length === 0) setQuestions(createEmptyQuestions()); }} className="w-5 h-5 text-blue-600 rounded" /><label htmlFor="quizToggle" className="font-bold text-lg cursor-pointer">Activar Evaluación para Certificado</label></div>
+            {formData.quizEnabled && <div className="space-y-4">
+              <p className="text-yellow-500 text-sm">Configura exactamente 10 preguntas. Marca la respuesta correcta en cada una.</p>
+              <div className="rounded-lg border border-blue-500/30 bg-blue-950/20 p-4">
+                <label htmlFor="quiz-import-text" className="block text-base font-semibold text-blue-100">Importar las 10 preguntas de una vez</label>
+                <p className="mt-1 text-sm text-gray-400">Pega el formato: <span className="font-mono text-xs">1. Pregunta... A) opción B) opción C) opción Respuesta correcta: B</span>. Se admiten opciones de A a F.</p>
+                <textarea id="quiz-import-text" value={quizImportText} onChange={e => { setQuizImportText(e.target.value); setQuizImportMessage(''); }} className="mt-3 min-h-36 w-full rounded border border-gray-600 bg-gray-900 p-3 text-sm text-white focus:ring-2 focus:ring-blue-500" placeholder="Pega aquí las 10 preguntas..." aria-describedby="quiz-import-help" />
+                <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <span id="quiz-import-help" className="text-xs text-gray-500">La importación reemplaza las 10 preguntas actuales solo si el contenido es válido.</span>
+                  <button type="button" onClick={handleQuizImport} className="min-h-11 rounded bg-blue-600 px-4 py-2 font-bold text-white transition hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-300">Importar preguntas</button>
+                </div>
+                {quizImportMessage && <p role={quizImportMessage.startsWith('Las 10') ? 'status' : 'alert'} className={'mt-3 text-sm ' + (quizImportMessage.startsWith('Las 10') ? 'text-green-300' : 'text-red-300')}>{quizImportMessage}</p>}
+              </div>
+              {questions.map((q, idx) => <QuestionEditor key={idx} question={q} idx={idx} onQuestionChange={updateQuestion} />)}
+            </div>}
           </div>
           {/* ── Entrega 3: Comisiones firmantes del curso ── */}
           <div className="bg-gray-900 p-6 rounded border border-gray-800 mt-4">
