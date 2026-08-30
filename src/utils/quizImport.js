@@ -4,6 +4,31 @@ export const createEmptyQuestions = () => Array.from({ length: 10 }, () => ({
   correctAnswer: null,
 }));
 
+/**
+ * Identifica únicamente la plantilla antigua que se mostraba como contenido
+ * precargado. La comparación es deliberadamente estricta para no borrar una
+ * evaluación que el administrador ya haya comenzado a redactar.
+ */
+export function isLegacyQuizTemplate(questions) {
+  return Array.isArray(questions)
+    && questions.length === 10
+    && questions.every((item, index) => (
+      item?.question === `Pregunta ${index + 1}`
+      && Array.isArray(item.options)
+      && item.options.length === 3
+      && item.options.every((option, optionIndex) => option === `Opción ${optionIndex + 1}`)
+      && item.correctAnswer === 0
+    ));
+}
+
+/**
+ * Convierte la plantilla heredada en campos vacíos al abrir el editor.
+ * Cualquier evaluación con contenido distinto se conserva tal como está.
+ */
+export function normalizeLegacyQuizQuestions(questions) {
+  return isLegacyQuizTemplate(questions) ? createEmptyQuestions() : questions;
+}
+
 const cleanText = (value) => String(value || '').replace(/\s+/g, ' ').trim();
 
 /**

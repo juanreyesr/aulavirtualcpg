@@ -6,7 +6,7 @@ import {
   Search, Mail, Shield, History, QrCode, KeyRound, Upload, Image, Type, Settings, Printer, RefreshCw, Copy
 } from 'lucide-react';
 import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from './supabaseClient';
-import { createEmptyQuestions, parseQuizImport, validateCertificateQuiz } from './utils/quizImport';
+import { createEmptyQuestions, normalizeLegacyQuizQuestions, parseQuizImport, validateCertificateQuiz } from './utils/quizImport';
 // html2canvas + jspdf se cargan dinámicamente al descargar PDFs (lazy)
 // Componentes pesados de admin se lazy-loadan (lazy + Suspense más abajo)
 const CommissionsManager = React.lazy(() => import('./components/CommissionsManager'));
@@ -7804,7 +7804,16 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
   };
 
   // ── CAMBIO 5: handleEdit preserva platform ──
-  const handleEdit = (video) => { setSaveError(''); setQuizImportText(''); setQuizImportMessage(''); setEditingVideo(video); setFormData({ ...video, scheduledAt: video.scheduledAt || '', thumbnail: video.thumbnail || '', platform: video.platform || 'youtube', hasCommissions: !!video.hasCommissions, commissions: video.commissions || [] }); setQuestions((video.questions || []).map(q => ({ ...q, options: [...(q.options || [])] }))); };
+  const handleEdit = (video) => {
+    setSaveError('');
+    setQuizImportText('');
+    setQuizImportMessage('');
+    setEditingVideo(video);
+    setFormData({ ...video, scheduledAt: video.scheduledAt || '', thumbnail: video.thumbnail || '', platform: video.platform || 'youtube', hasCommissions: !!video.hasCommissions, commissions: video.commissions || [] });
+    const normalizedQuestions = normalizeLegacyQuizQuestions(video.questions || []);
+    const editableQuestions = video.quizEnabled && normalizedQuestions.length === 0 ? createEmptyQuestions() : normalizedQuestions;
+    setQuestions(editableQuestions.map(q => ({ ...q, options: [...(q.options || [])] })));
+  };
   // ── CAMBIO 5: handleCreate con platform default ──
   const handleCreate = () => { setSaveError(''); setQuizImportText(''); setQuizImportMessage(''); const e = { id: Date.now(), title: '', category: '', youtubeId: '', duration: '', description: '', thumbnail: '', scheduledAt: '', quizEnabled: false, viewCount: 0, platform: 'youtube', hasCommissions: false, commissions: [] }; setEditingVideo(e); setFormData(e); setQuestions(createEmptyQuestions()); };
   const updateQuestion = useCallback((idx, updater) => { setQuestions(prev => prev.map((q, i) => i !== idx ? q : updater(q))); }, []);
@@ -7813,6 +7822,12 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
     if (!result.ok) { setQuizImportMessage(result.error); return; }
     setQuestions(result.questions);
     setQuizImportMessage('Las 10 preguntas se importaron correctamente. Revisa y guarda los cambios.');
+  };
+  const handleClearQuiz = () => {
+    if (!confirm('¿Vaciar las 10 preguntas de esta evaluación? Esta acción solo afecta lo que estás editando y se aplicará de forma permanente cuando guardes los cambios.')) return;
+    setQuestions(createEmptyQuestions());
+    setQuizImportMessage('Las 10 preguntas se vaciaron. Completa o importa la evaluación y luego guarda los cambios.');
+    setSaveError('');
   };
   const handleSave = async () => {
     if (formData.quizEnabled) {
@@ -8045,8 +8060,12 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
                 <textarea id="quiz-import-text" value={quizImportText} onChange={e => { setQuizImportText(e.target.value); setQuizImportMessage(''); }} className="mt-3 min-h-36 w-full rounded border border-gray-600 bg-gray-900 p-3 text-sm text-white focus:ring-2 focus:ring-blue-500" placeholder="Pega aquí las 10 preguntas..." aria-describedby="quiz-import-help" />
                 <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <span id="quiz-import-help" className="text-xs text-gray-500">La importación reemplaza las 10 preguntas actuales solo si el contenido es válido.</span>
-                  <button type="button" onClick={handleQuizImport} className="min-h-11 rounded bg-blue-600 px-4 py-2 font-bold text-white transition hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-300">Importar preguntas</button>
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                    <button type="button" onClick={handleQuizImport} className="min-h-11 rounded bg-blue-600 px-4 py-2 font-bold text-white transition hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-300">Importar preguntas</button>
+                    <button type="button" onClick={handleClearQuiz} className="min-h-11 rounded border border-gray-500 px-4 py-2 font-semibold text-gray-200 transition hover:border-red-400 hover:bg-red-950/30 hover:text-red-200 focus:outline-none focus:ring-2 focus:ring-red-300" aria-describedby="quiz-clear-help">Vaciar preguntas</button>
+                  </div>
                 </div>
+                <p id="quiz-clear-help" className="mt-2 text-xs text-gray-500">Solo vacía las preguntas de esta evaluación abierta; los cambios no se guardan hasta presionar “Guardar Cambios”.</p>
                 {quizImportMessage && <p role={quizImportMessage.startsWith('Las 10') ? 'status' : 'alert'} className={'mt-3 text-sm ' + (quizImportMessage.startsWith('Las 10') ? 'text-green-300' : 'text-red-300')}>{quizImportMessage}</p>}
               </div>
               {questions.map((q, idx) => <QuestionEditor key={idx} question={q} idx={idx} onQuestionChange={updateQuestion} />)}
