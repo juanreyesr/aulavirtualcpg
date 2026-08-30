@@ -3142,12 +3142,57 @@ function HomeView({ videos, viewCounts, recentVideos, categories, upcomingVideos
   const [showPast, setShowPast] = useState(false);
   const [showSyncModal, setShowSyncModal] = useState(false);
   const [showEmbedCalendar, setShowEmbedCalendar] = useState(false);
+  const [showHomepagePromoDetail, setShowHomepagePromoDetail] = useState(false);
+  const homepagePromoTriggerRef = useRef(null);
+  const homepagePromoCloseRef = useRef(null);
+  const homepagePromoLinkRef = useRef(null);
   const isGuest = sessionUser?.isGuest;
   const showHomepagePromo = Boolean(
     homepagePromo?.active &&
     homepagePromo?.imageUrl &&
     isValidPublicUrl(homepagePromo?.linkUrl)
   );
+
+  const closeHomepagePromoDetail = useCallback(() => {
+    setShowHomepagePromoDetail(false);
+    window.requestAnimationFrame(() => homepagePromoTriggerRef.current?.focus());
+  }, []);
+
+  useEffect(() => {
+    if (!showHomepagePromoDetail) return undefined;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    window.requestAnimationFrame(() => homepagePromoCloseRef.current?.focus());
+
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeHomepagePromoDetail();
+        return;
+      }
+
+      if (event.key !== 'Tab') return;
+      const focusableElements = [homepagePromoCloseRef.current, homepagePromoLinkRef.current].filter(Boolean);
+      if (focusableElements.length === 0) return;
+      const firstElement = focusableElements[0];
+      const lastElement = focusableElements[focusableElements.length - 1];
+
+      if (event.shiftKey && document.activeElement === firstElement) {
+        event.preventDefault();
+        lastElement.focus();
+      } else if (!event.shiftKey && document.activeElement === lastElement) {
+        event.preventDefault();
+        firstElement.focus();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [closeHomepagePromoDetail, showHomepagePromoDetail]);
 
   const searchResults = searchQuery.trim()
     ? videos.filter(v => {
@@ -3289,23 +3334,34 @@ function HomeView({ videos, viewCounts, recentVideos, categories, upcomingVideos
           <div className={`${heroVideo ? 'md:w-1/2' : 'w-full'} flex items-center p-4 md:p-6 bg-[#0f0f0f]`}>
             <div className={`w-full ${heroVideo ? '' : 'max-w-6xl mx-auto'} flex flex-col gap-3`}>
               {showHomepagePromo && (
-                <a
-                  href={homepagePromo.linkUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  aria-label={`${homepagePromo.altText || 'Actividad destacada'} (abre en una pestaña nueva)`}
-                  className="group relative block w-full h-40 sm:h-44 md:h-[180px] overflow-hidden rounded-2xl border border-blue-500/30 bg-[#1c1c1c] shadow-[0_0_30px_rgba(59,130,246,0.14)] focus:outline-none focus-visible:ring-4 focus-visible:ring-blue-400/70 touch-manipulation"
-                >
-                  <img
-                    src={homepagePromo.imageUrl}
-                    alt={homepagePromo.altText || 'Actividad destacada'}
-                    className="h-full w-full object-contain bg-[#111] transition-opacity duration-200 group-hover:opacity-95"
-                    loading="eager"
-                  />
-                  <span className="absolute bottom-3 right-3 inline-flex min-h-11 items-center gap-2 rounded-full border border-white/20 bg-black/75 px-4 py-2 text-xs font-bold text-white shadow-lg backdrop-blur-sm transition group-hover:bg-blue-600">
+                <div className="group relative block w-full h-40 sm:h-44 md:h-[180px] overflow-hidden rounded-2xl border border-blue-500/30 bg-[#1c1c1c] shadow-[0_0_30px_rgba(59,130,246,0.14)]">
+                  <button
+                    ref={homepagePromoTriggerRef}
+                    type="button"
+                    onClick={() => setShowHomepagePromoDetail(true)}
+                    aria-label={`Ampliar imagen: ${homepagePromo.altText || 'Actividad destacada'}`}
+                    className="absolute inset-0 h-full w-full cursor-zoom-in touch-manipulation focus:outline-none focus-visible:ring-4 focus-visible:ring-inset focus-visible:ring-blue-400/70"
+                  >
+                    <img
+                      src={homepagePromo.imageUrl}
+                      alt={homepagePromo.altText || 'Actividad destacada'}
+                      className="h-full w-full object-contain bg-[#111] transition-opacity duration-200 group-hover:opacity-95"
+                      loading="eager"
+                    />
+                    <span className="absolute left-3 top-3 rounded-full border border-white/20 bg-black/75 px-3 py-1.5 text-xs font-semibold text-white opacity-100 shadow-lg backdrop-blur-sm transition md:opacity-0 md:group-hover:opacity-100">
+                      Ampliar imagen
+                    </span>
+                  </button>
+                  <a
+                    href={homepagePromo.linkUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label={`Ver actividad: ${homepagePromo.altText || 'Actividad destacada'} (abre en una pestaña nueva)`}
+                    className="absolute bottom-3 right-3 z-10 inline-flex min-h-11 items-center gap-2 rounded-full border border-white/20 bg-black/80 px-4 py-2 text-xs font-bold text-white shadow-lg backdrop-blur-sm transition hover:bg-blue-600 focus:outline-none focus-visible:ring-4 focus-visible:ring-blue-400/70 touch-manipulation"
+                  >
                     Ver actividad <ExternalLink size={14} aria-hidden="true" />
-                  </span>
-                </a>
+                  </a>
+                </div>
               )}
               <div className={`bg-[#1c1c1c] border border-gray-800 rounded-2xl w-full shadow-[0_0_30px_rgba(59,130,246,0.15)] flex flex-col ${showHomepagePromo ? 'p-4 gap-3' : 'p-5 md:p-7 gap-5'}`}>
               <div>
@@ -3335,6 +3391,60 @@ function HomeView({ videos, viewCounts, recentVideos, categories, upcomingVideos
         <Search size={14} className="absolute left-9 top-3 text-gray-500 pointer-events-none" />
         <input type="text" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="w-full bg-gray-800 border border-gray-700 rounded-full pl-8 pr-4 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500" placeholder="Buscar cursos..." />
       </div>
+
+      {showHomepagePromoDetail && showHomepagePromo && (
+        <div
+          className="fixed inset-0 z-[80] flex min-h-dvh items-center justify-center bg-black/90 p-3 sm:p-6"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="homepage-promo-detail-title"
+          aria-describedby="homepage-promo-detail-description"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) closeHomepagePromoDetail();
+          }}
+        >
+          <div className="relative flex max-h-[calc(100dvh-1.5rem)] w-full max-w-7xl flex-col overflow-hidden rounded-2xl border border-white/15 bg-[#111] shadow-2xl sm:max-h-[calc(100dvh-3rem)]">
+            <div className="flex items-center justify-between gap-4 border-b border-white/10 px-4 py-3 sm:px-5">
+              <div className="min-w-0">
+                <h2 id="homepage-promo-detail-title" className="truncate text-base font-bold text-white sm:text-lg">
+                  {homepagePromo.altText || 'Actividad destacada'}
+                </h2>
+                <p id="homepage-promo-detail-description" className="text-xs text-gray-400 sm:text-sm">Vista ampliada de la publicidad</p>
+              </div>
+              <button
+                ref={homepagePromoCloseRef}
+                type="button"
+                onClick={closeHomepagePromoDetail}
+                aria-label="Cerrar imagen ampliada"
+                className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-full border border-white/15 bg-white/10 text-white transition hover:bg-white/20 focus:outline-none focus-visible:ring-4 focus-visible:ring-blue-400/70 touch-manipulation"
+              >
+                <X size={22} aria-hidden="true" />
+              </button>
+            </div>
+
+            <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto bg-black p-2 sm:p-4">
+              <img
+                src={homepagePromo.imageUrl}
+                alt={homepagePromo.altText || 'Actividad destacada'}
+                className="max-h-[calc(100dvh-10.5rem)] max-w-full object-contain"
+              />
+            </div>
+
+            <div className="flex shrink-0 items-center justify-end border-t border-white/10 bg-[#161616] p-3 sm:p-4">
+              <a
+                ref={homepagePromoLinkRef}
+                href={homepagePromo.linkUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label={`Ver actividad: ${homepagePromo.altText || 'Actividad destacada'} (abre en una pestaña nueva)`}
+                className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-bold text-white transition hover:bg-blue-500 focus:outline-none focus-visible:ring-4 focus-visible:ring-blue-400/70 sm:w-auto touch-manipulation"
+              >
+                Ver actividad <ExternalLink size={17} aria-hidden="true" />
+              </a>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showCalendar && (
         <div className="fixed inset-0 bg-black/70 z-[60] flex items-center justify-center px-4 py-10">
