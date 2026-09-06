@@ -271,6 +271,36 @@ const getScheduledDate = (scheduledAt) => scheduledAt ? new Date(scheduledAt + '
 const isVideoPublished = (video) => { const d = getScheduledDate(video?.scheduledAt); return !d || d <= new Date(); };
 const formatScheduleDate = (scheduledAt) => { const d = getScheduledDate(scheduledAt); if (!d) return ''; return d.toLocaleDateString('es-GT', { year: 'numeric', month: 'long', day: 'numeric' }); };
 
+// La portada siempre se ordena por el estreno efectivo, no por la posición del JSON.
+// Los videos antiguos no tenían publishedAt; sus IDs creados con Date.now() sirven como respaldo.
+const getVideoReleaseDate = (video) => {
+  const scheduledDate = getScheduledDate(video?.scheduledAt);
+  if (scheduledDate && !Number.isNaN(scheduledDate.valueOf())) return scheduledDate;
+
+  const publishedDate = video?.publishedAt ? new Date(video.publishedAt) : null;
+  if (publishedDate && !Number.isNaN(publishedDate.valueOf())) return publishedDate;
+
+  const idAsTimestamp = Number(video?.id);
+  return Number.isFinite(idAsTimestamp) && idAsTimestamp >= 1000000000000
+    ? new Date(idAsTimestamp)
+    : new Date(0);
+};
+
+const FEATURED_VIDEO_PROMOTION_MS = 3 * 24 * 60 * 60 * 1000;
+
+const getFeaturedVideos = (videos, now = new Date()) => {
+  const published = videos
+    .filter(isVideoPublished)
+    .sort((a, b) => getVideoReleaseDate(b) - getVideoReleaseDate(a));
+  const inPromotionWindow = published.filter((video) =>
+    now - getVideoReleaseDate(video) < FEATURED_VIDEO_PROMOTION_MS
+  );
+
+  // Durante sus tres primeros días, los estrenos tienen prioridad. Si ya no hay
+  // uno en esa ventana, se mantiene el último video publicado en portada.
+  return inPromotionWindow.length ? inPromotionWindow : published;
+};
+
 // Una actividad es "pasada" cuando ya terminó: fecha + hora de inicio + duración (horas).
 // Si no hay hora válida, se considera vigente hasta el fin de su día.
 const isActivityPast = (a) => {
@@ -1399,6 +1429,12 @@ export default function App() {
   const [certTemplate, setCertTemplate] = useState(DEFAULT_CERT_CONFIG);
   const [siteLogos, setSiteLogos] = useState(DEFAULT_SITE_LOGOS);
   const [homepagePromo, setHomepagePromo] = useState(DEFAULT_HOMEPAGE_PROMO);
+  const [featuredClock, setFeaturedClock] = useState(() => Date.now());
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => setFeaturedClock(Date.now()), 60 * 1000);
+    return () => window.clearInterval(intervalId);
+  }, []);
 
   // ── Tracker de clicks en botones del nav ──
   // Usa navigator.sendBeacon — diseñado específicamente para enviar datos
@@ -2052,9 +2088,10 @@ export default function App() {
       .sort(([, a], [, b]) => b - a)
       .map(([cat]) => cat);
   }, [videos]);
-  const publishedVideos = useMemo(() => videos.filter(isVideoPublished), [videos]);
   const upcomingVideos = useMemo(() => videos.filter(v => !isVideoPublished(v)), [videos]);
-  const recentVideos = useMemo(() => [...publishedVideos].reverse().slice(0, 5), [publishedVideos]);
+  // Los estrenos programados reciben su ventana de difusión desde la fecha indicada.
+  // Al cumplirse los tres días, el orden conserva el último video ya publicado.
+  const recentVideos = useMemo(() => getFeaturedVideos(videos, new Date(featuredClock)).slice(0, 5), [featuredClock, videos]);
 
   if (certCodeFromUrl) return <CertificateVerifyView code={certCodeFromUrl} />;
 
@@ -7815,7 +7852,7 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
     setQuestions(editableQuestions.map(q => ({ ...q, options: [...(q.options || [])] })));
   };
   // ── CAMBIO 5: handleCreate con platform default ──
-  const handleCreate = () => { setSaveError(''); setQuizImportText(''); setQuizImportMessage(''); const e = { id: Date.now(), title: '', category: '', youtubeId: '', duration: '', description: '', thumbnail: '', scheduledAt: '', quizEnabled: false, viewCount: 0, platform: 'youtube', hasCommissions: false, commissions: [] }; setEditingVideo(e); setFormData(e); setQuestions(createEmptyQuestions()); };
+  const handleCreate = () => { setSaveError(''); setQuizImportText(''); setQuizImportMessage(''); const e = { id: Date.now(), publishedAt: new Date().toISOString(), title: '', category: '', youtubeId: '', duration: '', description: '', thumbnail: '', scheduledAt: '', quizEnabled: false, viewCount: 0, platform: 'youtube', hasCommissions: false, commissions: [] }; setEditingVideo(e); setFormData(e); setQuestions(createEmptyQuestions()); };
   const updateQuestion = useCallback((idx, updater) => { setQuestions(prev => prev.map((q, i) => i !== idx ? q : updater(q))); }, []);
   const handleQuizImport = () => {
     const result = parseQuizImport(quizImportText);
