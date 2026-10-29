@@ -787,6 +787,10 @@ function LoginColModal({ onSession }) {
   const [existingUser, setExistingUser] = useState(null); // { name, email } si ya está registrado
 
   useEffect(() => {
+    if (localStorage.getItem('cpg_session_expired')) {
+      localStorage.removeItem('cpg_session_expired');
+      setError('Tu sesión expiró. Vuelve a ingresar para continuar y obtener certificados verificables.');
+    }
     const blocked = localStorage.getItem('cpg_google_blocked');
     if (blocked) {
       try {
@@ -1714,9 +1718,40 @@ export default function App() {
     }
   }, []);
 
+  // La sesión local (cpg_session) de un colegiado debe ir atada a la de Supabase:
+  // sin ella, las escrituras protegidas por RLS (p. ej. registrar su certificado)
+  // fallan aunque la interfaz lo muestre como conectado. Si no hay sesión
+  // recuperable, se pide volver a ingresar.
+  const expireLocalSession = () => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('cpg_session') || 'null');
+      if (!saved || saved.isGuest) return;
+    } catch { return; }
+    localStorage.removeItem('cpg_session');
+    localStorage.setItem('cpg_session_expired', '1');
+    setSessionUser(null);
+  };
+
+  useEffect(() => {
+    if (!supabase || !sessionUser || sessionUser.isGuest) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        let { data: { session } } = await supabase.auth.getSession();
+        if (!session) {
+          try { await supabase.auth.refreshSession(); } catch {}
+          ({ data: { session } } = await supabase.auth.getSession());
+        }
+        if (!session && !cancelled) expireLocalSession();
+      } catch {}
+    })();
+    return () => { cancelled = true; };
+  }, [sessionUser?.collegiateNumber]);
+
   useEffect(() => {
     if (!supabase) return;
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'SIGNED_OUT') { expireLocalSession(); return; }
       // Detectar PASSWORD_RECOVERY event de Supabase
       if (event === 'PASSWORD_RECOVERY') {
         setShowPasswordReset(true);
@@ -2087,7 +2122,7 @@ export default function App() {
   const handleLogout = async () => {
     const em = sessionUser?.email || '';
     await logAudit(em, '', 'logout', 'session');
-    if (supabase) await supabase.auth.signOut(); localStorage.removeItem('cpg_session'); setIsAdmin(false); setAdminRole(''); setSessionUser(null); setView('home');
+    localStorage.removeItem('cpg_session'); if (supabase) await supabase.auth.signOut(); setIsAdmin(false); setAdminRole(''); setSessionUser(null); setView('home');
   };
   const handleManualCertificate = (video, profile) => { setManualCertificate({ video, profile }); setView('certificate'); };
   const handleCloseManualCertificate = () => { setManualCertificate(null); setView('admin'); };
