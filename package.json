@@ -8,6 +8,9 @@
     "build": "vite build",
     "preview": "vite preview"
   },
+  "engines": {
+    "node": "24.x"
+  },
   "dependencies": {
     "@supabase/supabase-js": "^2.52.0",
     "html2canvas": "^1.4.1",
