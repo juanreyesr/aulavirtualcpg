@@ -418,12 +418,24 @@ function CertificateVerifyView({ code }) {
     const verify = async () => {
       if (!supabase) { setStatus('error'); return; }
       try {
-        const { data, error } = await supabase
+        let { data } = await supabase
           .from('cpg_certificates')
           .select('*')
           .eq('certificate_code', code)
-          .single();
-        if (error || !data) { setStatus('not_found'); return; }
+          .maybeSingle();
+        // Reimpresiones anteriores a la corrección: el PDF llevaba la fecha del día de
+        // descarga en el código, pero el registro conserva el código original. El código
+        // CPG-AAAAMMDD-colegiado-curso identifica el par colegiado/curso, que es único.
+        const m = !data && /^CPG-\d{8}-([^-]+)-(\d+)$/.exec(code);
+        if (m) {
+          ({ data } = await supabase
+            .from('cpg_certificates')
+            .select('*')
+            .eq('collegiate_number', m[1])
+            .eq('video_id', m[2])
+            .maybeSingle());
+        }
+        if (!data) { setStatus('not_found'); return; }
         setCert(data);
         setStatus('found');
         // Consultar estado actual del CPG en tiempo real
@@ -435,7 +447,7 @@ function CertificateVerifyView({ code }) {
             const apiStatus = String(cpgData?.status || '').toUpperCase().trim();
             if (apiStatus && apiStatus !== 'DESCONOCIDO') {
               setLiveStatus(apiStatus);
-              await supabase.from('cpg_certificates').update({ status: apiStatus }).eq('certificate_code', code);
+              await supabase.from('cpg_certificates').update({ status: apiStatus }).eq('certificate_code', data.certificate_code);
             }
           } catch {}
           setFetchingLive(false);
@@ -525,6 +537,11 @@ function CertificateVerifyView({ code }) {
                   </div>
                 </div>
               </div>
+              {cert.certificate_code !== code && (
+                <div className="bg-blue-900/20 border border-blue-700/30 rounded-xl px-4 py-3">
+                  <p className="text-blue-200 text-xs">El documento presentado es una reimpresión con código <span className="font-mono">{code}</span>. El registro oficial de este certificado es el código y la fecha de emisión que se muestran arriba.</p>
+                </div>
+              )}
               <div className="flex items-center gap-2 bg-green-900/20 border border-green-700/30 rounded-xl px-4 py-3 mt-2">
                 <Shield size={16} className="text-green-400 shrink-0" />
                 <p className="text-green-300 text-xs">Este certificado fue generado y registrado automáticamente por el sistema de Aula Virtual CPG. Su autenticidad está garantizada mediante código único e infalsificable.</p>
@@ -3983,11 +4000,18 @@ function CertificateView({ video, userProfile, sessionUser, onBack, certTemplate
   const [editableName, setEditableName] = useState(userProfile.name || sessionUser?.name || '');
 
   const tpl = { ...DEFAULT_CERT_CONFIG, ...certTemplate };
-  const currentDate = new Date();
+  const [currentDate] = useState(() => new Date());
   const fmt = (d) => d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
   const collegiateNum = userProfile.collegiateNumber || sessionUser?.collegiateNumber || '0000';
-  const certificateCode = 'CPG-' + fmt(currentDate) + '-' + collegiateNum + '-' + video.id;
-  const dateFormatted = currentDate.toLocaleDateString('es-GT', { year: 'numeric', month: 'long', day: 'numeric' });
+  // El PDF solo se habilita cuando su código existe en cpg_certificates. Si el
+  // certificado ya existía (reimpresión), se usan su código y fecha originales:
+  // generar uno nuevo con la fecha de hoy produce un QR que no verifica.
+  const needsRegistration = !!supabase && collegiateNum !== '0000';
+  const [registeredCert, setRegisteredCert] = useState(null);
+  const [registerError, setRegisterError] = useState('');
+  const certificateCode = registeredCert?.certificate_code || ('CPG-' + fmt(currentDate) + '-' + collegiateNum + '-' + video.id);
+  const issuedDate = registeredCert ? new Date(registeredCert.issued_at) : currentDate;
+  const dateFormatted = issuedDate.toLocaleDateString('es-GT', { year: 'numeric', month: 'long', day: 'numeric' });
   const qrUrl = getCertQrUrl(certificateCode);
 
   useEffect(() => {
@@ -4013,26 +4037,38 @@ function CertificateView({ video, userProfile, sessionUser, onBack, certTemplate
     tryResolve();
   }, [userProfile.collegiateNumber, sessionUser?.collegiateNumber]);
 
-  useEffect(() => {
-    if (!supabase || saved) return;
-    if (!collegiateNum || collegiateNum === '0000') return;
-    if (!imageLoaded) return;
-    setSaved(true);
-    // Construir snapshot de comisiones firmantes del curso (si tiene)
-    const certCommissions = (video.hasCommissions && video.commissions && commissions.length > 0)
-      ? commissions.filter(c => video.commissions.includes(c.id)).map(c => ({
-          id: c.id,
-          commission_name: c.commission_name,
-          signer_name: c.signer_name,
-          signer_title: c.signer_title,
-          signature_url: c.signature_url,
-          logo_url: c.logo_url || null,
-        }))
-      : [];
-    // Chequear si ya existe certificado para este colegiado/curso (anti-duplicado)
-    supabase.from('cpg_certificates').select('certificate_code').eq('collegiate_number', collegiateNum).eq('video_id', video.id).maybeSingle().then(({ data: existing }) => {
-      if (existing) { console.log('[CPG Cert] Ya existía certificado para este colegiado/curso:', existing.certificate_code); return; }
-      supabase.from('cpg_certificates').insert({
+  const findRegisteredCert = async () => {
+    const { data } = await supabase.from('cpg_certificates').select('certificate_code, issued_at').eq('collegiate_number', collegiateNum).eq('video_id', video.id).maybeSingle();
+    return data;
+  };
+
+  const registerCertificate = async () => {
+    setRegisterError('');
+    try {
+      // Chequear si ya existe certificado para este colegiado/curso (anti-duplicado)
+      const existing = await findRegisteredCert();
+      if (existing) { setRegisteredCert(existing); return; }
+      // RLS solo permite insertar con sesión de Supabase. La sesión local (cpg_session)
+      // puede seguir activa aunque la de Supabase haya expirado: sin este chequeo el
+      // INSERT falla con 401 y el usuario descarga un PDF cuyo código no existe.
+      let { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        try { await supabase.auth.refreshSession(); } catch {}
+        ({ data: { session } } = await supabase.auth.getSession());
+      }
+      if (!session) { setRegisterError('session'); return; }
+      // Construir snapshot de comisiones firmantes del curso (si tiene)
+      const certCommissions = (video.hasCommissions && video.commissions && commissions.length > 0)
+        ? commissions.filter(c => video.commissions.includes(c.id)).map(c => ({
+            id: c.id,
+            commission_name: c.commission_name,
+            signer_name: c.signer_name,
+            signer_title: c.signer_title,
+            signature_url: c.signature_url,
+            logo_url: c.logo_url || null,
+          }))
+        : [];
+      const record = {
         certificate_code: certificateCode,
         collegiate_number: collegiateNum,
         recipient_name: editableName || userProfile.name || '',
@@ -4043,15 +4079,32 @@ function CertificateView({ video, userProfile, sessionUser, onBack, certTemplate
         issued_at: currentDate.toISOString(),
         verify_url: `${APP_URL}/?cert=${certificateCode}`,
         commissions_snapshot: certCommissions,
-      }).then(({ error }) => {
-        if (error && error.code !== '23505') console.warn('[CPG Cert] No se pudo guardar registro:', error.message);
-        if (!error) logAuditAuto('cert_emitted', 'certificate', certificateCode, { recipient: editableName || userProfile.name || '', video: video.title, collegiate: collegiateNum });
-      });
-    });
+      };
+      const { error } = await supabase.from('cpg_certificates').insert(record);
+      if (error) {
+        const dup = error.code === '23505' ? await findRegisteredCert() : null;
+        if (dup) { setRegisteredCert(dup); return; }
+        console.warn('[CPG Cert] No se pudo guardar registro:', error.message);
+        setRegisterError(error.code === '42501' ? 'session' : error.message);
+        return;
+      }
+      setRegisteredCert({ certificate_code: record.certificate_code, issued_at: record.issued_at });
+      logAuditAuto('cert_emitted', 'certificate', certificateCode, { recipient: editableName || userProfile.name || '', video: video.title, collegiate: collegiateNum });
+    } catch (e) {
+      setRegisterError(e.message || 'Error de conexión');
+    }
+  };
+
+  useEffect(() => {
+    if (!needsRegistration || saved) return;
+    if (!imageLoaded) return;
+    setSaved(true);
+    registerCertificate();
   }, [resolvedStatus, saved, imageLoaded]);
 
   const handleDownloadPDF = async () => {
     if (!certRef.current || !imageLoaded) { alert('Espera a que la plantilla del certificado cargue completamente.'); return; }
+    if (needsRegistration && !registeredCert) { alert('El certificado aún no está registrado en el sistema de verificación.'); return; }
     if (!editableName.trim()) { alert('Ingresa tu nombre completo antes de descargar el certificado.'); return; }
     setIsGenerating(true);
     // Guardar nombre actualizado en el perfil
@@ -4082,10 +4135,25 @@ function CertificateView({ video, userProfile, sessionUser, onBack, certTemplate
     <div className="flex flex-col items-center gap-6 w-full overflow-hidden">
       <div className="flex flex-wrap gap-3 print:hidden justify-center">
         <button onClick={onBack} className="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded text-sm">Cerrar</button>
-        <button onClick={handleDownloadPDF} disabled={isGenerating || !imageLoaded} className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 disabled:cursor-not-allowed text-white px-4 py-2 rounded font-bold flex items-center gap-2 text-sm">
+        <button onClick={handleDownloadPDF} disabled={isGenerating || !imageLoaded || (needsRegistration && !registeredCert)} className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 disabled:cursor-not-allowed text-white px-4 py-2 rounded font-bold flex items-center gap-2 text-sm">
           {isGenerating ? <><Loader2 size={16} className="animate-spin" /> Generando...</> : <><Download size={16} /> Descargar PDF</>}
         </button>
       </div>
+      {needsRegistration && !registeredCert && imageLoaded && (
+        registerError ? (
+          <div className="print:hidden w-full max-w-md bg-red-500/10 border border-red-500/30 rounded-lg px-4 py-3 text-sm text-red-300 flex flex-col gap-2">
+            <div className="flex items-start gap-2">
+              <XCircle size={16} className="mt-0.5 flex-shrink-0" />
+              <span>{registerError === 'session'
+                ? 'Tu sesión expiró y el certificado no se pudo registrar. Cierra sesión, vuelve a ingresar y repite este paso para obtener un certificado verificable.'
+                : 'No se pudo registrar el certificado en el sistema de verificación: ' + registerError}</span>
+            </div>
+            <button onClick={registerCertificate} className="self-end text-xs font-semibold text-white bg-red-700 hover:bg-red-600 rounded px-3 py-1.5">Reintentar</button>
+          </div>
+        ) : (
+          <div className="print:hidden text-blue-300 text-sm flex items-center gap-2"><Loader2 size={16} className="animate-spin" /> Registrando certificado...</div>
+        )
+      )}
       <div className="print:hidden w-full max-w-md px-2">
         <label className="block text-gray-400 text-xs uppercase tracking-wider mb-1.5">Nombre en el certificado</label>
         <input
