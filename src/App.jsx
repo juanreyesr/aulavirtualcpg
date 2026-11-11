@@ -3,7 +3,7 @@ import {
   Play, CheckCircle, XCircle, LogOut, Plus, Trash2, Award,
   ChevronLeft, ChevronDown, Lock, ExternalLink, X, CalendarDays, Eye, EyeOff,
   Download, Loader2, UserCheck, UserX, Edit2, Users, Radio, Wifi, Video,
-  Search, Mail, Shield, History, QrCode, KeyRound, Upload, Image, Type, Settings, Printer, RefreshCw, Copy
+  Search, Mail, Shield, History, QrCode, KeyRound, Upload, Image, Type, Settings, Printer, RefreshCw, Copy, Clock
 } from 'lucide-react';
 import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY, SSO_PARAM, pedirCodigoSSO, ssoListo } from './supabaseClient';
 import { createEmptyQuestions, normalizeLegacyQuizQuestions, parseQuizImport, validateCertificateQuiz } from './utils/quizImport';
@@ -171,6 +171,24 @@ const uploadHomepagePromoAsset = async (file) => {
   const { data: { publicUrl } } = supabase.storage.from('cpg-homepage-promos').getPublicUrl(path);
   return publicUrl;
 };
+
+// ── DOMINIOS DE CORREO DE MICROSOFT ─────────────
+// Microsoft suele bloquear el correo de verificación de Supabase. Estas cuentas
+// entran a una cola (trigger en auth.users) y se aprueban cada hora si el
+// colegiado vinculado está ACTIVO. Mismo criterio que
+// aulacaeduc.is_problematic_email_domain() en la base de datos.
+const isMicrosoftEmail = (email) =>
+  /^(hotmail|outlook|live|msn|windowslive|passport)\./.test(String(email || '').toLowerCase().split('@')[1] || '');
+
+const MicrosoftEmailNotice = ({ compact = false }) => (
+  <div className={`bg-amber-900/15 border border-amber-600/30 rounded-lg px-3 py-2 text-amber-200/90 flex items-start gap-2 ${compact ? 'text-[11px] mt-1.5' : 'text-xs mb-4 text-left'}`}>
+    <Clock size={compact ? 12 : 14} className="mt-0.5 flex-shrink-0 text-amber-400" />
+    <span>
+      Con correos Hotmail/Outlook la activación puede tardar <b>hasta 1 hora</b>, porque los servidores de Microsoft suelen bloquear el correo de verificación.
+      {compact ? ' Tu cuenta se revisa y activa sin que tengas que hacer nada.' : ' No necesitas el correo: tu cuenta se revisa y activa en ese plazo. Intenta ingresar al aula en una hora.'}
+    </span>
+  </div>
+);
 
 // ── YOUTUBE UTILS ────────────────────────────────
 const extractYouTubeId = (value) => {
@@ -906,7 +924,9 @@ function LoginColModal({ onSession }) {
           } else if (signInErr.message.toLowerCase().includes('not confirmed') || signInErr.message.toLowerCase().includes('email not confirmed')) {
             setEmailNotConfirmed(true);
             setRegisteredEmail(emailInput.trim());
-            setError('Debes confirmar tu correo antes de ingresar. Revisa tu bandeja de entrada (incluyendo spam).');
+            setError(isMicrosoftEmail(emailInput)
+              ? 'Tu cuenta aún está en proceso de activación. Con correos Hotmail/Outlook puede tardar hasta 1 hora; intenta de nuevo más tarde.'
+              : 'Debes confirmar tu correo antes de ingresar. Revisa tu bandeja de entrada (incluyendo spam).');
           } else { setError(signInErr.message); }
           setLoading(false); return;
         }
@@ -1065,8 +1085,14 @@ function LoginColModal({ onSession }) {
                   <h2 className="text-white font-bold text-lg mb-2">Revisa tu correo</h2>
                   <p className="text-gray-400 text-sm mb-1">Enviamos un enlace de confirmación a:</p>
                   <p className="text-blue-300 font-mono text-sm mb-3">{maskEmail(registeredEmail || emailInput)}</p>
-                  <p className="text-gray-500 text-xs mb-1">Haz clic en el enlace del correo para activar tu cuenta.</p>
-                  <p className="text-gray-600 text-xs mb-5">Si no lo ves, revisa la carpeta de spam o correo no deseado.</p>
+                  {isMicrosoftEmail(registeredEmail || emailInput) ? (
+                    <MicrosoftEmailNotice />
+                  ) : (
+                    <>
+                      <p className="text-gray-500 text-xs mb-1">Haz clic en el enlace del correo para activar tu cuenta.</p>
+                      <p className="text-gray-600 text-xs mb-5">Si no lo ves, revisa la carpeta de spam o correo no deseado.</p>
+                    </>
+                  )}
                   <button onClick={handleResendConfirmation} disabled={loading} className="w-full bg-gray-800 hover:bg-gray-700 border border-gray-600 text-gray-300 hover:text-white font-medium py-3 rounded-lg transition flex items-center justify-center gap-2 text-sm mb-3">
                     {loading ? <Loader2 size={16} className="animate-spin" /> : <><Mail size={16} /> Reenviar correo de confirmación</>}
                   </button>
@@ -1159,6 +1185,7 @@ function LoginColModal({ onSession }) {
                   <div className="mb-3">
                     <label className="block text-gray-400 text-xs mb-1.5 uppercase tracking-wider">Correo electrónico</label>
                     <input type="email" value={emailInput} onChange={e => { setEmailInput(e.target.value); setError(''); }} onKeyDown={e => e.key === 'Enter' && handleEmailAuth()} className="w-full bg-black border border-gray-700 rounded-lg p-3 text-white focus:border-blue-500 outline-none transition" placeholder="tucorreo@ejemplo.com" />
+                    {authMode === 'register' && isMicrosoftEmail(emailInput) && <MicrosoftEmailNotice compact />}
                   </div>
                   <div className="mb-4">
                     <label className="block text-gray-400 text-xs mb-1.5 uppercase tracking-wider">Contraseña {authMode === 'register' && <span className="text-gray-600 normal-case">(mínimo 6 caracteres)</span>}</label>
