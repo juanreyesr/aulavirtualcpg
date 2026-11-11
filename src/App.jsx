@@ -5,7 +5,7 @@ import {
   Download, Loader2, UserCheck, UserX, Edit2, Users, Radio, Wifi, Video,
   Search, Mail, Shield, History, QrCode, KeyRound, Upload, Image, Type, Settings, Printer, RefreshCw, Copy
 } from 'lucide-react';
-import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from './supabaseClient';
+import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY, SSO_PARAM, pedirCodigoSSO, ssoListo } from './supabaseClient';
 import { createEmptyQuestions, normalizeLegacyQuizQuestions, parseQuizImport, validateCertificateQuiz } from './utils/quizImport';
 // html2canvas + jspdf se cargan dinámicamente al descargar PDFs (lazy)
 // Componentes pesados de admin se lazy-loadan (lazy + Suspense más abajo)
@@ -336,21 +336,13 @@ async function navigateToCreditos(sessionUser) {
   const query = sessionUser?.collegiateNumber
     ? `?sso_colegiado=${encodeURIComponent(sessionUser.collegiateNumber)}&sso_nombre=${encodeURIComponent(sessionUser.name || '')}`
     : '';
-  // Si por cualquier razón no hay sesión utilizable, navegamos igual.
-  // El botón siempre debe llevar al usuario a la otra app.
-  let session = null;
-  if (supabase) {
-    try {
-      ({ data: { session } } = await supabase.auth.getSession());
-      if (!session) {
-        try { await supabase.auth.refreshSession(); } catch {}
-        ({ data: { session } } = await supabase.auth.getSession());
-      }
-    } catch {}
-  }
-  if (!session) { window.location.href = `${base}${query}`; return; }
-  const hash = `access_token=${session.access_token}&refresh_token=${session.refresh_token}&token_type=bearer&expires_in=${session.expires_in || 3600}&type=magiclink`;
-  window.location.href = `${base}${query}#${hash}`;
+  // Créditos recibe un código de un solo uso y abre su PROPIA sesión: no se le pasa
+  // la sesión del aula (compartir el refresh token cerraba la sesión en ambas apps).
+  // Si no se consigue el código, navegamos igual: el botón siempre lleva a la otra app.
+  const codigo = await pedirCodigoSSO();
+  window.location.href = codigo
+    ? `${base}${query}#${SSO_PARAM}=${encodeURIComponent(codigo)}`
+    : `${base}${query}`;
 }
 
 
@@ -1737,6 +1729,7 @@ export default function App() {
     let cancelled = false;
     (async () => {
       try {
+        await ssoListo;
         let { data: { session } } = await supabase.auth.getSession();
         if (!session) {
           try { await supabase.auth.refreshSession(); } catch {}
