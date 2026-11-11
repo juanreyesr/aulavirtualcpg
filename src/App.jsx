@@ -172,23 +172,6 @@ const uploadHomepagePromoAsset = async (file) => {
   return publicUrl;
 };
 
-// ── DOMINIOS DE CORREO PROBLEMÁTICOS ───────────────
-// Cuando alguien crea cuenta con uno de estos dominios, el correo de
-// verificación de Supabase frecuentemente no llega (Microsoft lo bloquea).
-// Por eso acumulamos esas cuentas en cpg_email_verification_queue para
-// que el admin pueda activarlas manualmente desde el panel.
-const PROBLEMATIC_EMAIL_DOMAINS = [
-  'hotmail.com', 'hotmail.es', 'hotmail.com.gt',
-  'outlook.com', 'outlook.es',
-  'live.com', 'live.com.mx',
-  'msn.com',
-];
-const isProblematicEmailDomain = (email) => {
-  if (!email) return false;
-  const domain = String(email).toLowerCase().split('@')[1] || '';
-  return PROBLEMATIC_EMAIL_DOMAINS.includes(domain);
-};
-
 // ── YOUTUBE UTILS ────────────────────────────────
 const extractYouTubeId = (value) => {
   if (!value) return '';
@@ -905,24 +888,9 @@ function LoginColModal({ onSession }) {
           { onConflict: 'collegiate_number' }
         );
 
-        // Si el dominio del correo es de los que suelen no recibir verificación
-        // (Hotmail/Outlook/Live/MSN), acumular en la cola para activación manual
-        if (isProblematicEmailDomain(newEmail) && !signUpData?.session) {
-          const domain = newEmail.split('@')[1] || '';
-          try {
-            await supabase
-              .from('cpg_email_verification_queue')
-              .upsert(
-                {
-                  email: newEmail,
-                  collegiate_number: String(cpgData.colegiado || ''),
-                  name: cpgData.name || '',
-                  domain,
-                },
-                { onConflict: 'email' }
-              );
-          } catch {} // best-effort, no bloquea el signup
-        }
+        // Las cuentas Hotmail/Outlook/Live/MSN sin confirmar entran a la cola
+        // de activación manual desde el servidor (trigger en auth.users),
+        // ver supabase/migrations/20261111120000_email_verification_queue_server_side.sql
 
         if (!signUpData?.session) {
           setSignUpSent(true);
@@ -6480,6 +6448,7 @@ function UserVerifyManager({ currentAdminRole }) {
   // Cola de cuentas Hotmail pendientes
   const [queueRows, setQueueRows] = useState([]);
   const [queueLoading, setQueueLoading] = useState(true);
+  const [queueError, setQueueError] = useState('');
   // Estado por fila (verifying/activating)
   const [rowState, setRowState] = useState({});
 
@@ -6488,14 +6457,16 @@ function UserVerifyManager({ currentAdminRole }) {
   const loadQueue = useCallback(async () => {
     if (!supabase) return;
     setQueueLoading(true);
+    setQueueError('');
     try {
       const { data, error } = await supabase
         .from('cpg_email_verification_queue')
         .select('*')
         .is('activated_at', null)
         .order('created_at', { ascending: false });
-      if (!error) setQueueRows(data || []);
-    } catch {}
+      if (error) setQueueError(error.message);
+      else setQueueRows(data || []);
+    } catch (e) { setQueueError(e?.message || String(e)); }
     setQueueLoading(false);
   }, []);
 
@@ -6617,6 +6588,11 @@ function UserVerifyManager({ currentAdminRole }) {
           <div className="bg-black/30 border border-gray-800 rounded-xl px-4 py-8 text-center text-gray-500 text-sm">
             <Loader2 size={20} className="animate-spin mx-auto mb-2 text-amber-500" />
             Cargando cuentas pendientes…
+          </div>
+        ) : queueError ? (
+          <div className="bg-red-900/10 border border-red-700/30 rounded-xl px-4 py-6 text-center">
+            <p className="text-red-300 text-sm font-semibold">No se pudo cargar la cola</p>
+            <p className="text-red-200/60 text-xs mt-0.5 break-words">{queueError}</p>
           </div>
         ) : queueRows.length === 0 ? (
           <div className="bg-emerald-900/10 border border-emerald-700/30 rounded-xl px-4 py-6 text-center">
