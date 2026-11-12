@@ -892,7 +892,12 @@ function LoginColModal({ onSession }) {
         const { data: signUpData, error: signUpErr } = await supabase.auth.signUp({
           email: emailInput.trim(),
           password: passwordInput,
-          options: { emailRedirectTo: APP_URL },
+          options: {
+            emailRedirectTo: APP_URL,
+            // Vincula la cuenta a su colegiado aunque el perfil se sobrescriba
+            // (p. ej. invitados, que comparten el número 100000)
+            data: { collegiate_number: String(cpgData.colegiado || ''), name: cpgData.name || '' },
+          },
         });
         if (signUpErr) {
           if (signUpErr.message.includes('already registered')) {
@@ -6468,6 +6473,44 @@ function EmailChangeManager({ currentAdminRole, currentAdminEmail }) {
   );
 }
 
+// Muestra a quién pertenece una cuenta de la cola de activación
+function QueueRowIdentity({ row }) {
+  const nombre = row.nombre_cpg || row.name;
+  if (row.tipo === 'colegiado') {
+    const activo = String(row.estatus || '').toUpperCase() === 'ACTIVO';
+    return (
+      <div className="mt-1.5 text-xs bg-emerald-900/15 border border-emerald-700/30 rounded-md px-2 py-1.5 text-emerald-200">
+        <span className="font-bold">Colegiado {row.collegiate_number}</span>
+        {nombre && <span> · {nombre}</span>}
+        {row.estatus && <span className={`ml-1.5 text-[10px] font-bold px-1.5 py-0.5 rounded ${activo ? 'bg-green-900/50 text-green-300' : 'bg-red-900/50 text-red-300'}`}>{row.estatus}</span>}
+        <p className="text-[11px] text-emerald-300/60 mt-0.5">Se activa automáticamente en la próxima hora.</p>
+      </div>
+    );
+  }
+  if (row.tipo === 'invitado') {
+    return (
+      <div className="mt-1.5 text-xs bg-sky-900/15 border border-sky-700/30 rounded-md px-2 py-1.5 text-sky-200">
+        <span className="font-bold">Invitado / personal de apoyo</span>{nombre && <span> · {nombre}</span>}
+        <p className="text-[11px] text-sky-300/60 mt-0.5">No es colegiado: actívalo solo si reconoces a la persona.</p>
+      </div>
+    );
+  }
+  if (row.tipo === 'colegiado_no_verificado') {
+    return (
+      <div className="mt-1.5 text-xs bg-amber-900/15 border border-amber-700/30 rounded-md px-2 py-1.5 text-amber-200">
+        <span className="font-bold">Colegiado {row.collegiate_number}</span>{nombre && <span> · {nombre}</span>}
+        <p className="text-[11px] text-amber-300/60 mt-0.5">Número no encontrado en el registro del CPG: revisa antes de activar.</p>
+      </div>
+    );
+  }
+  return (
+    <div className="mt-1.5 text-xs bg-gray-800/40 border border-gray-700 rounded-md px-2 py-1.5 text-gray-300">
+      <span className="font-bold">Sin colegiado vinculado</span>
+      <p className="text-[11px] text-gray-500 mt-0.5">Probablemente invitado o cuenta de prueba. Si nadie la reclama, puedes descartarla con la ✕.</p>
+    </div>
+  );
+}
+
 function UserVerifyManager({ currentAdminRole }) {
   const [email, setEmail] = useState('');
   const [status, setStatus] = useState('');
@@ -6486,11 +6529,7 @@ function UserVerifyManager({ currentAdminRole }) {
     setQueueLoading(true);
     setQueueError('');
     try {
-      const { data, error } = await supabase
-        .from('cpg_email_verification_queue')
-        .select('*')
-        .is('activated_at', null)
-        .order('created_at', { ascending: false });
+      const { data, error } = await supabase.rpc('admin_verification_queue');
       if (error) setQueueError(error.message);
       else setQueueRows(data || []);
     } catch (e) { setQueueError(e?.message || String(e)); }
@@ -6639,9 +6678,8 @@ function UserVerifyManager({ currentAdminRole }) {
                         <p className="text-white font-semibold text-sm truncate">{row.email}</p>
                         <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-900/40 text-amber-300 font-bold">{row.domain || 'pendiente'}</span>
                       </div>
+                      <QueueRowIdentity row={row} />
                       <div className="flex items-center gap-3 mt-1 text-xs text-gray-500 flex-wrap">
-                        {row.name && <span><span className="text-gray-400">Nombre:</span> {row.name}</span>}
-                        {row.collegiate_number && <span><span className="text-gray-400">Colegiado:</span> {row.collegiate_number}</span>}
                         <span><span className="text-gray-400">Creado:</span> {fmtDate(row.created_at)}</span>
                       </div>
                     </div>
