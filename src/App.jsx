@@ -3,7 +3,7 @@ import {
   Play, CheckCircle, XCircle, LogOut, Plus, Trash2, Award,
   ChevronLeft, ChevronDown, Lock, ExternalLink, X, CalendarDays, Eye, EyeOff,
   Download, Loader2, UserCheck, UserX, Edit2, Users, Radio, Wifi, Video,
-  Search, Mail, Shield, History, QrCode, KeyRound, Upload, Image, Type, Settings, Printer, RefreshCw, Copy
+  Search, Mail, Shield, History, QrCode, KeyRound, Upload, Image, Type, Settings, Printer, RefreshCw, Copy, Clock
 } from 'lucide-react';
 import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY, SSO_PARAM, pedirCodigoSSO, ssoListo } from './supabaseClient';
 import { createEmptyQuestions, normalizeLegacyQuizQuestions, parseQuizImport, validateCertificateQuiz } from './utils/quizImport';
@@ -172,22 +172,23 @@ const uploadHomepagePromoAsset = async (file) => {
   return publicUrl;
 };
 
-// ── DOMINIOS DE CORREO PROBLEMÁTICOS ───────────────
-// Cuando alguien crea cuenta con uno de estos dominios, el correo de
-// verificación de Supabase frecuentemente no llega (Microsoft lo bloquea).
-// Por eso acumulamos esas cuentas en cpg_email_verification_queue para
-// que el admin pueda activarlas manualmente desde el panel.
-const PROBLEMATIC_EMAIL_DOMAINS = [
-  'hotmail.com', 'hotmail.es', 'hotmail.com.gt',
-  'outlook.com', 'outlook.es',
-  'live.com', 'live.com.mx',
-  'msn.com',
-];
-const isProblematicEmailDomain = (email) => {
-  if (!email) return false;
-  const domain = String(email).toLowerCase().split('@')[1] || '';
-  return PROBLEMATIC_EMAIL_DOMAINS.includes(domain);
-};
+// ── DOMINIOS DE CORREO DE MICROSOFT ─────────────
+// Microsoft suele bloquear el correo de verificación de Supabase. Estas cuentas
+// entran a una cola (trigger en auth.users) y se aprueban cada hora si el
+// colegiado vinculado está ACTIVO. Mismo criterio que
+// aulacaeduc.is_problematic_email_domain() en la base de datos.
+const isMicrosoftEmail = (email) =>
+  /^(hotmail|outlook|live|msn|windowslive|passport)\./.test(String(email || '').toLowerCase().split('@')[1] || '');
+
+const MicrosoftEmailNotice = ({ compact = false }) => (
+  <div className={`bg-amber-900/15 border border-amber-600/30 rounded-lg px-3 py-2 text-amber-200/90 flex items-start gap-2 ${compact ? 'text-[11px] mt-1.5' : 'text-xs mb-4 text-left'}`}>
+    <Clock size={compact ? 12 : 14} className="mt-0.5 flex-shrink-0 text-amber-400" />
+    <span>
+      Con correos Hotmail/Outlook la activación puede tardar <b>hasta 1 hora</b>, porque los servidores de Microsoft suelen bloquear el correo de verificación.
+      {compact ? ' Tu cuenta se revisa y activa sin que tengas que hacer nada.' : ' No necesitas el correo: tu cuenta se revisa y activa en ese plazo. Intenta ingresar al aula en una hora.'}
+    </span>
+  </div>
+);
 
 // ── YOUTUBE UTILS ────────────────────────────────
 const extractYouTubeId = (value) => {
@@ -891,7 +892,12 @@ function LoginColModal({ onSession }) {
         const { data: signUpData, error: signUpErr } = await supabase.auth.signUp({
           email: emailInput.trim(),
           password: passwordInput,
-          options: { emailRedirectTo: APP_URL },
+          options: {
+            emailRedirectTo: APP_URL,
+            // Vincula la cuenta a su colegiado aunque el perfil se sobrescriba
+            // (p. ej. invitados, que comparten el número 100000)
+            data: { collegiate_number: String(cpgData.colegiado || ''), name: cpgData.name || '' },
+          },
         });
         if (signUpErr) {
           if (signUpErr.message.includes('already registered')) {
@@ -905,24 +911,9 @@ function LoginColModal({ onSession }) {
           { onConflict: 'collegiate_number' }
         );
 
-        // Si el dominio del correo es de los que suelen no recibir verificación
-        // (Hotmail/Outlook/Live/MSN), acumular en la cola para activación manual
-        if (isProblematicEmailDomain(newEmail) && !signUpData?.session) {
-          const domain = newEmail.split('@')[1] || '';
-          try {
-            await supabase
-              .from('cpg_email_verification_queue')
-              .upsert(
-                {
-                  email: newEmail,
-                  collegiate_number: String(cpgData.colegiado || ''),
-                  name: cpgData.name || '',
-                  domain,
-                },
-                { onConflict: 'email' }
-              );
-          } catch {} // best-effort, no bloquea el signup
-        }
+        // Las cuentas Hotmail/Outlook/Live/MSN sin confirmar entran a la cola
+        // de activación manual desde el servidor (trigger en auth.users),
+        // ver supabase/migrations/20261111120000_email_verification_queue_server_side.sql
 
         if (!signUpData?.session) {
           setSignUpSent(true);
@@ -938,7 +929,9 @@ function LoginColModal({ onSession }) {
           } else if (signInErr.message.toLowerCase().includes('not confirmed') || signInErr.message.toLowerCase().includes('email not confirmed')) {
             setEmailNotConfirmed(true);
             setRegisteredEmail(emailInput.trim());
-            setError('Debes confirmar tu correo antes de ingresar. Revisa tu bandeja de entrada (incluyendo spam).');
+            setError(isMicrosoftEmail(emailInput)
+              ? 'Tu cuenta aún está en proceso de activación. Con correos Hotmail/Outlook puede tardar hasta 1 hora; intenta de nuevo más tarde.'
+              : 'Debes confirmar tu correo antes de ingresar. Revisa tu bandeja de entrada (incluyendo spam).');
           } else { setError(signInErr.message); }
           setLoading(false); return;
         }
@@ -1097,8 +1090,14 @@ function LoginColModal({ onSession }) {
                   <h2 className="text-white font-bold text-lg mb-2">Revisa tu correo</h2>
                   <p className="text-gray-400 text-sm mb-1">Enviamos un enlace de confirmación a:</p>
                   <p className="text-blue-300 font-mono text-sm mb-3">{maskEmail(registeredEmail || emailInput)}</p>
-                  <p className="text-gray-500 text-xs mb-1">Haz clic en el enlace del correo para activar tu cuenta.</p>
-                  <p className="text-gray-600 text-xs mb-5">Si no lo ves, revisa la carpeta de spam o correo no deseado.</p>
+                  {isMicrosoftEmail(registeredEmail || emailInput) ? (
+                    <MicrosoftEmailNotice />
+                  ) : (
+                    <>
+                      <p className="text-gray-500 text-xs mb-1">Haz clic en el enlace del correo para activar tu cuenta.</p>
+                      <p className="text-gray-600 text-xs mb-5">Si no lo ves, revisa la carpeta de spam o correo no deseado.</p>
+                    </>
+                  )}
                   <button onClick={handleResendConfirmation} disabled={loading} className="w-full bg-gray-800 hover:bg-gray-700 border border-gray-600 text-gray-300 hover:text-white font-medium py-3 rounded-lg transition flex items-center justify-center gap-2 text-sm mb-3">
                     {loading ? <Loader2 size={16} className="animate-spin" /> : <><Mail size={16} /> Reenviar correo de confirmación</>}
                   </button>
@@ -1191,6 +1190,7 @@ function LoginColModal({ onSession }) {
                   <div className="mb-3">
                     <label className="block text-gray-400 text-xs mb-1.5 uppercase tracking-wider">Correo electrónico</label>
                     <input type="email" value={emailInput} onChange={e => { setEmailInput(e.target.value); setError(''); }} onKeyDown={e => e.key === 'Enter' && handleEmailAuth()} className="w-full bg-black border border-gray-700 rounded-lg p-3 text-white focus:border-blue-500 outline-none transition" placeholder="tucorreo@ejemplo.com" />
+                    {authMode === 'register' && isMicrosoftEmail(emailInput) && <MicrosoftEmailNotice compact />}
                   </div>
                   <div className="mb-4">
                     <label className="block text-gray-400 text-xs mb-1.5 uppercase tracking-wider">Contraseña {authMode === 'register' && <span className="text-gray-600 normal-case">(mínimo 6 caracteres)</span>}</label>
@@ -6473,6 +6473,44 @@ function EmailChangeManager({ currentAdminRole, currentAdminEmail }) {
   );
 }
 
+// Muestra a quién pertenece una cuenta de la cola de activación
+function QueueRowIdentity({ row }) {
+  const nombre = row.nombre_cpg || row.name;
+  if (row.tipo === 'colegiado') {
+    const activo = String(row.estatus || '').toUpperCase() === 'ACTIVO';
+    return (
+      <div className="mt-1.5 text-xs bg-emerald-900/15 border border-emerald-700/30 rounded-md px-2 py-1.5 text-emerald-200">
+        <span className="font-bold">Colegiado {row.collegiate_number}</span>
+        {nombre && <span> · {nombre}</span>}
+        {row.estatus && <span className={`ml-1.5 text-[10px] font-bold px-1.5 py-0.5 rounded ${activo ? 'bg-green-900/50 text-green-300' : 'bg-red-900/50 text-red-300'}`}>{row.estatus}</span>}
+        <p className="text-[11px] text-emerald-300/60 mt-0.5">Se activa automáticamente en la próxima hora.</p>
+      </div>
+    );
+  }
+  if (row.tipo === 'invitado') {
+    return (
+      <div className="mt-1.5 text-xs bg-sky-900/15 border border-sky-700/30 rounded-md px-2 py-1.5 text-sky-200">
+        <span className="font-bold">Invitado / personal de apoyo</span>{nombre && <span> · {nombre}</span>}
+        <p className="text-[11px] text-sky-300/60 mt-0.5">No es colegiado: actívalo solo si reconoces a la persona.</p>
+      </div>
+    );
+  }
+  if (row.tipo === 'colegiado_no_verificado') {
+    return (
+      <div className="mt-1.5 text-xs bg-amber-900/15 border border-amber-700/30 rounded-md px-2 py-1.5 text-amber-200">
+        <span className="font-bold">Colegiado {row.collegiate_number}</span>{nombre && <span> · {nombre}</span>}
+        <p className="text-[11px] text-amber-300/60 mt-0.5">Número no encontrado en el registro del CPG: revisa antes de activar.</p>
+      </div>
+    );
+  }
+  return (
+    <div className="mt-1.5 text-xs bg-gray-800/40 border border-gray-700 rounded-md px-2 py-1.5 text-gray-300">
+      <span className="font-bold">Sin colegiado vinculado</span>
+      <p className="text-[11px] text-gray-500 mt-0.5">Probablemente invitado o cuenta de prueba. Si nadie la reclama, puedes descartarla con la ✕.</p>
+    </div>
+  );
+}
+
 function UserVerifyManager({ currentAdminRole }) {
   const [email, setEmail] = useState('');
   const [status, setStatus] = useState('');
@@ -6480,6 +6518,7 @@ function UserVerifyManager({ currentAdminRole }) {
   // Cola de cuentas Hotmail pendientes
   const [queueRows, setQueueRows] = useState([]);
   const [queueLoading, setQueueLoading] = useState(true);
+  const [queueError, setQueueError] = useState('');
   // Estado por fila (verifying/activating)
   const [rowState, setRowState] = useState({});
 
@@ -6488,14 +6527,12 @@ function UserVerifyManager({ currentAdminRole }) {
   const loadQueue = useCallback(async () => {
     if (!supabase) return;
     setQueueLoading(true);
+    setQueueError('');
     try {
-      const { data, error } = await supabase
-        .from('cpg_email_verification_queue')
-        .select('*')
-        .is('activated_at', null)
-        .order('created_at', { ascending: false });
-      if (!error) setQueueRows(data || []);
-    } catch {}
+      const { data, error } = await supabase.rpc('admin_verification_queue');
+      if (error) setQueueError(error.message);
+      else setQueueRows(data || []);
+    } catch (e) { setQueueError(e?.message || String(e)); }
     setQueueLoading(false);
   }, []);
 
@@ -6618,6 +6655,11 @@ function UserVerifyManager({ currentAdminRole }) {
             <Loader2 size={20} className="animate-spin mx-auto mb-2 text-amber-500" />
             Cargando cuentas pendientes…
           </div>
+        ) : queueError ? (
+          <div className="bg-red-900/10 border border-red-700/30 rounded-xl px-4 py-6 text-center">
+            <p className="text-red-300 text-sm font-semibold">No se pudo cargar la cola</p>
+            <p className="text-red-200/60 text-xs mt-0.5 break-words">{queueError}</p>
+          </div>
         ) : queueRows.length === 0 ? (
           <div className="bg-emerald-900/10 border border-emerald-700/30 rounded-xl px-4 py-6 text-center">
             <CheckCircle size={22} className="mx-auto mb-2 text-emerald-500" />
@@ -6636,9 +6678,8 @@ function UserVerifyManager({ currentAdminRole }) {
                         <p className="text-white font-semibold text-sm truncate">{row.email}</p>
                         <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-900/40 text-amber-300 font-bold">{row.domain || 'pendiente'}</span>
                       </div>
+                      <QueueRowIdentity row={row} />
                       <div className="flex items-center gap-3 mt-1 text-xs text-gray-500 flex-wrap">
-                        {row.name && <span><span className="text-gray-400">Nombre:</span> {row.name}</span>}
-                        {row.collegiate_number && <span><span className="text-gray-400">Colegiado:</span> {row.collegiate_number}</span>}
                         <span><span className="text-gray-400">Creado:</span> {fmtDate(row.created_at)}</span>
                       </div>
                     </div>
