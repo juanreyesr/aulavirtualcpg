@@ -68,6 +68,14 @@ const isValidPublicUrl = (value) => {
   }
 };
 
+// Tipos de actividad del calendario. Es la misma lista que usa Gestiones CAEDUC
+// (Solicitud de publicación e Informe de labores), para que el tipo coincida.
+const ACTIVITY_TYPES = [
+  'Certificación', 'Diplomado', 'Taller', 'Conferencia', 'Seminario',
+  'Congreso', 'Curso', 'Simposio', 'Foro', 'Jornada', 'Reunión',
+  'Reunión interna', 'Especialización', 'Webinar', 'Diagnóstico', 'Retiro', 'Otro',
+];
+
 const GUATEMALA_DEPARTMENTS = [
   'Guatemala', 'El Progreso', 'Sacatepéquez', 'Chimaltenango', 'Escuintla',
   'Santa Rosa', 'Sololá', 'Totonicapán', 'Quetzaltenango', 'Suchitepéquez',
@@ -7873,7 +7881,7 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
   const [questions, setQuestions] = useState([]);
   const [quizImportText, setQuizImportText] = useState('');
   const [quizImportMessage, setQuizImportMessage] = useState('');
-  const EMPTY_ACTIVITY_FORM = { title: '', organizer: '', date: '', time: '', horas: '', location: '', registrationLink: '', meetingLink: '', isFull: false, participants: '', costType: 'free', cost: '', scholarshipPct: '', scholarshipAmt: '', hasCommissions: false, commissions: [] };
+  const EMPTY_ACTIVITY_FORM = { title: '', type: '', organizer: '', date: '', time: '', horas: '', location: '', registrationLink: '', meetingLink: '', isFull: false, participants: '', costType: 'free', cost: '', scholarshipPct: '', scholarshipAmt: '', hasCommissions: false, commissions: [] };
   const [activityForm, setActivityForm] = useState(EMPTY_ACTIVITY_FORM);
   const [syncMsg, setSyncMsg] = useState('');
   const [verifyStatusLoading, setVerifyStatusLoading] = useState(false);
@@ -8037,9 +8045,13 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
       } catch (e) { setSaveError('No se pudo eliminar: ' + e.message); }
     }
   };
-  const handleActivityEdit = (a) => { setActivityError(''); setEditingActivity(a); setActivityForm({ title: a.title || '', organizer: a.organizer || '', date: a.date || '', time: a.time || '', horas: a.horas || '', location: a.location || '', registrationLink: a.registrationLink || '', meetingLink: a.meetingLink || '', isFull: Boolean(a.isFull), participants: a.participants || '', costType: a.costType || 'free', cost: a.cost || '', scholarshipPct: a.scholarshipPct || '', scholarshipAmt: a.scholarshipAmt || '', hasCommissions: !!a.hasCommissions, commissions: a.commissions || [] }); };
+  const handleActivityEdit = (a) => { setActivityError(''); setEditingActivity(a); setActivityForm({ title: a.title || '', type: a.type || '', organizer: a.organizer || '', date: a.date || '', time: a.time || '', horas: a.horas || '', location: a.location || '', registrationLink: a.registrationLink || '', meetingLink: a.meetingLink || '', isFull: Boolean(a.isFull), participants: a.participants || '', costType: a.costType || 'free', cost: a.cost || '', scholarshipPct: a.scholarshipPct || '', scholarshipAmt: a.scholarshipAmt || '', hasCommissions: !!a.hasCommissions, commissions: a.commissions || [] }); };
   const handleActivitySave = async () => {
-    if (!activityForm.title || !activityForm.date) { setActivityError('El título y la fecha son obligatorios.'); return; }
+    if (!activityForm.title || !activityForm.date || !activityForm.type) {
+      const faltan = [!activityForm.title && 'el nombre', !activityForm.date && 'la fecha', !activityForm.type && 'el tipo de actividad'].filter(Boolean);
+      setActivityError(`Completa ${faltan.join(', ').replace(/, ([^,]*)$/, ' y $1')}: son obligatorios.`);
+      return;
+    }
     setActivityError('');
     const next = { ...editingActivity, ...activityForm };
     try {
@@ -8380,6 +8392,7 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
               <div className="bg-[#141414] border border-gray-800 rounded-xl p-4 mb-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div><label className="block text-sm text-gray-400 mb-1">Nombre de la actividad</label><input type="text" value={activityForm.title} onChange={e => setActivityForm({ ...activityForm, title: e.target.value })} className="w-full bg-black border border-gray-700 rounded p-2 text-white" /></div>
+                  <div><label htmlFor="activity-type" className="block text-sm text-gray-400 mb-1">Tipo de actividad <span className="text-red-400">*</span></label><select id="activity-type" required value={activityForm.type} onChange={e => setActivityForm({ ...activityForm, type: e.target.value })} className={`w-full bg-black border rounded p-2 text-white ${activityForm.type ? 'border-gray-700' : 'border-amber-500'}`}><option value="">Selecciona el tipo…</option>{ACTIVITY_TYPES.map(t => <option key={t} value={t}>{t}</option>)}{activityForm.type && !ACTIVITY_TYPES.includes(activityForm.type) && <option value={activityForm.type}>{activityForm.type}</option>}</select></div>
                   <div><label className="block text-sm text-gray-400 mb-1">Organizador</label><input type="text" value={activityForm.organizer} onChange={e => setActivityForm({ ...activityForm, organizer: e.target.value })} className="w-full bg-black border border-gray-700 rounded p-2 text-white" /></div>
                   <div><label className="block text-sm text-gray-400 mb-1">Fecha</label><input type="date" value={activityForm.date} onChange={e => setActivityForm({ ...activityForm, date: e.target.value })} className="w-full bg-black border border-gray-700 rounded p-2 text-white" /></div>
                   <div><label className="block text-sm text-gray-400 mb-1">Hora</label><input type="time" value={activityForm.time} onChange={e => setActivityForm({ ...activityForm, time: e.target.value })} className="w-full bg-black border border-gray-700 rounded p-2 text-white" /></div>
@@ -8463,7 +8476,7 @@ function AdminDashboard({ videos, viewCounts, totalViews, activities, liveSessio
                         {a.isFull && <span className="text-xs uppercase bg-red-500/20 text-red-200 border border-red-500/40 px-2 py-0.5 rounded-full">Cupo lleno</span>}
                       </div>
                     </div>
-                    <p className="text-sm text-gray-400">Organiza: {a.organizer || 'Por definir'}</p>
+                    <p className="text-sm text-gray-400">{a.type ? <span className="mr-2 rounded-full border border-indigo-500/40 bg-indigo-900/30 px-2 py-0.5 text-xs text-indigo-200">{a.type}</span> : <span className="mr-2 rounded-full border border-amber-500/40 bg-amber-900/20 px-2 py-0.5 text-xs text-amber-200">Sin tipo — edítala para agregarlo</span>}Organiza: {a.organizer || 'Por definir'}</p>
                     <div className="text-sm text-gray-300 mt-2 space-y-0.5">
                       <p><span className="text-gray-500">Fecha:</span> {a.date ? new Date(a.date + 'T00:00:00').toLocaleDateString('es-GT') : 'Pendiente'}</p>
                       <p><span className="text-gray-500">Hora:</span> {a.time || 'Por confirmar'}</p>
