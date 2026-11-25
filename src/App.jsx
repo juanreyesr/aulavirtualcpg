@@ -332,6 +332,9 @@ const getCompletedKey = (num) => 'cpg_completed_' + num;
 const loadCompleted = (num) => { if (!num || num === '0000') return new Set(); try { const r = localStorage.getItem(getCompletedKey(num)); return r ? new Set(JSON.parse(r)) : new Set(); } catch { return new Set(); } };
 const saveCompleted = (num, s) => { if (!num || num === '0000') return; localStorage.setItem(getCompletedKey(num), JSON.stringify([...s])); };
 
+// Campos del directorio nuevo del CPG (pagos.cpg.org.gt) que se guardan en la sesión
+const cpgExtra = (d = {}) => ({ activoHasta: d.activo_hasta || '', carrera: d.carrera || '', estadoCpg: d.estado_cpg || '' });
+
 async function consultarColegiado(id) {
   const res = await fetch(EDGE_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: String(id).trim() }) });
   const data = await res.json();
@@ -877,7 +880,7 @@ function LoginColModal({ onSession }) {
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailInput.trim())) { setError('Correo electrónico inválido.'); return; }
     if (!passwordInput || passwordInput.length < 6) { setError('La contraseña debe tener al menos 6 caracteres.'); return; }
     if (!supabase) {
-      onSession({ name: cpgData.name, collegiateNumber: cpgData.colegiado, status: cpgData.status, isGuest: false, email: emailInput.trim(), fechaColegiacion: cpgData.fecha_colegiacion || '', ultimoPago: cpgData.ultimo_pago || '', cuotaCongreso: cpgData.cuota_congreso || '' });
+      onSession({ name: cpgData.name, collegiateNumber: cpgData.colegiado, status: cpgData.status, isGuest: false, email: emailInput.trim(), fechaColegiacion: cpgData.fecha_colegiacion || '', ultimoPago: cpgData.ultimo_pago || '', cuotaCongreso: cpgData.cuota_congreso || '', ...cpgExtra(cpgData) });
       return;
     }
     setLoading(true); setError('');
@@ -944,7 +947,7 @@ function LoginColModal({ onSession }) {
           setLoading(false); return;
         }
       }
-      onSession({ name: cpgData.name, collegiateNumber: cpgData.colegiado, status: cpgData.status, isGuest: false, email: emailInput.trim(), fechaColegiacion: cpgData.fecha_colegiacion || '', ultimoPago: cpgData.ultimo_pago || '', cuotaCongreso: cpgData.cuota_congreso || '' });
+      onSession({ name: cpgData.name, collegiateNumber: cpgData.colegiado, status: cpgData.status, isGuest: false, email: emailInput.trim(), fechaColegiacion: cpgData.fecha_colegiacion || '', ultimoPago: cpgData.ultimo_pago || '', cuotaCongreso: cpgData.cuota_congreso || '', ...cpgExtra(cpgData) });
     } catch (e) {
       setError('Error de autenticación: ' + e.message);
     } finally { setLoading(false); }
@@ -1576,9 +1579,10 @@ export default function App() {
           ...sessionUser,
           name: data.nombre ?? sessionUser.name,
           status: data.estatus ?? sessionUser.status,
-          ...(data.fechaColegiacion !== undefined && { fechaColegiacion: data.fechaColegiacion }),
-          ...(data.ultimoPago !== undefined && { ultimoPago: data.ultimoPago }),
-          ...(data.cuotaCongreso !== undefined && { cuotaCongreso: data.cuotaCongreso }),
+          ...(data.fecha_colegiacion !== undefined && { fechaColegiacion: data.fecha_colegiacion }),
+          ...(data.ultimo_pago !== undefined && { ultimoPago: data.ultimo_pago }),
+          ...(data.cuota_congreso !== undefined && { cuotaCongreso: data.cuota_congreso }),
+          ...cpgExtra(data),
         };
         setSessionUser(updated);
         try { localStorage.setItem('cpg_session', JSON.stringify(updated)); } catch {}
@@ -1657,8 +1661,8 @@ export default function App() {
   // Auto-enriquecer datos CPG si la sesión guardada no los tiene (sesión anterior al fix)
   useEffect(() => {
     if (!sessionUser || sessionUser.isGuest || sessionUser.collegiateNumber === '100000') return;
-    // Re-consultar al CPG si falta cualquiera de los datos (sesiones antiguas no tienen cuotaCongreso)
-    const hasAll = sessionUser.fechaColegiacion && sessionUser.ultimoPago && sessionUser.cuotaCongreso;
+    // Re-consultar al CPG si faltan los datos del directorio (sesiones anteriores al cambio a pagos.cpg.org.gt)
+    const hasAll = sessionUser.activoHasta && sessionUser.carrera;
     if (hasAll) return;
     const enrich = async () => {
       try {
@@ -1668,6 +1672,7 @@ export default function App() {
           fechaColegiacion: data.fecha_colegiacion || '',
           ultimoPago: data.ultimo_pago || '',
           cuotaCongreso: data.cuota_congreso || '',
+          ...cpgExtra(data),
         };
         localStorage.setItem('cpg_session', JSON.stringify(updated));
         setSessionUser(updated);
@@ -1789,7 +1794,7 @@ export default function App() {
               { collegiate_number: collegiateNumber, email: googleEmail, name: data.name },
               { onConflict: 'collegiate_number' }
             );
-            const user = { name: data.name, collegiateNumber: collegiateNumber, status: data.status, isGuest: false, email: googleEmail, fechaColegiacion: data.fecha_colegiacion || '', ultimoPago: data.ultimo_pago || '', cuotaCongreso: data.cuota_congreso || '' };
+            const user = { name: data.name, collegiateNumber: collegiateNumber, status: data.status, isGuest: false, email: googleEmail, fechaColegiacion: data.fecha_colegiacion || '', ultimoPago: data.ultimo_pago || '', cuotaCongreso: data.cuota_congreso || '', ...cpgExtra(data) };
             localStorage.setItem('cpg_session', JSON.stringify(user));
             setSessionUser(user);
           } catch {}
@@ -1805,8 +1810,8 @@ export default function App() {
               const nombre = profile?.name || ssoNombre;
               // Preservar datos CPG si ya existían en la sesión guardada
               let prevCpg = {};
-              try { const prev = JSON.parse(localStorage.getItem('cpg_session') || '{}'); if (prev.collegiateNumber === ssoColegiado) prevCpg = { status: prev.status, fechaColegiacion: prev.fechaColegiacion, ultimoPago: prev.ultimoPago, cuotaCongreso: prev.cuotaCongreso }; } catch {}
-              const user = { name: nombre, collegiateNumber: ssoColegiado, isGuest: false, email: session.user.email, status: prevCpg.status || '', fechaColegiacion: prevCpg.fechaColegiacion || '', ultimoPago: prevCpg.ultimoPago || '', cuotaCongreso: prevCpg.cuotaCongreso || '' };
+              try { const prev = JSON.parse(localStorage.getItem('cpg_session') || '{}'); if (prev.collegiateNumber === ssoColegiado) prevCpg = { status: prev.status, fechaColegiacion: prev.fechaColegiacion, ultimoPago: prev.ultimoPago, cuotaCongreso: prev.cuotaCongreso, activoHasta: prev.activoHasta, carrera: prev.carrera, estadoCpg: prev.estadoCpg }; } catch {}
+              const user = { name: nombre, collegiateNumber: ssoColegiado, isGuest: false, email: session.user.email, status: prevCpg.status || '', fechaColegiacion: prevCpg.fechaColegiacion || '', ultimoPago: prevCpg.ultimoPago || '', cuotaCongreso: prevCpg.cuotaCongreso || '', activoHasta: prevCpg.activoHasta || '', carrera: prevCpg.carrera || '', estadoCpg: prevCpg.estadoCpg || '' };
               // Salvaguarda: NO sobrescribir el correo vinculado si ya existe otro registrado
               // para este colegiado (típicamente cuando un admin con cuenta institucional
               // navega entre apps llevando un sso_colegiado del usuario regular).
@@ -2223,10 +2228,14 @@ export default function App() {
                   </div>
                   <div className="px-5 py-3 space-y-2.5 border-b border-gray-700/50">
                     {[
-                      ['Fecha de colegiación', sessionUser.fechaColegiacion],
-                      ['Último pago', sessionUser.ultimoPago],
-                      ['Cuota congreso anual', sessionUser.cuotaCongreso],
-                    ].map(([label, val]) => (
+                      ['Profesión', sessionUser.carrera, true],
+                      ['Activo hasta', sessionUser.activoHasta, true],
+                      ['Estado en el CPG', sessionUser.estadoCpg === 'EXENTO' ? 'Exento' : '', false],
+                      // El directorio nuevo del CPG ya no publica estos datos: solo se muestran si existen
+                      ['Fecha de colegiación', sessionUser.fechaColegiacion, false],
+                      ['Último pago', sessionUser.ultimoPago, false],
+                      ['Cuota congreso anual', sessionUser.cuotaCongreso, false],
+                    ].filter(([, val, always]) => always || val).map(([label, val]) => (
                       <div key={label} className="flex justify-between items-center">
                         <span className="text-gray-400 text-xs">{label}</span>
                         <span className="text-gray-200 text-xs font-medium">{val || '—'}</span>
